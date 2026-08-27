@@ -1,0 +1,645 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+DEFAULT_PROVIDER="auto"
+DEFAULT_ROOT_SUFFIX="sites/pantheon"
+MULTIDEV_TEMP=''
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local config path
+  pantheon-local config get KEY
+  pantheon-local config set KEY VALUE
+  pantheon-local config unset KEY
+  pantheon-local config list
+  pantheon-local config tag get TAG
+  pantheon-local config tag set TAG DIRECTORY
+  pantheon-local config tag unset TAG
+  pantheon-local config tag list
+  pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
+
+Configuration keys:
+  root      Absolute local root for Pantheon checkouts.
+  provider  auto, ddev, or lando.
+USAGE
+}
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+config_path() {
+  if [ -n "${PANTHEON_LOCAL_CONFIG:-}" ]; then
+    printf '%s\n' "$PANTHEON_LOCAL_CONFIG"
+    return
+  fi
+
+  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+    printf '%s/pantheon-local-tools/config\n' "${XDG_CONFIG_HOME%/}"
+    return
+  fi
+
+  [ -n "${HOME:-}" ] || die 'HOME is not set; set PANTHEON_LOCAL_CONFIG explicitly'
+  printf '%s/.config/pantheon-local-tools/config\n' "${HOME%/}"
+}
+
+ensure_config_parent() {
+  local file parent
+  file=$(config_path)
+  parent=${file%/*}
+  [ "$parent" != "$file" ] || parent='.'
+  mkdir -p "$parent"
+}
+
+key_to_git_key() {
+  case "$1" in
+    root) printf '%s\n' 'local.root' ;;
+    provider) printf '%s\n' 'local.provider' ;;
+    *) die "unknown configuration key: $1" ;;
+  esac
+}
+
+default_value() {
+  case "$1" in
+    root)
+      [ -n "${HOME:-}" ] || return 1
+      printf '%s/%s\n' "${HOME%/}" "$DEFAULT_ROOT_SUFFIX"
+      ;;
+    provider) printf '%s\n' "$DEFAULT_PROVIDER" ;;
+    *) return 1 ;;
+  esac
+}
+
+expand_home() {
+  local value=$1 tilde='~'
+  case "$value" in
+    "$tilde")
+      [ -n "${HOME:-}" ] || die 'HOME is not set; cannot expand ~'
+      printf '%s\n' "$HOME"
+      ;;
+    "$tilde"/*)
+      [ -n "${HOME:-}" ] || die 'HOME is not set; cannot expand ~/'
+      printf '%s/%s\n' "${HOME%/}" "${value#*/}"
+      ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+validate_value() {
+  local key=$1 value=$2
+  case "$key" in
+    root)
+      [ -n "$value" ] || die 'root cannot be empty'
+      case "$value" in
+        *$'\n'*|*$'\r'*) die 'root cannot contain newlines' ;;
+        [A-Za-z]:\\*|[A-Za-z]:/*) die 'use a Linux path under WSL (for example /mnt/c/...) instead of a native Windows path' ;;
+        /*) ;;
+        *) die 'root must be an absolute path or start with ~/' ;;
+      esac
+      ;;
+    provider)
+      case "$value" in auto|ddev|lando) ;; *) die 'provider must be one of: auto, ddev, lando' ;; esac
+      ;;
+  esac
+}
+
+validate_tag() {
+  local tag=$1
+  [ -n "$tag" ] || die 'Pantheon Tag cannot be empty'
+  printf '%s\n' "$tag" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9._ -]*$' || \
+    die 'Pantheon Tag may contain letters, numbers, spaces, dot, underscore, and hyphen'
+}
+
+validate_tag_directory() {
+  local directory=$1 wrapped
+  [ -n "$directory" ] || die 'tag directory cannot be empty'
+  case "$directory" in
+    /*) die 'tag directory must be relative to the configured root' ;;
+    *\\*) die 'tag directory must use forward slashes (including under WSL)' ;;
+    *$'\n'*|*$'\r'*) die 'tag directory cannot contain newlines' ;;
+    *'//'*) die 'tag directory cannot contain empty path segments' ;;
+  esac
+  wrapped="/$directory/"
+  case "$wrapped" in
+    */./*|*/../*) die 'tag directory cannot contain . or .. path segments' ;;
+  esac
+}
+
+validate_group() {
+  local group=$1
+  [ -n "$group" ] || die 'group cannot be empty'
+  printf '%s\n' "$group" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$' || \
+    die 'group may contain letters, numbers, dot, underscore, and hyphen'
+}
+
+config_get_raw() {
+  local git_key=$1 file
+  file=$(config_path)
+  [ -f "$file" ] || return 1
+  git config --file "$file" --get "$git_key"
+}
+
+config_get() {
+  local key=$1 git_key value
+  require_command git
+  git_key=$(key_to_git_key "$key")
+  if value=$(config_get_raw "$git_key" 2>/dev/null); then
+    if [ "$key" = 'root' ]; then
+      value=$(expand_home "$value")
+      validate_value root "$value"
+    fi
+    printf '%s\n' "$value"
+  else
+    default_value "$key"
+  fi
+}
+
+config_set() {
+  local key=$1 value=$2 git_key file
+  require_command git
+  git_key=$(key_to_git_key "$key")
+  if [ "$key" = 'root' ]; then
+    value=$(expand_home "$value")
+  fi
+  validate_value "$key" "$value"
+  ensure_config_parent
+  file=$(config_path)
+  git config --file "$file" --replace-all "$git_key" "$value"
+}
+
+config_unset() {
+  local key=$1 git_key file
+  require_command git
+  git_key=$(key_to_git_key "$key")
+  file=$(config_path)
+  [ -f "$file" ] || return 0
+  git config --file "$file" --unset-all "$git_key" >/dev/null 2>&1 || true
+}
+
+tag_git_key() {
+  printf 'tag.%s.directory\n' "$1"
+}
+
+tag_get() {
+  local tag=$1 file key
+  require_command git
+  validate_tag "$tag"
+  file=$(config_path)
+  key=$(tag_git_key "$tag")
+  [ -f "$file" ] || die "no directory mapping configured for Pantheon Tag: $tag"
+  git config --file "$file" --get "$key" || die "no directory mapping configured for Pantheon Tag: $tag"
+}
+
+tag_set() {
+  local tag=$1 directory=$2 file key
+  require_command git
+  validate_tag "$tag"
+  validate_tag_directory "$directory"
+  ensure_config_parent
+  file=$(config_path)
+  key=$(tag_git_key "$tag")
+  git config --file "$file" --replace-all "$key" "$directory"
+}
+
+tag_unset() {
+  local tag=$1 file key
+  require_command git
+  validate_tag "$tag"
+  file=$(config_path)
+  [ -f "$file" ] || return 0
+  key=$(tag_git_key "$tag")
+  git config --file "$file" --unset-all "$key" >/dev/null 2>&1 || true
+}
+
+tag_list() {
+  local file key tag value
+  require_command git
+  file=$(config_path)
+  [ -f "$file" ] || return 0
+
+  { git config --file "$file" --name-only --get-regexp '^tag\..*\.directory$' 2>/dev/null || true; } | while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    tag=${key#tag.}
+    tag=${tag%.directory}
+    value=$(git config --file "$file" --get "$key")
+    printf '%s=%s\n' "$tag" "$value"
+  done
+}
+
+config_list() {
+  printf 'root=%s\n' "$(config_get root)"
+  printf 'provider=%s\n' "$(config_get provider)"
+  tag_list | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    printf 'tag.%s\n' "$line"
+  done
+}
+
+config_command() {
+  local action=${1:-}
+  case "$action" in
+    path)
+      [ "$#" -eq 1 ] || die 'usage: pantheon-local config path'
+      config_path
+      ;;
+    get)
+      [ "$#" -eq 2 ] || die 'usage: pantheon-local config get KEY'
+      config_get "$2"
+      ;;
+    set)
+      [ "$#" -eq 3 ] || die 'usage: pantheon-local config set KEY VALUE'
+      config_set "$2" "$3"
+      ;;
+    unset)
+      [ "$#" -eq 2 ] || die 'usage: pantheon-local config unset KEY'
+      config_unset "$2"
+      ;;
+    list)
+      [ "$#" -eq 1 ] || die 'usage: pantheon-local config list'
+      config_list
+      ;;
+    tag)
+      shift
+      tag_command "$@"
+      ;;
+    ''|-h|--help|help) usage ;;
+    *) die "unknown config command: $action" ;;
+  esac
+}
+
+tag_command() {
+  local action=${1:-}
+  case "$action" in
+    get)
+      [ "$#" -eq 2 ] || die 'usage: pantheon-local config tag get TAG'
+      tag_get "$2"
+      ;;
+    set)
+      [ "$#" -eq 3 ] || die 'usage: pantheon-local config tag set TAG DIRECTORY'
+      tag_set "$2" "$3"
+      ;;
+    unset)
+      [ "$#" -eq 2 ] || die 'usage: pantheon-local config tag unset TAG'
+      tag_unset "$2"
+      ;;
+    list)
+      [ "$#" -eq 1 ] || die 'usage: pantheon-local config tag list'
+      tag_list
+      ;;
+    ''|-h|--help|help) usage ;;
+    *) die "unknown config tag command: $action" ;;
+  esac
+}
+
+validate_target_component() {
+  local label=$1 value=$2
+  [ -n "$value" ] || die "$label cannot be empty"
+  printf '%s\n' "$value" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]*$' || \
+    die "$label contains unsupported characters: $value"
+}
+
+parse_target() {
+  local target=$1 site env remainder
+  case "$target" in
+    *.*) ;;
+    *) die 'target must use Pantheon site.environment syntax' ;;
+  esac
+  site=${target%%.*}
+  remainder=${target#*.}
+  case "$remainder" in
+    *.*) die 'target must contain exactly one dot between site and environment' ;;
+  esac
+  env=$remainder
+  validate_target_component site "$site"
+  validate_target_component environment "$env"
+  printf '%s\n%s\n' "$site" "$env"
+}
+
+sanitize_local_name() {
+  local input=$1 normalized hash prefix
+  normalized=$(printf '%s' "$input" | tr '[:upper:]_' '[:lower:]-' | tr -cs 'a-z0-9-' '-' | sed 's/^-*//; s/-*$//; s/--*/-/g')
+  [ -n "$normalized" ] || die 'could not derive a safe local project name'
+
+  if [ "${#normalized}" -gt 63 ]; then
+    hash=$(printf '%s' "$input" | git hash-object --stdin | cut -c1-8)
+    prefix=$(printf '%s' "$normalized" | cut -c1-54 | sed 's/-*$//')
+    normalized="$prefix-$hash"
+  fi
+  printf '%s\n' "$normalized"
+}
+
+terminus_preflight() {
+  require_command terminus
+  if ! terminus auth:whoami >/dev/null 2>&1; then
+    die 'Terminus is not authenticated. See https://docs.pantheon.io/machine-tokens and run terminus auth:login first.'
+  fi
+}
+
+terminus_field() {
+  local command=$1 target=$2 field=$3 value
+  if ! value=$(terminus "$command" "$target" "--field=$field"); then
+    die "Terminus failed: $command $target --field=$field"
+  fi
+  [ -n "$value" ] || die "Terminus returned an empty $field for $target"
+  printf '%s\n' "$value"
+}
+
+tag_in_remote_list() {
+  local wanted=$1 remote_tags=$2 line
+  while IFS= read -r line; do
+    [ "$line" = "$wanted" ] && return 0
+  done <<EOF
+$remote_tags
+EOF
+  return 1
+}
+
+resolve_tag_route() {
+  local site=$1 mappings org remote_tags line mapped_tag mapped_dir
+  local matched_tag='' matched_dir='' matches=0
+  mappings=$(tag_list)
+
+  if [ -z "$mappings" ]; then
+    printf '\n\n'
+    return
+  fi
+
+  org=$(terminus_field site:info "$site" organization)
+  if ! remote_tags=$(terminus tag:list "$site" "$org" --format=list); then
+    die "Terminus failed while reading Pantheon Tags for $site"
+  fi
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    mapped_tag=${line%%=*}
+    mapped_dir=${line#*=}
+    if tag_in_remote_list "$mapped_tag" "$remote_tags"; then
+      matches=$((matches + 1))
+      matched_tag=$mapped_tag
+      matched_dir=$mapped_dir
+    fi
+  done <<EOF
+$mappings
+EOF
+
+  case "$matches" in
+    1) printf '%s\n%s\n' "$matched_tag" "$matched_dir" ;;
+    0) die "site $site has no Pantheon Tag matching a configured local Tag route" ;;
+    *) die "site $site matches more than one configured Pantheon Tag route; refusing to guess" ;;
+  esac
+}
+
+configured_provider() {
+  local override=$1 provider
+  if [ -n "$override" ]; then
+    case "$override" in
+      ddev|lando) printf '%s\n' "$override" ;;
+      *) die '--provider must be ddev or lando' ;;
+    esac
+    return
+  fi
+  provider=$(config_get provider)
+  validate_value provider "$provider"
+  printf '%s\n' "$provider"
+}
+
+detect_provider() {
+  local checkout=$1 has_ddev=false has_lando=false
+  [ -f "$checkout/.ddev/config.yaml" ] && has_ddev=true
+  [ -f "$checkout/.lando.yml" ] && has_lando=true
+
+  case "$has_ddev:$has_lando" in
+    true:false) printf '%s\n' ddev ;;
+    false:true) printf '%s\n' lando ;;
+    true:true) die 'both DDEV and Lando project configuration were found; choose --provider explicitly' ;;
+    false:false) die 'neither DDEV nor Lando project configuration was found; choose/configure a supported provider project first' ;;
+  esac
+}
+
+ensure_provider_project() {
+  local provider=$1 checkout=$2
+  case "$provider" in
+    ddev) [ -f "$checkout/.ddev/config.yaml" ] || die 'DDEV provider selected but .ddev/config.yaml is missing' ;;
+    lando) [ -f "$checkout/.lando.yml" ] || die 'Lando provider selected but .lando.yml is missing' ;;
+    *) die "unsupported provider: $provider" ;;
+  esac
+}
+
+add_local_exclude() {
+  local checkout=$1 path=$2 exclude
+  exclude="$checkout/.git/info/exclude"
+  mkdir -p "${exclude%/*}"
+  touch "$exclude"
+  grep -Fx "$path" "$exclude" >/dev/null 2>&1 || printf '%s\n' "$path" >> "$exclude"
+}
+
+write_lando_override() {
+  local checkout=$1 local_name=$2 framework=$3 file
+  file="$checkout/.lando.local.yml"
+  [ ! -e "$file" ] || die 'refusing to overwrite existing .lando.local.yml'
+
+  {
+    printf 'name: %s\n' "$local_name"
+    case "$framework" in
+      drupal|drupal8)
+        printf '\ntooling:\n'
+        printf '  drush:\n'
+        printf '    env:\n'
+        printf '      DRUSH_OPTIONS_URI: "http://%s.lndo.site"\n' "$local_name"
+        ;;
+    esac
+  } > "$file"
+  add_local_exclude "$checkout" '.lando.local.yml'
+}
+
+write_ddev_override() {
+  local checkout=$1 local_name=$2 file
+  file="$checkout/.ddev/config.local.yaml"
+  [ ! -e "$file" ] || die 'refusing to overwrite existing .ddev/config.local.yaml'
+  printf 'name: %s\n' "$local_name" > "$file"
+  add_local_exclude "$checkout" '.ddev/config.local.yaml'
+}
+
+provider_url() {
+  local provider=$1 local_name=$2
+  case "$provider" in
+    ddev) printf 'https://%s.ddev.site\n' "$local_name" ;;
+    lando) printf 'http://%s.lndo.site\n' "$local_name" ;;
+    auto) printf '%s\n' '(resolved after clone)' ;;
+    *) die "unsupported provider: $provider" ;;
+  esac
+}
+
+write_checkout_state() {
+  local checkout=$1 site=$2 env=$3 tag=$4 provider=$5 local_name=$6 url=$7 state
+  state="$checkout/.git/pantheon-local-tools/state"
+  mkdir -p "${state%/*}"
+  git config --file "$state" --replace-all pantheon.site "$site"
+  git config --file "$state" --replace-all pantheon.environment "$env"
+  [ -n "$tag" ] && git config --file "$state" --replace-all pantheon.tag "$tag"
+  git config --file "$state" --replace-all local.provider "$provider"
+  git config --file "$state" --replace-all local.name "$local_name"
+  git config --file "$state" --replace-all local.url "$url"
+}
+
+cleanup_multidev_temp() {
+  if [ -n "$MULTIDEV_TEMP" ] && [ -d "$MULTIDEV_TEMP" ]; then
+    rm -rf "$MULTIDEV_TEMP"
+  fi
+}
+
+print_multidev_plan() {
+  local heading=$1 target=$2 tag=$3 provider=$4 env=$5 destination=$6 local_name=$7 url=$8
+  printf '%s\n\n' "$heading"
+  printf 'Pantheon:    %s\n' "$target"
+  if [ -n "$tag" ]; then
+    printf 'Tag:         %s\n' "$tag"
+  else
+    printf 'Tag:         (no configured Tag routing)\n'
+  fi
+  printf 'Provider:    %s\n' "$provider"
+  printf 'Git branch:  %s\n' "$env"
+  printf 'Directory:   %s\n' "$destination"
+  printf 'Local name:  %s\n' "$local_name"
+  printf 'Local URL:   %s\n' "$url"
+}
+
+multidev_command() {
+  local target='' provider_override='' group='' dry_run=false start=false
+  local parsed site env route tag route_dir root base_dir destination local_name
+  local provider git_url parent tmp framework='' url
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --provider)
+        [ "$#" -ge 2 ] || die '--provider requires ddev or lando'
+        provider_override=$2
+        shift 2
+        ;;
+      --group)
+        [ "$#" -ge 2 ] || die '--group requires a name'
+        group=$2
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      --start)
+        start=true
+        shift
+        ;;
+      -h|--help|help)
+        usage
+        return
+        ;;
+      --*) die "unknown multidev option: $1" ;;
+      *)
+        [ -z "$target" ] || die 'multidev accepts exactly one SITE.ENV target'
+        target=$1
+        shift
+        ;;
+    esac
+  done
+
+  [ -n "$target" ] || die 'usage: pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]'
+  [ -z "$group" ] || validate_group "$group"
+  [ "$dry_run" = false ] || [ "$start" = false ] || die '--start cannot be combined with --dry-run'
+
+  require_command git
+  parsed=$(parse_target "$target")
+  site=$(printf '%s\n' "$parsed" | sed -n '1p')
+  env=$(printf '%s\n' "$parsed" | sed -n '2p')
+  local_name=$(sanitize_local_name "$site-$env")
+  provider=$(configured_provider "$provider_override")
+
+  terminus_preflight
+  route=$(resolve_tag_route "$site")
+  tag=$(printf '%s\n' "$route" | sed -n '1p')
+  route_dir=$(printf '%s\n' "$route" | sed -n '2p')
+  git_url=$(terminus_field connection:info "$target" git_url)
+
+  root=$(config_get root)
+  if [ -n "$route_dir" ]; then
+    base_dir="$root/$route_dir/multidev"
+  else
+    base_dir="$root/multidev"
+  fi
+  [ -z "$group" ] || base_dir="$base_dir/$group"
+  destination="$base_dir/$local_name"
+
+  [ ! -e "$destination" ] || die "destination already exists: $destination"
+
+  if [ "$dry_run" = true ]; then
+    url=$(provider_url "$provider" "$local_name")
+    print_multidev_plan 'Pantheon multidev dry-run' "$target" "$tag" "$provider" "$env" "$destination" "$local_name" "$url"
+    return
+  fi
+
+  mkdir -p "$base_dir"
+  parent=${destination%/*}
+  tmp=$(mktemp -d "$parent/.${local_name}.tmp.XXXXXX")
+  MULTIDEV_TEMP=$tmp
+  trap cleanup_multidev_temp EXIT HUP INT TERM
+
+  if ! git clone --branch "$env" --single-branch "$git_url" "$tmp"; then
+    die "Git clone failed for Pantheon environment: $target"
+  fi
+
+  if [ "$provider" = auto ]; then
+    provider=$(detect_provider "$tmp")
+  fi
+  ensure_provider_project "$provider" "$tmp"
+
+  case "$provider" in
+    lando)
+      framework=$(terminus_field site:info "$site" framework)
+      write_lando_override "$tmp" "$local_name" "$framework"
+      ;;
+    ddev)
+      write_ddev_override "$tmp" "$local_name"
+      ;;
+  esac
+
+  url=$(provider_url "$provider" "$local_name")
+  write_checkout_state "$tmp" "$site" "$env" "$tag" "$provider" "$local_name" "$url"
+
+  mv "$tmp" "$destination"
+  MULTIDEV_TEMP=''
+  trap - EXIT HUP INT TERM
+
+  print_multidev_plan 'Created Pantheon multidev checkout' "$target" "$tag" "$provider" "$env" "$destination" "$local_name" "$url"
+
+  if [ "$start" = true ]; then
+    require_command "$provider"
+    printf '\nStarting %s...\n' "$provider"
+    if ! (cd "$destination" && "$provider" start); then
+      die "$provider start failed; checkout retained at $destination"
+    fi
+  fi
+}
+
+main() {
+  local command=${1:-}
+  case "$command" in
+    config)
+      shift
+      config_command "$@"
+      ;;
+    multidev)
+      shift
+      multidev_command "$@"
+      ;;
+    -h|--help|help|'') usage ;;
+    *) die "unknown command: $command" ;;
+  esac
+}
+
+main "$@"

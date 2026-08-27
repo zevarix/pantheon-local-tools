@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local status
+
+Shows local checkout metadata without contacting Pantheon or starting a provider.
+USAGE
+}
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+state_get() {
+  local state=$1 key=$2
+  [ -f "$state" ] || return 1
+  git config --file "$state" --get "$key" 2>/dev/null
+}
+
+detect_provider_status() {
+  local root=$1 has_ddev=false has_lando=false
+  [ -f "$root/.ddev/config.yaml" ] && has_ddev=true
+  [ -f "$root/.lando.yml" ] && has_lando=true
+
+  case "$has_ddev:$has_lando" in
+    true:false) printf '%s\n' ddev ;;
+    false:true) printf '%s\n' lando ;;
+    true:true) printf '%s\n' ambiguous ;;
+    false:false) printf '%s\n' unknown ;;
+  esac
+}
+
+provider_config_status() {
+  local root=$1 provider=$2
+  case "$provider" in
+    ddev)
+      if [ -f "$root/.ddev/config.yaml" ]; then
+        printf '%s\n' present
+      else
+        printf '%s\n' missing
+      fi
+      ;;
+    lando)
+      if [ -f "$root/.lando.yml" ]; then
+        printf '%s\n' present
+      else
+        printf '%s\n' missing
+      fi
+      ;;
+    ambiguous) printf '%s\n' ambiguous ;;
+    *) printf '%s\n' unknown ;;
+  esac
+}
+
+status_command() {
+  local root git_dir state branch tracking git_state dirty managed
+  local site env target tag provider local_name local_url data_source provider_config
+
+  require_command git
+
+  if ! root=$(git rev-parse --show-toplevel 2>/dev/null); then
+    die 'status must be run inside a Git checkout'
+  fi
+
+  git_dir=$(git -C "$root" rev-parse --git-dir)
+  case "$git_dir" in
+    /*) ;;
+    *) git_dir="$root/$git_dir" ;;
+  esac
+  state="$git_dir/pantheon-local-tools/state"
+
+  if [ -f "$state" ]; then
+    managed=yes
+  else
+    managed=no
+  fi
+
+  if ! branch=$(git -C "$root" symbolic-ref --quiet --short HEAD 2>/dev/null); then
+    branch="detached@$(git -C "$root" rev-parse --short HEAD)"
+  fi
+
+  if ! tracking=$(git -C "$root" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then
+    tracking='(none)'
+  fi
+
+  dirty=$(git -C "$root" status --porcelain --untracked-files=normal)
+  if [ -n "$dirty" ]; then
+    git_state=modified
+  else
+    git_state=clean
+  fi
+
+  site=$(state_get "$state" pantheon.site || true)
+  env=$(state_get "$state" pantheon.environment || true)
+  tag=$(state_get "$state" pantheon.tag || true)
+  provider=$(state_get "$state" local.provider || true)
+  local_name=$(state_get "$state" local.name || true)
+  local_url=$(state_get "$state" local.url || true)
+  data_source=$(state_get "$state" data.source || true)
+
+  if [ -n "$site" ] && [ -n "$env" ]; then
+    target="$site.$env"
+  elif [ -n "$site" ]; then
+    target=$site
+  else
+    target='(not recorded)'
+  fi
+
+  if [ -z "$provider" ]; then
+    provider=$(detect_provider_status "$root")
+    case "$provider" in
+      ddev|lando) provider="$provider (detected)" ;;
+    esac
+  fi
+
+  case "$provider" in
+    'ddev (detected)') provider_config=$(provider_config_status "$root" ddev) ;;
+    'lando (detected)') provider_config=$(provider_config_status "$root" lando) ;;
+    *) provider_config=$(provider_config_status "$root" "$provider") ;;
+  esac
+
+  [ -n "$tag" ] || tag='(not recorded)'
+  [ -n "$local_name" ] || local_name='(not recorded)'
+  [ -n "$local_url" ] || local_url='(not recorded)'
+  [ -n "$data_source" ] || data_source='(not recorded)'
+
+  printf 'Pantheon Local Tools status\n\n'
+  printf 'Directory:       %s\n' "$root"
+  printf 'Managed:         %s\n' "$managed"
+  printf 'Pantheon:        %s\n' "$target"
+  printf 'Tag:             %s\n' "$tag"
+  printf 'Provider:        %s\n' "$provider"
+  printf 'Provider config: %s\n' "$provider_config"
+  printf 'Local name:      %s\n' "$local_name"
+  printf 'Local URL:       %s\n' "$local_url"
+  printf 'Git branch:      %s\n' "$branch"
+  printf 'Git tracking:    %s\n' "$tracking"
+  printf 'Git state:       %s\n' "$git_state"
+  printf 'Data source:     %s\n' "$data_source"
+}
+
+case "${1:-}" in
+  -h|--help|help)
+    [ "$#" -eq 1 ] || die 'usage: pantheon-local status'
+    usage
+    ;;
+  '')
+    status_command
+    ;;
+  *)
+    die 'usage: pantheon-local status'
+    ;;
+esac

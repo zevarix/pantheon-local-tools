@@ -1,30 +1,23 @@
-# Pantheon Local Tools user configuration example
+# Pantheon Local Tools configuration example
 #
-# Copy this file to:
+# This file documents the Git-compatible configuration format used by
+# `pantheon-local config`. Users normally do not need to edit it by hand.
+#
+# Default location:
 #   ~/.config/pantheon-local-tools/config
 #
-# Machine- and organization-specific values belong in the user config, not
-# in this repository.
+# All values below are generic examples only. Organization-specific Pantheon
+# Tags, prefixes, and directory names belong in each user's local config.
 
-# Root directory under which local Pantheon projects are organized.
-# Override this with any layout that works for your machine.
-PANTHEON_LOCAL_ROOT="$HOME/sites/pantheon"
+[local]
+    root = ~/sites/pantheon
+    provider = auto
 
-# Local development provider.
-# Supported planned values: auto, ddev, lando
-# "auto" uses an unambiguous project configuration when one is present and
-# otherwise requires an explicit choice rather than guessing.
-PANTHEON_LOCAL_PROVIDER="auto"
+[pantheon]
+    sitePrefix =
 
-# Optional organization/site prefix. Leave empty when no shared prefix is used.
-PANTHEON_SITE_PREFIX=""
+[tag "Example Group"]
+    directory = example-group
 
-# Optional Pantheon Tag -> local directory routing.
-#
-# These examples are intentionally generic. Replace or remove them in your
-# local config. The implementation will fail rather than guess when routing is
-# ambiguous.
-declare -A PANTHEON_TAG_ROUTES=(
-  ["ExampleGroup"]="example-group"
-  ["AnotherGroup"]="another-group"
-)
+[tag "Another Group"]
+    directory = another-group

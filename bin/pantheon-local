@@ -1,0 +1,311 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+DEFAULT_PROVIDER="auto"
+DEFAULT_ROOT_SUFFIX="sites/pantheon"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local config path
+  pantheon-local config get KEY
+  pantheon-local config set KEY VALUE
+  pantheon-local config unset KEY
+  pantheon-local config list
+  pantheon-local config tag get TAG
+  pantheon-local config tag set TAG DIRECTORY
+  pantheon-local config tag unset TAG
+  pantheon-local config tag list
+
+Configuration keys:
+  root         Absolute local root for Pantheon checkouts.
+  provider     auto, ddev, or lando.
+  site-prefix  Optional organization/site prefix.
+USAGE
+}
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+config_path() {
+  if [ -n "${PANTHEON_LOCAL_CONFIG:-}" ]; then
+    printf '%s\n' "$PANTHEON_LOCAL_CONFIG"
+    return
+  fi
+
+  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+    printf '%s/pantheon-local-tools/config\n' "${XDG_CONFIG_HOME%/}"
+    return
+  fi
+
+  [ -n "${HOME:-}" ] || die 'HOME is not set; set PANTHEON_LOCAL_CONFIG explicitly'
+  printf '%s/.config/pantheon-local-tools/config\n' "${HOME%/}"
+}
+
+ensure_config_parent() {
+  local file parent
+  file=$(config_path)
+  parent=${file%/*}
+  [ "$parent" != "$file" ] || parent='.'
+  mkdir -p "$parent"
+}
+
+key_to_git_key() {
+  case "$1" in
+    root) printf '%s\n' 'local.root' ;;
+    provider) printf '%s\n' 'local.provider' ;;
+    site-prefix) printf '%s\n' 'pantheon.sitePrefix' ;;
+    *) die "unknown configuration key: $1" ;;
+  esac
+}
+
+default_value() {
+  case "$1" in
+    root)
+      [ -n "${HOME:-}" ] || return 1
+      printf '%s/%s\n' "${HOME%/}" "$DEFAULT_ROOT_SUFFIX"
+      ;;
+    provider) printf '%s\n' "$DEFAULT_PROVIDER" ;;
+    site-prefix) printf '\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+expand_home() {
+  local value=$1 tilde='~'
+  case "$value" in
+    "$tilde")
+      [ -n "${HOME:-}" ] || die 'HOME is not set; cannot expand ~'
+      printf '%s\n' "$HOME"
+      ;;
+    "$tilde"/*)
+      [ -n "${HOME:-}" ] || die 'HOME is not set; cannot expand ~/'
+      printf '%s/%s\n' "${HOME%/}" "${value#*/}"
+      ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+}
+
+validate_value() {
+  local key=$1 value=$2
+  case "$key" in
+    root)
+      [ -n "$value" ] || die 'root cannot be empty'
+      case "$value" in
+        *$'\n'*|*$'\r'*) die 'root cannot contain newlines' ;;
+        [A-Za-z]:\\*|[A-Za-z]:/*) die 'use a Linux path under WSL (for example /mnt/c/...) instead of a native Windows path' ;;
+        /*) ;;
+        *) die 'root must be an absolute path or start with ~/' ;;
+      esac
+      ;;
+    provider)
+      case "$value" in auto|ddev|lando) ;; *) die 'provider must be one of: auto, ddev, lando' ;; esac
+      ;;
+    site-prefix)
+      case "$value" in *$'\n'*|*$'\r'*) die 'site-prefix cannot contain newlines' ;; esac
+      ;;
+  esac
+}
+
+validate_tag() {
+  local tag=$1
+  [ -n "$tag" ] || die 'Pantheon Tag cannot be empty'
+  printf '%s\n' "$tag" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9._ -]*$' || \
+    die 'Pantheon Tag may contain letters, numbers, spaces, dot, underscore, and hyphen'
+}
+
+validate_tag_directory() {
+  local directory=$1 wrapped
+  [ -n "$directory" ] || die 'tag directory cannot be empty'
+  case "$directory" in
+    /*) die 'tag directory must be relative to the configured root' ;;
+    *\\*) die 'tag directory must use forward slashes (including under WSL)' ;;
+    *$'\n'*|*$'\r'*) die 'tag directory cannot contain newlines' ;;
+    *'//'*) die 'tag directory cannot contain empty path segments' ;;
+  esac
+  wrapped="/$directory/"
+  case "$wrapped" in
+    */./*|*/../*) die 'tag directory cannot contain . or .. path segments' ;;
+  esac
+}
+
+config_get_raw() {
+  local git_key=$1 file
+  file=$(config_path)
+  [ -f "$file" ] || return 1
+  git config --file "$file" --get "$git_key"
+}
+
+config_get() {
+  local key=$1 git_key value
+  require_command git
+  git_key=$(key_to_git_key "$key")
+  if value=$(config_get_raw "$git_key" 2>/dev/null); then
+    if [ "$key" = 'root' ]; then
+      value=$(expand_home "$value")
+      validate_value root "$value"
+    fi
+    printf '%s\n' "$value"
+  else
+    default_value "$key"
+  fi
+}
+
+config_set() {
+  local key=$1 value=$2 git_key file
+  require_command git
+  git_key=$(key_to_git_key "$key")
+  if [ "$key" = 'root' ]; then
+    value=$(expand_home "$value")
+  fi
+  validate_value "$key" "$value"
+  ensure_config_parent
+  file=$(config_path)
+  git config --file "$file" --replace-all "$git_key" "$value"
+}
+
+config_unset() {
+  local key=$1 git_key file
+  require_command git
+  git_key=$(key_to_git_key "$key")
+  file=$(config_path)
+  [ -f "$file" ] || return 0
+  git config --file "$file" --unset-all "$git_key" >/dev/null 2>&1 || true
+}
+
+tag_git_key() {
+  printf 'tag.%s.directory\n' "$1"
+}
+
+tag_get() {
+  local tag=$1 file key
+  require_command git
+  validate_tag "$tag"
+  file=$(config_path)
+  key=$(tag_git_key "$tag")
+  [ -f "$file" ] || die "no directory mapping configured for Pantheon Tag: $tag"
+  git config --file "$file" --get "$key" || die "no directory mapping configured for Pantheon Tag: $tag"
+}
+
+tag_set() {
+  local tag=$1 directory=$2 file key
+  require_command git
+  validate_tag "$tag"
+  validate_tag_directory "$directory"
+  ensure_config_parent
+  file=$(config_path)
+  key=$(tag_git_key "$tag")
+  git config --file "$file" --replace-all "$key" "$directory"
+}
+
+tag_unset() {
+  local tag=$1 file key
+  require_command git
+  validate_tag "$tag"
+  file=$(config_path)
+  [ -f "$file" ] || return 0
+  key=$(tag_git_key "$tag")
+  git config --file "$file" --unset-all "$key" >/dev/null 2>&1 || true
+}
+
+tag_list() {
+  local file key tag value
+  require_command git
+  file=$(config_path)
+  [ -f "$file" ] || return 0
+
+  { git config --file "$file" --name-only --get-regexp '^tag\..*\.directory$' 2>/dev/null || true; } | while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    tag=${key#tag.}
+    tag=${tag%.directory}
+    value=$(git config --file "$file" --get "$key")
+    printf '%s=%s\n' "$tag" "$value"
+  done
+}
+
+config_list() {
+  printf 'root=%s\n' "$(config_get root)"
+  printf 'provider=%s\n' "$(config_get provider)"
+  printf 'site-prefix=%s\n' "$(config_get site-prefix)"
+  tag_list | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    printf 'tag.%s\n' "$line"
+  done
+}
+
+config_command() {
+  local action=${1:-}
+  case "$action" in
+    path)
+      [ "$#" -eq 1 ] || die 'usage: pantheon-local config path'
+      config_path
+      ;;
+    get)
+      [ "$#" -eq 2 ] || die 'usage: pantheon-local config get KEY'
+      config_get "$2"
+      ;;
+    set)
+      [ "$#" -eq 3 ] || die 'usage: pantheon-local config set KEY VALUE'
+      config_set "$2" "$3"
+      ;;
+    unset)
+      [ "$#" -eq 2 ] || die 'usage: pantheon-local config unset KEY'
+      config_unset "$2"
+      ;;
+    list)
+      [ "$#" -eq 1 ] || die 'usage: pantheon-local config list'
+      config_list
+      ;;
+    tag)
+      shift
+      tag_command "$@"
+      ;;
+    ''|-h|--help|help) usage ;;
+    *) die "unknown config command: $action" ;;
+  esac
+}
+
+tag_command() {
+  local action=${1:-}
+  case "$action" in
+    get)
+      [ "$#" -eq 2 ] || die 'usage: pantheon-local config tag get TAG'
+      tag_get "$2"
+      ;;
+    set)
+      [ "$#" -eq 3 ] || die 'usage: pantheon-local config tag set TAG DIRECTORY'
+      tag_set "$2" "$3"
+      ;;
+    unset)
+      [ "$#" -eq 2 ] || die 'usage: pantheon-local config tag unset TAG'
+      tag_unset "$2"
+      ;;
+    list)
+      [ "$#" -eq 1 ] || die 'usage: pantheon-local config tag list'
+      tag_list
+      ;;
+    ''|-h|--help|help) usage ;;
+    *) die "unknown config tag command: $action" ;;
+  esac
+}
+
+main() {
+  local command=${1:-}
+  case "$command" in
+    config)
+      shift
+      config_command "$@"
+      ;;
+    -h|--help|help|'') usage ;;
+    *) die "unknown command: $command" ;;
+  esac
+}
+
+main "$@"

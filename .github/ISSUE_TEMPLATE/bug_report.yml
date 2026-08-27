@@ -26,9 +26,10 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Include OS, shell, local provider and version (for example DDEV or Lando), Terminus version, and tool version when known.
+      description: Include OS, shell, WSL distribution/version when applicable, local provider and version, Terminus version, and tool version when known.
       placeholder: |
         OS:
+        WSL distribution/version (if applicable):
         Shell:
         Local provider:
         Provider version:

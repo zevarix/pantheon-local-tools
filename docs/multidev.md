@@ -9,7 +9,6 @@ The implementation relies on documented Terminus interfaces:
 - `terminus auth:whoami` verifies that Terminus has an authenticated identity.
 - `terminus site:info <site> --field=organization` resolves the site's organization when Pantheon Tag routing is configured.
 - `terminus tag:list <site> <org> --format=list` returns the Pantheon Tags for routing.
-- `terminus site:info <site> --field=framework` supplies framework metadata used only where a provider needs a framework-specific local override.
 - `terminus connection:info <site>.<env> --field=git_url` supplies the Git endpoint used for cloning.
 
 The command never constructs a Pantheon Git URL from UUID assumptions.
@@ -40,11 +39,15 @@ An explicitly requested provider start happens only after the final checkout exi
 
 ## Provider behavior
 
+Provider-owned project configuration remains authoritative. Pantheon Local Tools adds only the minimum checkout-local name override required to isolate the cloned environment.
+
+It does not rewrite base provider configuration, service definitions, proxy definitions, custom tooling, add-ons, custom Compose files, or provider-owned URL/Drush settings. This preserves project extras such as phpMyAdmin, Redis, Solr, MailHog, custom tooling, and additional services.
+
 ### Lando
 
 The project must contain `.lando.yml`.
 
-Pantheon Local Tools writes `.lando.local.yml` with an isolated local app name. For Drupal framework values, it also overrides `DRUSH_OPTIONS_URI` so a committed project-level URI cannot point Drush at a different local Lando app name.
+Pantheon Local Tools writes `.lando.local.yml` containing only the isolated local app name. The Pantheon recipe already derives its normal Drush URI from the provider proxy URL; explicit project-owned Drush/proxy configuration is left untouched rather than replaced with a hard-coded `lndo.site` value.
 
 The generated override is added to `.git/info/exclude`. The shared `.gitignore` is not modified.
 
@@ -56,13 +59,30 @@ The project must contain `.ddev/config.yaml`.
 
 Pantheon Local Tools writes `.ddev/config.local.yaml` with the isolated local project name. DDEV already treats local config overrides as local-only, and the tool additionally records the generated path in `.git/info/exclude` without modifying the project `.gitignore`.
 
+Existing additional hostnames, add-ons, and `docker-compose.*.yaml` services remain provider-owned and are not rewritten.
+
 `--start` runs `ddev start`.
+
+## Local URL metadata
+
+Pantheon Local Tools does not construct a URL from the local name plus an assumed provider suffix.
+
+After checkout creation it makes a best-effort, read-only provider inspection:
+
+- Lando application URLs are read through `lando info` when available.
+- DDEV's primary URL is read through `ddev describe -j` when available.
+
+If the provider can report a URL, it is recorded as local metadata under `.git/pantheon-local-tools/state`. If the provider is not installed, is stopped in a way that prevents inspection, or otherwise cannot report a URL, checkout creation still succeeds and no URL is invented. `pantheon-local status` will try the same read-only provider discovery later and fall back to recorded metadata when appropriate.
+
+A successful explicit `--start` performs URL discovery again after the provider starts and refreshes the recorded URL when available.
 
 ## Dry-run
 
-`--dry-run` performs the read-only Terminus lookups and prints the resolved plan without creating directories, cloning Git, or writing provider configuration.
+`--dry-run` performs the read-only Terminus lookups and prints the resolved plan without creating directories, cloning Git, writing provider configuration, or querying a local provider runtime.
 
-If provider selection is `auto`, dry-run cannot inspect the future checkout. Configure a provider or pass `--provider ddev|lando` for a fully resolved dry-run.
+Because no checkout exists yet, dry-run intentionally reports the local URL as provider-runtime information that will become available only after checkout/provider inspection. It never guesses `lndo.site`, `ddev.site`, or another domain.
+
+If provider selection is `auto`, dry-run cannot inspect the future checkout. Configure a provider or pass `--provider ddev|lando` for a fully resolved provider choice.
 
 ## Non-goals
 
@@ -73,8 +93,9 @@ The multidev command does not:
 - push code to Pantheon;
 - pull databases or files;
 - store Pantheon machine tokens;
-- overwrite existing local checkouts; or
-- create a project's base DDEV/Lando configuration when none exists.
+- overwrite existing local checkouts;
+- create a project's base DDEV/Lando configuration when none exists; or
+- replace provider-owned hostname/proxy configuration.
 
 ## Upstream references
 
@@ -83,5 +104,8 @@ The multidev command does not:
 - Pantheon `tag:list`: https://docs.pantheon.io/terminus/commands/tag-list
 - Pantheon Terminus install: https://docs.pantheon.io/terminus/install
 - Pantheon machine tokens: https://docs.pantheon.io/machine-tokens
-- DDEV configuration overrides: https://ddev.readthedocs.io/en/stable/users/configuration/config/
+- DDEV configuration overrides: https://docs.ddev.com/en/stable/users/configuration/config/
+- DDEV `describe`: https://docs.ddev.com/en/stable/users/usage/commands/
 - Lando override files: https://docs.lando.dev/landofile/index.html
+- Lando `info`: https://docs.lando.dev/cli/info.html
+- Lando Pantheon configuration: https://docs.lando.dev/plugins/pantheon/config.html

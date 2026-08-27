@@ -5,6 +5,8 @@ PROGRAM_NAME="pantheon-local"
 DEFAULT_PROVIDER="auto"
 DEFAULT_ROOT_SUFFIX="sites/pantheon"
 MULTIDEV_TEMP=''
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+PROVIDER_URL="$SCRIPT_DIR/pantheon-local-provider-url"
 
 usage() {
   cat <<'USAGE'
@@ -441,21 +443,10 @@ add_local_exclude() {
 }
 
 write_lando_override() {
-  local checkout=$1 local_name=$2 framework=$3 file
+  local checkout=$1 local_name=$2 file
   file="$checkout/.lando.local.yml"
   [ ! -e "$file" ] || die 'refusing to overwrite existing .lando.local.yml'
-
-  {
-    printf 'name: %s\n' "$local_name"
-    case "$framework" in
-      drupal|drupal8)
-        printf '\ntooling:\n'
-        printf '  drush:\n'
-        printf '    env:\n'
-        printf '      DRUSH_OPTIONS_URI: "http://%s.lndo.site"\n' "$local_name"
-        ;;
-    esac
-  } > "$file"
+  printf 'name: %s\n' "$local_name" > "$file"
   add_local_exclude "$checkout" '.lando.local.yml'
 }
 
@@ -467,18 +458,8 @@ write_ddev_override() {
   add_local_exclude "$checkout" '.ddev/config.local.yaml'
 }
 
-provider_url() {
-  local provider=$1 local_name=$2
-  case "$provider" in
-    ddev) printf 'https://%s.ddev.site\n' "$local_name" ;;
-    lando) printf 'http://%s.lndo.site\n' "$local_name" ;;
-    auto) printf '%s\n' '(resolved after clone)' ;;
-    *) die "unsupported provider: $provider" ;;
-  esac
-}
-
 write_checkout_state() {
-  local checkout=$1 site=$2 env=$3 tag=$4 provider=$5 local_name=$6 url=$7 state
+  local checkout=$1 site=$2 env=$3 tag=$4 provider=$5 local_name=$6 state
   state="$checkout/.git/pantheon-local-tools/state"
   mkdir -p "${state%/*}"
   git config --file "$state" --replace-all pantheon.site "$site"
@@ -486,7 +467,19 @@ write_checkout_state() {
   [ -n "$tag" ] && git config --file "$state" --replace-all pantheon.tag "$tag"
   git config --file "$state" --replace-all local.provider "$provider"
   git config --file "$state" --replace-all local.name "$local_name"
+}
+
+record_checkout_url() {
+  local checkout=$1 url=$2 state
+  state="$checkout/.git/pantheon-local-tools/state"
+  [ -f "$state" ] || return 1
   git config --file "$state" --replace-all local.url "$url"
+}
+
+discover_checkout_url() {
+  local provider=$1 checkout=$2
+  [ -x "$PROVIDER_URL" ] || return 1
+  "$PROVIDER_URL" "$provider" "$checkout" 2>/dev/null
 }
 
 cleanup_multidev_temp() {
@@ -514,7 +507,7 @@ print_multidev_plan() {
 multidev_command() {
   local target='' provider_override='' group='' dry_run=false start=false
   local parsed site env route tag route_dir root base_dir destination local_name
-  local provider git_url parent tmp framework='' url
+  local provider git_url parent tmp url
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -578,7 +571,7 @@ multidev_command() {
   [ ! -e "$destination" ] || die "destination already exists: $destination"
 
   if [ "$dry_run" = true ]; then
-    url=$(provider_url "$provider" "$local_name")
+    url='(provider runtime; available after checkout)'
     print_multidev_plan 'Pantheon multidev dry-run' "$target" "$tag" "$provider" "$env" "$destination" "$local_name" "$url"
     return
   fi
@@ -599,21 +592,22 @@ multidev_command() {
   ensure_provider_project "$provider" "$tmp"
 
   case "$provider" in
-    lando)
-      framework=$(terminus_field site:info "$site" framework)
-      write_lando_override "$tmp" "$local_name" "$framework"
-      ;;
-    ddev)
-      write_ddev_override "$tmp" "$local_name"
-      ;;
+    lando) write_lando_override "$tmp" "$local_name" ;;
+    ddev) write_ddev_override "$tmp" "$local_name" ;;
   esac
 
-  url=$(provider_url "$provider" "$local_name")
-  write_checkout_state "$tmp" "$site" "$env" "$tag" "$provider" "$local_name" "$url"
+  write_checkout_state "$tmp" "$site" "$env" "$tag" "$provider" "$local_name"
 
   mv "$tmp" "$destination"
   MULTIDEV_TEMP=''
   trap - EXIT HUP INT TERM
+
+  url='(not recorded; provider runtime not inspectable yet)'
+  if url=$(discover_checkout_url "$provider" "$destination"); then
+    record_checkout_url "$destination" "$url"
+  else
+    url='(not recorded; provider runtime not inspectable yet)'
+  fi
 
   print_multidev_plan 'Created Pantheon multidev checkout' "$target" "$tag" "$provider" "$env" "$destination" "$local_name" "$url"
 
@@ -622,6 +616,11 @@ multidev_command() {
     printf '\nStarting %s...\n' "$provider"
     if ! (cd "$destination" && "$provider" start); then
       die "$provider start failed; checkout retained at $destination"
+    fi
+
+    if url=$(discover_checkout_url "$provider" "$destination"); then
+      record_checkout_url "$destination" "$url"
+      printf 'Runtime URL:  %s\n' "$url"
     fi
   fi
 }

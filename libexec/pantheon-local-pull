@@ -6,10 +6,11 @@ PROGRAM_NAME="pantheon-local"
 usage() {
   cat <<'USAGE'
 Usage:
-  pantheon-local pull ENV [--provider ddev|lando]
+  pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]
 
-Refresh the local database and files from one Pantheon environment without
-changing checked-out Git code.
+Refresh local Pantheon data without changing checked-out Git code.
+By default both database and files are pulled. Use --database-only or
+--files-only when only one data component should be refreshed.
 USAGE
 }
 
@@ -106,16 +107,25 @@ tracked_fingerprint() {
 }
 
 run_lando_pull() {
-  local root=$1 env=$2
+  local root=$1 env=$2 components=$3
   require_command lando
-  (
-    cd "$root"
-    lando pull --code=none --database="$env" --files="$env"
-  )
+
+  case "$components" in
+    both)
+      (cd "$root" && lando pull --code=none --database="$env" --files="$env")
+      ;;
+    database)
+      (cd "$root" && lando pull --code=none --database="$env" --files=none)
+      ;;
+    files)
+      (cd "$root" && lando pull --code=none --database=none --files="$env")
+      ;;
+    *) die "unsupported pull component selection: $components" ;;
+  esac
 }
 
 run_ddev_pull() {
-  local root=$1 env=$2 site=$3 environment_arg
+  local root=$1 env=$2 site=$3 components=$4 environment_arg
   require_command ddev
   [ -f "$root/.ddev/providers/pantheon.yaml" ] || \
     die 'DDEV Pantheon provider is missing: .ddev/providers/pantheon.yaml'
@@ -126,21 +136,67 @@ run_ddev_pull() {
     environment_arg="DDEV_PANTHEON_ENVIRONMENT=$env"
   fi
 
-  (
-    cd "$root"
-    ddev pull pantheon --environment="$environment_arg" -y
-  )
+  case "$components" in
+    both)
+      (cd "$root" && ddev pull pantheon --environment="$environment_arg" -y)
+      ;;
+    database)
+      (cd "$root" && ddev pull pantheon --environment="$environment_arg" --skip-files -y)
+      ;;
+    files)
+      (cd "$root" && ddev pull pantheon --environment="$environment_arg" --skip-db -y)
+      ;;
+    *) die "unsupported pull component selection: $components" ;;
+  esac
+}
+
+migrate_legacy_data_source() {
+  local state=$1 legacy database_source files_source
+  legacy=$(state_get "$state" data.source || true)
+  [ -n "$legacy" ] || return 0
+
+  database_source=$(state_get "$state" data.database-source || true)
+  files_source=$(state_get "$state" data.files-source || true)
+
+  [ -n "$database_source" ] || \
+    git config --file "$state" --replace-all data.database-source "$legacy"
+  [ -n "$files_source" ] || \
+    git config --file "$state" --replace-all data.files-source "$legacy"
+  git config --file "$state" --unset-all data.source >/dev/null 2>&1 || true
 }
 
 record_pull_state() {
-  local state=$1 provider=$2 env=$3
+  local state=$1 provider=$2 env=$3 components=$4
   mkdir -p "${state%/*}"
   git config --file "$state" --replace-all local.provider "$provider"
-  git config --file "$state" --replace-all data.source "$env"
+  migrate_legacy_data_source "$state"
+
+  case "$components" in
+    both)
+      git config --file "$state" --replace-all data.database-source "$env"
+      git config --file "$state" --replace-all data.files-source "$env"
+      ;;
+    database)
+      git config --file "$state" --replace-all data.database-source "$env"
+      ;;
+    files)
+      git config --file "$state" --replace-all data.files-source "$env"
+      ;;
+    *) die "unsupported pull component selection: $components" ;;
+  esac
+}
+
+print_components() {
+  case "$1" in
+    both) printf '%s\n' 'database, files' ;;
+    database) printf '%s\n' 'database only' ;;
+    files) printf '%s\n' 'files only' ;;
+    *) die "unsupported pull component selection: $1" ;;
+  esac
 }
 
 pull_command() {
-  local env='' provider_override='' root git_dir state provider site
+  local env='' provider_override='' components=both root git_dir state provider site
   local head_before head_after diff_before diff_after
 
   while [ "$#" -gt 0 ]; do
@@ -149,6 +205,16 @@ pull_command() {
         [ "$#" -ge 2 ] || die '--provider requires ddev or lando'
         provider_override=$2
         shift 2
+        ;;
+      --database-only)
+        [ "$components" = both ] || die '--database-only and --files-only cannot be combined or repeated'
+        components=database
+        shift
+        ;;
+      --files-only)
+        [ "$components" = both ] || die '--database-only and --files-only cannot be combined or repeated'
+        components=files
+        shift
         ;;
       -h|--help|help)
         usage
@@ -163,7 +229,7 @@ pull_command() {
     esac
   done
 
-  [ -n "$env" ] || die 'usage: pantheon-local pull ENV [--provider ddev|lando]'
+  [ -n "$env" ] || die 'usage: pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]'
   validate_environment "$env"
   require_command git
 
@@ -178,12 +244,13 @@ pull_command() {
 
   printf 'Pulling Pantheon data\n\n'
   printf 'Environment: %s\n' "$env"
+  printf 'Components:  %s\n' "$(print_components "$components")"
   printf 'Provider:    %s\n' "$provider"
   printf 'Directory:   %s\n\n' "$root"
 
   case "$provider" in
-    lando) run_lando_pull "$root" "$env" ;;
-    ddev) run_ddev_pull "$root" "$env" "$site" ;;
+    lando) run_lando_pull "$root" "$env" "$components" ;;
+    ddev) run_ddev_pull "$root" "$env" "$site" "$components" ;;
     *) die "unsupported provider: $provider" ;;
   esac
 
@@ -195,10 +262,11 @@ pull_command() {
   [ "$diff_before" = "$diff_after" ] || \
     die 'provider pull changed tracked Git content; refusing to record data provenance'
 
-  record_pull_state "$state" "$provider" "$env"
+  record_pull_state "$state" "$provider" "$env" "$components"
 
   printf '\nPantheon data pull complete\n'
-  printf 'Data source: %s\n' "$env"
+  printf 'Environment: %s\n' "$env"
+  printf 'Components:  %s\n' "$(print_components "$components")"
   printf 'Git code:    unchanged\n'
 }
 

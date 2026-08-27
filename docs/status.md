@@ -26,7 +26,8 @@ Local URL:       http://example-site-feature-a.lndo.site
 Git branch:      feature-a
 Git tracking:    origin/feature-a
 Git state:       clean
-Data source:     live
+Database source: test
+Files source:    live
 ```
 
 ## Managed and existing checkouts
@@ -57,13 +58,36 @@ Status only checks whether the expected provider project configuration is presen
 
 It does not run `ddev`, `lando`, Docker, or Terminus. Runtime health and provider-discovered URLs can be added later without changing the local/offline status contract.
 
-## Data source
+## Data provenance
 
-After a successful `pantheon-local pull ENV`, status displays the environment recorded as `data.source` in local Git metadata.
+Database and files sources are reported independently because local development workflows often refresh one without the other.
 
-If no successful database/files source has been recorded, status displays `(not recorded)`. It never infers data provenance from the current Git branch.
+A successful full pull:
 
-Provider failures or post-pull Git-safety failures do not update the recorded data source.
+```bash
+pantheon-local pull live
+```
+
+records `live` for both database and files.
+
+A later database-only pull:
+
+```bash
+pantheon-local pull test --database-only
+```
+
+updates only the database source, so status can correctly report:
+
+```text
+Database source: test
+Files source:    live
+```
+
+If a component has never been successfully pulled, status displays `(not recorded)`. It never infers data provenance from the current Git branch.
+
+Older checkout state may contain a single legacy `data.source` value from releases before component-specific provenance. Status interprets that value as both database and files without modifying the state file. The next successful component-aware pull migrates that legacy value losslessly.
+
+Provider failures or post-pull Git-safety failures do not update component provenance.
 
 ## Safety
 

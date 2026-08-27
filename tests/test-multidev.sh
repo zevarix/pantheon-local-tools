@@ -129,7 +129,8 @@ fi
 
 # Configured Tag routing must resolve to exactly one Pantheon Tag.
 bash "$CLI" config tag set 'Another Group' another
-export MOCK_TAGS=$(printf 'Example Group\nAnother Group')
+MOCK_TAGS=$(printf 'Example Group\nAnother Group')
+export MOCK_TAGS
 if bash "$CLI" multidev example-site.feature2 --dry-run >/dev/null 2>&1; then
   fail 'ambiguous Pantheon Tag routing was accepted'
 fi

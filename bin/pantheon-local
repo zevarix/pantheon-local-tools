@@ -8,7 +8,7 @@ usage() {
 Usage:
   pantheon-local config ...
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
-  pantheon-local pull ENV [--provider ddev|lando]
+  pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]
   pantheon-local status
 
 Run `pantheon-local config help` for configuration commands.

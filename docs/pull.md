@@ -1,8 +1,8 @@
 # Data Pull Workflow
 
-`pantheon-local pull ENV` refreshes the local database and files from one Pantheon environment while preserving the currently checked-out Git code.
+`pantheon-local pull ENV` refreshes Pantheon data in an existing local checkout while preserving the currently checked-out Git code.
 
-Examples:
+By default the command pulls both database and files:
 
 ```bash
 pantheon-local pull dev
@@ -11,7 +11,16 @@ pantheon-local pull live
 pantheon-local pull feature-a
 ```
 
-Pantheon environment names are passed explicitly. The tool never infers database/files provenance from the current Git branch.
+When only one data component is needed, use an explicit selector:
+
+```bash
+pantheon-local pull live --database-only
+pantheon-local pull live --files-only
+```
+
+`--database-only` and `--files-only` are mutually exclusive. Pantheon environment names are always passed explicitly; the tool never infers data provenance from the current Git branch.
+
+A common Drupal module-update workflow is database-only: refresh the database from the desired Pantheon environment, run database updates locally, then export the resulting configuration without spending time synchronizing files that are irrelevant to the change.
 
 ## Provider selection
 
@@ -26,13 +35,27 @@ The user's global default provider is not used to override an existing checkout'
 
 ## Lando
 
-For a Lando Pantheon project, the command delegates to:
+Pantheon Local Tools always disables code pulls and passes every data source explicitly.
+
+Both database and files:
 
 ```text
 lando pull --code=none --database=ENV --files=ENV
 ```
 
-Lando normally derives unspecified pull sources from the current Git branch. Pantheon Local Tools supplies all three source options explicitly and sets `--code=none`, so only database/files are requested.
+Database only:
+
+```text
+lando pull --code=none --database=ENV --files=none
+```
+
+Files only:
+
+```text
+lando pull --code=none --database=none --files=ENV
+```
+
+Lando normally derives unspecified pull sources from the current Git branch. Pantheon Local Tools avoids that ambiguity by specifying the relevant sources explicitly and always setting `--code=none`.
 
 Lando owns its Pantheon authentication interaction. If the Lando Pantheon plugin needs a machine token, it may prompt according to Lando's supported workflow. Pantheon Local Tools does not accept or store the token.
 
@@ -51,13 +74,25 @@ The command delegates to DDEV's Pantheon provider and sets the requested environ
 ddev pull pantheon --environment="DDEV_PANTHEON_ENVIRONMENT=ENV" -y
 ```
 
+Database-only pulls add:
+
+```text
+--skip-files
+```
+
+Files-only pulls add:
+
+```text
+--skip-db
+```
+
 When Pantheon Local Tools already has the Pantheon site recorded in local checkout state, it supplies both values:
 
 ```text
 DDEV_PANTHEON_SITE=SITE,DDEV_PANTHEON_ENVIRONMENT=ENV
 ```
 
-This does not rewrite `.ddev/config.yaml` or the provider recipe. DDEV's Pantheon provider handles database/files synchronization and does not pull Git code.
+This does not rewrite `.ddev/config.yaml` or the provider recipe. DDEV's Pantheon provider handles synchronization and does not pull Git code.
 
 DDEV owns its machine-token configuration. Follow DDEV/Pantheon guidance for `TERMINUS_MACHINE_TOKEN`; Pantheon Local Tools does not collect or persist it.
 
@@ -68,7 +103,7 @@ Before delegating to the provider, Pantheon Local Tools records:
 - the current Git `HEAD`; and
 - a fingerprint of all tracked changes relative to `HEAD`.
 
-After the provider returns successfully, both are checked again. If the provider changed `HEAD` or tracked content, the command exits with an error and does not record a successful data source.
+After the provider returns successfully, both are checked again. If the provider changed `HEAD` or tracked content, the command exits with an error and does not record successful provenance.
 
 This check intentionally ignores untracked/ignored files because a legitimate files pull writes CMS uploads into paths that are normally outside tracked source code.
 
@@ -76,10 +111,11 @@ The tool does not attempt an automatic rollback if a provider or project hook ch
 
 ## Data provenance
 
-After a successful provider pull and successful Git safety verification, the command records:
+Database and files provenance are recorded independently:
 
 ```text
-data.source=ENV
+data.database-source=ENV
+data.files-source=ENV
 ```
 
 inside:
@@ -88,9 +124,19 @@ inside:
 .git/pantheon-local-tools/state
 ```
 
-`pantheon-local status` then displays the recorded source. Provenance is recorded only after success; failed provider pulls and Git-safety failures do not update it.
+A full pull updates both values. `--database-only` updates only `data.database-source`; `--files-only` updates only `data.files-source`.
 
-For an ordinary checkout that was not created by `pantheon-local multidev`, the first successful pull may create this local state file and record the detected provider plus data source.
+Older checkouts may contain the pre-component key:
+
+```text
+data.source=ENV
+```
+
+`pantheon-local status` interprets that legacy value as the source for both database and files. On the first successful component-aware pull, Pantheon Local Tools migrates it into the two component keys before updating the requested component, preserving the provenance of the component that was not refreshed.
+
+Provenance is recorded only after provider success and Git-safety verification. Failed provider pulls and Git-safety failures do not update it.
+
+For an ordinary checkout that was not created by `pantheon-local multidev`, the first successful pull may create this local state file and record the detected provider plus component provenance.
 
 ## Non-goals
 

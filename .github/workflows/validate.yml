@@ -56,6 +56,10 @@ jobs:
             -not -path './.git/*' \
             -print)
 
-      - name: Run configuration tests
+      - name: Run tests
         shell: bash
-        run: bash tests/test-config.sh
+        run: |
+          set -euo pipefail
+          for test in tests/test-*.sh; do
+            bash "$test"
+          done

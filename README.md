@@ -24,12 +24,12 @@ pantheon-local multidev SITE.ENV --dry-run
 pantheon-local multidev SITE.ENV --provider lando --group migration
 pantheon-local multidev SITE.ENV --provider ddev --start
 
+pantheon-local pull live
+pantheon-local pull test
+pantheon-local pull feature-a --provider lando
+
 pantheon-local status
 ```
-
-The next planned workflow command is:
-
-- `pantheon-local pull ENV` — refresh database/files for a local checkout without changing checked-out code.
 
 Convenience wrapper commands may be added after the canonical `pantheon-local` interface is stable.
 
@@ -102,6 +102,32 @@ pantheon-local multidev SITE.ENV --group migration
 
 See [`docs/multidev.md`](docs/multidev.md) for the full safety and provider behavior contract.
 
+## Data pulls
+
+`pantheon-local pull ENV` refreshes the local database and files from one explicitly named Pantheon environment while preserving the checkout's Git code.
+
+The command uses the provider already associated with the checkout. If no provider has been recorded, it detects an unambiguous `.lando.yml` or `.ddev/config.yaml`; ambiguous checkouts require `--provider ddev|lando`.
+
+For Lando, the adapter delegates to the Pantheon recipe with explicit data sources and no code source:
+
+```text
+lando pull --code=none --database=ENV --files=ENV
+```
+
+For DDEV, the adapter delegates to DDEV's Pantheon provider with a one-time environment override rather than rewriting project configuration:
+
+```text
+ddev pull pantheon --environment="DDEV_PANTHEON_ENVIRONMENT=ENV" -y
+```
+
+When a Pantheon site name is already recorded in local state, DDEV receives both `DDEV_PANTHEON_SITE` and `DDEV_PANTHEON_ENVIRONMENT` for an explicit binding.
+
+Pantheon Local Tools does not collect provider machine tokens. Lando/DDEV own their supported Pantheon authentication workflows.
+
+Before and after the provider pull, the tool verifies that Git `HEAD` and all tracked content are unchanged. Only after provider success and that verification does it record `data.source=ENV` for `pantheon-local status`.
+
+See [`docs/pull.md`](docs/pull.md) for the complete pull safety contract and provider details.
+
 ## Local checkout status
 
 `pantheon-local status` is a local, read-only inspection command. It can be run from the checkout root or any subdirectory and does not contact Pantheon or start a provider.
@@ -122,18 +148,18 @@ Local URL:       http://example-site-feature-a.lndo.site
 Git branch:      feature-a
 Git tracking:    origin/feature-a
 Git state:       clean
-Data source:     (not recorded)
+Data source:     live
 ```
 
 Existing Git checkouts are also supported. When no Pantheon Local Tools state exists, status detects an unambiguous DDEV/Lando project configuration and shows unavailable Pantheon-specific metadata as `(not recorded)` rather than guessing.
 
-`Data source` is reserved for the later pull workflow so the tool never infers database/files provenance from the Git branch.
+`Data source` is written only after a successful `pantheon-local pull`; it is never inferred from the Git branch.
 
 See [`docs/status.md`](docs/status.md) for the complete status contract.
 
 ## Terminus prerequisite
 
-Pantheon Local Tools expects Terminus to already be installed and authenticated before commands access Pantheon. The tool detects missing authentication and fails with an actionable message rather than attempting to manage Pantheon credentials itself.
+Pantheon Local Tools expects Terminus to already be installed and authenticated before commands directly query Pantheon. The tool detects missing authentication and fails with an actionable message rather than attempting to manage Pantheon credentials itself.
 
 Pantheon's official documentation covers both installation and authentication:
 
@@ -143,18 +169,15 @@ Pantheon's official documentation covers both installation and authentication:
 
 A new Terminus installation generally needs a Pantheon machine token for its first authentication. Follow Pantheon's current instructions rather than storing a token in Pantheon Local Tools configuration. After authentication, `terminus auth:whoami` is a useful way to verify the active Pantheon identity.
 
+Provider-delegated commands such as `pull` use the provider's supported authentication boundary instead of copying tokens into Pantheon Local Tools.
+
 ## Local development providers
 
 The first supported providers are **DDEV** and **Lando**.
 
 Drupal.org recommends DDEV for Drupal local development, while existing Pantheon projects may use either DDEV or Lando. Pantheon Local Tools therefore keeps Pantheon and Terminus behavior in a shared core and delegates local-runtime behavior to provider-specific code.
 
-Provider selection follows this order:
-
-1. an explicit `--provider ddev` or `--provider lando` option;
-2. the user's configured default provider;
-3. when configuration is `auto`, unambiguous provider configuration found in the cloned project;
-4. otherwise fail and ask the user to choose rather than guessing.
+For multidev creation, provider selection follows the explicit option, configured default, then safe auto-detection after clone. For commands operating on an existing checkout such as `pull`, recorded checkout state or the checkout's actual provider configuration takes precedence over the global default.
 
 For multidev, DDEV requires an existing `.ddev/config.yaml` and receives a local `.ddev/config.local.yaml` name override. Lando requires an existing `.lando.yml` and receives a local `.lando.local.yml` name override; Drupal Lando projects also receive an isolated `DRUSH_OPTIONS_URI`.
 

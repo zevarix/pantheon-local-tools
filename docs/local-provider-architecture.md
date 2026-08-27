@@ -2,7 +2,7 @@
 
 Pantheon Local Tools separates Pantheon operations from the local development environment used to run a project.
 
-The goal is for commands such as `pantheon-local multidev`, `pantheon-local pull`, and `pantheon-local status` to expose one consistent user workflow while delegating environment-specific details to a provider adapter.
+Commands such as `pantheon-local multidev`, `pantheon-local pull`, and `pantheon-local status` expose one consistent user workflow while delegating environment-specific behavior to provider adapters.
 
 The initial release is being validated against Drupal projects. The shared Pantheon/Terminus core should remain framework-neutral where doing so does not weaken validation or safety.
 
@@ -16,18 +16,18 @@ The shared core therefore owns Pantheon concepts. Provider adapters own local-ru
 
 The core is responsible for:
 
-- parsing a Pantheon `site.environment` target;
-- checking Terminus authentication before Pantheon operations;
+- parsing and validating Pantheon site/environment identifiers;
+- checking Terminus authentication when a command directly queries Pantheon;
 - querying Terminus for authoritative site and environment information;
 - reading Pantheon Tags and applying user-configured Tag-to-directory mappings;
 - obtaining the authoritative Git connection for an environment;
 - choosing and creating the local destination path;
 - refusing to overwrite an existing checkout;
 - selecting a provider without guessing when the result is ambiguous;
-- recording non-secret local state needed by later status commands; and
+- recording non-secret local state and data provenance; and
 - presenting consistent errors and status output.
 
-The core must not assume DDEV or Lando naming, start, rebuild, or data-pull behavior.
+The shared layer must not reimplement DDEV or Lando database/files synchronization when the provider already supplies a supported Pantheon workflow.
 
 ## Provider responsibilities
 
@@ -37,7 +37,7 @@ A provider adapter is responsible for local behavior such as:
 - creating local-only configuration for an isolated checkout;
 - calculating the local project name and URL;
 - starting the local environment when explicitly requested;
-- eventually importing database/files through the provider's supported workflow; and
+- importing database/files through the provider's supported Pantheon workflow; and
 - reporting provider-specific status.
 
 The first providers are DDEV and Lando.
@@ -46,30 +46,59 @@ The first providers are DDEV and Lando.
 
 DDEV projects use `.ddev/config.yaml` and may use local-only `config.*.yaml` overrides such as `.ddev/config.local.yaml`.
 
-The current multidev implementation requires an existing `.ddev/config.yaml`; it does not synthesize the project's base DDEV configuration. It creates only the isolated local name override.
+The multidev workflow requires an existing `.ddev/config.yaml`; it does not synthesize the project's base DDEV configuration. It creates only the isolated local name override.
 
-Pantheon documents DDEV provider integration that supports `ddev pull pantheon`. The later `pull` command should prefer supported provider integration when the project is configured for it rather than reimplementing provider behavior unnecessarily.
+For data pulls, DDEV's Pantheon provider is the implementation boundary. `pantheon-local pull ENV` delegates to `ddev pull pantheon` and supplies the requested environment as a one-time `DDEV_PANTHEON_ENVIRONMENT` override. When Pantheon Local Tools has a recorded site name, it also supplies `DDEV_PANTHEON_SITE` for an explicit site/environment binding. The project configuration is not rewritten.
+
+DDEV's provider integration pulls database and files, not Git code.
 
 ### Lando
 
 Lando projects use `.lando.yml`. Checkout-specific settings can be placed in `.lando.local.yml`, which Lando loads after the shared Landofile.
 
-The current multidev implementation requires an existing `.lando.yml` and creates only the minimum local override needed for an isolated checkout. For Drupal sites it also corrects `DRUSH_OPTIONS_URI` to the isolated local app URL.
+The multidev workflow requires an existing `.lando.yml` and creates only the minimum local override needed for an isolated checkout. For Drupal sites it also corrects `DRUSH_OPTIONS_URI` to the isolated local app URL.
+
+For data pulls, `pantheon-local pull ENV` delegates to Lando's Pantheon recipe with explicit sources:
+
+```text
+lando pull --code=none --database=ENV --files=ENV
+```
+
+The explicit `--code=none` avoids Lando's default behavior of deriving a code source from the current Git branch.
 
 ## Provider selection
 
-Provider selection follows this precedence:
+Provider selection is command-sensitive.
 
-1. explicit command option (`--provider ddev` or `--provider lando`);
-2. user configuration (`pantheon-local config set provider ...`);
-3. unambiguous provider configuration found in the cloned project when the configured value is `auto`;
-4. otherwise fail and require an explicit choice.
+For `multidev`, selection follows:
 
-`auto` is a detection mode, not permission to guess.
+1. explicit `--provider ddev|lando`;
+2. the configured default provider;
+3. when the configured value is `auto`, unambiguous provider configuration found after cloning;
+4. otherwise fail.
 
-If both DDEV and Lando configurations exist, or neither can be identified reliably, the command stops unless the user supplied or configured a provider.
+For `pull`, the existing checkout is authoritative:
 
-A dry-run cannot inspect a future checkout, so `provider=auto` requires `--provider` for a fully resolved multidev dry-run.
+1. explicit `--provider ddev|lando`;
+2. provider recorded in Pantheon Local Tools checkout state;
+3. unambiguous `.ddev/config.yaml` or `.lando.yml` detection;
+4. otherwise fail.
+
+The global default is intentionally not used to override an existing checkout's provider identity.
+
+`auto` is detection, not permission to guess. If both provider configurations exist, an explicit provider is required unless Pantheon Local Tools already recorded which provider owns the checkout.
+
+## Local state
+
+Non-secret state lives inside the checkout's Git metadata:
+
+```text
+.git/pantheon-local-tools/state
+```
+
+Multidev records site/environment/Tag/provider/local identity. A successful `pull` records `data.source=ENV` only after the provider returns success and the tool verifies that Git `HEAD` and tracked content are unchanged.
+
+This state is local metadata, not application configuration, and is never committed.
 
 ## Local configuration
 
@@ -90,9 +119,12 @@ Pantheon Tag routing is also user-defined. Pantheon Tags are the authoritative s
 - Never overwrite an existing checkout.
 - Build a new multidev checkout in a temporary sibling path and finalize it only after provider configuration succeeds.
 - Never commit machine-specific provider overrides automatically.
-- Never embed Pantheon tokens, SSH keys, credentials, or organization-private values.
-- Never start, rebuild, delete, or otherwise mutate a local runtime as a hidden side effect.
+- Never embed or collect Pantheon tokens, SSH keys, credentials, or organization-private values.
+- Never start, rebuild, delete, or otherwise mutate a local runtime as an unrelated hidden side effect.
 - Never perform a Pantheon remote write unless the user explicitly requested an operation that requires it.
+- Pull database/files through documented provider interfaces rather than reimplementing synchronization.
+- Pass explicit pull environments instead of inferring data provenance from the Git branch.
+- Verify that data pulls did not change Git `HEAD` or tracked content before recording provenance.
 - Fail on ambiguous Tag routing or provider selection instead of guessing.
 - Keep organization-specific Pantheon Tags and directory mappings out of the repository.
 
@@ -102,5 +134,7 @@ Pantheon Tag routing is also user-defined. Pantheon Tags are the authoritative s
 - Pantheon DDEV guide: https://docs.pantheon.io/guides/local-development/ddev
 - Pantheon local development guide: https://docs.pantheon.io/guides/local-development
 - Pantheon Terminus commands: https://docs.pantheon.io/terminus/commands
-- DDEV configuration overrides: https://ddev.readthedocs.io/en/stable/users/configuration/config/
+- DDEV Pantheon integration: https://docs.ddev.com/en/stable/users/providers/pantheon/
+- DDEV pull command: https://docs.ddev.com/en/stable/users/usage/commands/#pull
+- Lando Pantheon syncing: https://docs.lando.dev/plugins/pantheon/sync.html
 - Lando Landofile override files: https://docs.lando.dev/landofile/index.html

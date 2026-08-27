@@ -26,14 +26,16 @@ Local URL:       http://example-site-feature-a.lndo.site
 Git branch:      feature-a
 Git tracking:    origin/feature-a
 Git state:       clean
-Data source:     (not recorded)
+Data source:     live
 ```
 
 ## Managed and existing checkouts
 
 A checkout is reported as `Managed: yes` when Pantheon Local Tools state exists for it. Existing Git checkouts that were not created by the tool are still useful with `status`: DDEV or Lando is detected from an unambiguous project configuration, while Pantheon-specific values that have not been recorded are shown as `(not recorded)`.
 
-Status does not guess when both DDEV and Lando project configuration are present; it reports the provider as ambiguous.
+A successful `pantheon-local pull` may create local Pantheon Local Tools state for an existing checkout so the detected provider and data provenance can be retained without modifying application files.
+
+Status does not guess when both DDEV and Lando project configuration are present; it reports the provider as ambiguous unless local state already records which provider owns the checkout.
 
 ## Git information
 
@@ -57,9 +59,11 @@ It does not run `ddev`, `lando`, Docker, or Terminus. Runtime health and provide
 
 ## Data source
 
-`Data source` is reserved for the later `pantheon-local pull` workflow. Until a database/files source has been recorded for the checkout, status displays `(not recorded)`.
+After a successful `pantheon-local pull ENV`, status displays the environment recorded as `data.source` in local Git metadata.
 
-This lets `status` remain stable as pull support is added without inventing a data source from the current Git branch.
+If no successful database/files source has been recorded, status displays `(not recorded)`. It never infers data provenance from the current Git branch.
+
+Provider failures or post-pull Git-safety failures do not update the recorded data source.
 
 ## Safety
 

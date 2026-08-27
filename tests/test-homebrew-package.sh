@@ -86,7 +86,13 @@ assert_eq "$("$FORMULA_CLI" --version)" "$expected"
 assert_eq "$("$FORMULA_CLI" version)" "$expected"
 
 TEST_HOME="$TMP_ROOT/home"
+CALLER_CONFIG="$TMP_ROOT/caller-config"
 mkdir -p "$TEST_HOME"
-assert_eq "$(HOME="$TEST_HOME" "$FORMULA_CLI" config path)" "$TEST_HOME/.config/pantheon-local-tools/config"
+assert_eq "$(PANTHEON_LOCAL_CONFIG="$CALLER_CONFIG" "$FORMULA_CLI" config path)" "$CALLER_CONFIG"
+DEFAULT_CONFIG_PATH=$(
+  unset PANTHEON_LOCAL_CONFIG XDG_CONFIG_HOME
+  HOME="$TEST_HOME" "$FORMULA_CLI" config path
+)
+assert_eq "$DEFAULT_CONFIG_PATH" "$TEST_HOME/.config/pantheon-local-tools/config"
 
 printf 'homebrew package tests passed\n'

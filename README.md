@@ -23,12 +23,13 @@ pantheon-local multidev SITE.ENV
 pantheon-local multidev SITE.ENV --dry-run
 pantheon-local multidev SITE.ENV --provider lando --group migration
 pantheon-local multidev SITE.ENV --provider ddev --start
+
+pantheon-local status
 ```
 
-Planned workflow commands are:
+The next planned workflow command is:
 
-- `pantheon-local pull ENV` — refresh database/files for a normal local checkout without changing checked-out code.
-- `pantheon-local status` — show the local checkout, selected provider, local URL, Git branch, and recorded Pantheon data source.
+- `pantheon-local pull ENV` — refresh database/files for a local checkout without changing checked-out code.
 
 Convenience wrapper commands may be added after the canonical `pantheon-local` interface is stable.
 
@@ -101,6 +102,35 @@ pantheon-local multidev SITE.ENV --group migration
 
 See [`docs/multidev.md`](docs/multidev.md) for the full safety and provider behavior contract.
 
+## Local checkout status
+
+`pantheon-local status` is a local, read-only inspection command. It can be run from the checkout root or any subdirectory and does not contact Pantheon or start a provider.
+
+For checkouts created by Pantheon Local Tools it reports recorded Pantheon metadata together with current Git state:
+
+```text
+Pantheon Local Tools status
+
+Directory:       /home/example/sites/clients/multidev/example-site-feature-a
+Managed:         yes
+Pantheon:        example-site.feature-a
+Tag:             Client Sites
+Provider:        lando
+Provider config: present
+Local name:      example-site-feature-a
+Local URL:       http://example-site-feature-a.lndo.site
+Git branch:      feature-a
+Git tracking:    origin/feature-a
+Git state:       clean
+Data source:     (not recorded)
+```
+
+Existing Git checkouts are also supported. When no Pantheon Local Tools state exists, status detects an unambiguous DDEV/Lando project configuration and shows unavailable Pantheon-specific metadata as `(not recorded)` rather than guessing.
+
+`Data source` is reserved for the later pull workflow so the tool never infers database/files provenance from the Git branch.
+
+See [`docs/status.md`](docs/status.md) for the complete status contract.
+
 ## Terminus prerequisite
 
 Pantheon Local Tools expects Terminus to already be installed and authenticated before commands access Pantheon. The tool detects missing authentication and fails with an actionable message rather than attempting to manage Pantheon credentials itself.
@@ -158,6 +188,8 @@ A Homebrew installation path is planned for the first shareable tagged release. 
 
 ## Development
 
+The installed `bin/pantheon-local` command is a small dispatcher. Command implementations live under `libexec/`, which keeps workflow slices independently testable while preserving one public CLI.
+
 Run the test suite directly:
 
 ```bash
@@ -169,7 +201,7 @@ done
 Run ShellCheck when available:
 
 ```bash
-shellcheck bin/pantheon-local install.sh tests/test-*.sh
+shellcheck bin/pantheon-local libexec/pantheon-local-* install.sh tests/test-*.sh
 ```
 
 CI runs syntax validation, ShellCheck, and the test suite on both Ubuntu and macOS. WSL behavior is covered by Linux-path contract tests and will receive a real WSL integration pass before the first tagged release.

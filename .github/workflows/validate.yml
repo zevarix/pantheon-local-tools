@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install ShellCheck on Ubuntu
         if: runner.os == 'Linux'
@@ -40,7 +40,7 @@ jobs:
             [ -n "$file" ] || continue
             bash -n "$file"
           done < <(find . -type f \
-            \( -name '*.sh' -o -path './bin/*' \) \
+            \( -name '*.sh' -o -path './bin/*' -o -path './libexec/*' \) \
             -not -path './.git/*' \
             -print)
 
@@ -52,7 +52,7 @@ jobs:
             [ -n "$file" ] || continue
             shellcheck "$file"
           done < <(find . -type f \
-            \( -name '*.sh' -o -path './bin/*' \) \
+            \( -name '*.sh' -o -path './bin/*' -o -path './libexec/*' \) \
             -not -path './.git/*' \
             -print)
 

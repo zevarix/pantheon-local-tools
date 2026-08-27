@@ -8,6 +8,7 @@ usage() {
 Usage:
   pantheon-local config ...
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
+  pantheon-local pull ENV [--provider ddev|lando]
   pantheon-local status
 
 Run `pantheon-local config help` for configuration commands.
@@ -39,10 +40,16 @@ script_dir() {
 SCRIPT_DIR=$(script_dir "$0")
 LIBEXEC_DIR="$SCRIPT_DIR/../libexec"
 CORE="$LIBEXEC_DIR/pantheon-local-core"
+PULL="$LIBEXEC_DIR/pantheon-local-pull"
 STATUS="$LIBEXEC_DIR/pantheon-local-status"
 
 command=${1:-}
 case "$command" in
+  pull)
+    [ -x "$PULL" ] || die "pull module is missing or not executable: $PULL"
+    shift
+    exec "$PULL" "$@"
+    ;;
   status)
     [ -x "$STATUS" ] || die "status module is missing or not executable: $STATUS"
     shift

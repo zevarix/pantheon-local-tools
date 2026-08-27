@@ -26,11 +26,12 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Include OS, shell, Lando version, Terminus version, and relevant tool version when known.
+      description: Include OS, shell, local provider and version (for example DDEV or Lando), Terminus version, and tool version when known.
       placeholder: |
         OS:
         Shell:
-        Lando:
+        Local provider:
+        Provider version:
         Terminus:
         Pantheon Local Tools:
     validations:

@@ -41,6 +41,8 @@ class PantheonLocalTools < Formula
   sha256 "$SHA256_NORMALIZED"
   license "MIT"
 
+  depends_on "git"
+
   def install
     libexec.install "bin", "libexec", "VERSION", "LICENSE", "README.md"
     bin.install_symlink libexec/"bin/pantheon-local"
@@ -48,7 +50,10 @@ class PantheonLocalTools < Formula
 
   test do
     assert_match "pantheon-local #{version}", shell_output("#{bin}/pantheon-local --version")
-    assert_match "pantheon-local #{version}", shell_output("#{bin}/pantheon-local version")
+
+    ENV["PANTHEON_LOCAL_CONFIG"] = testpath/"config"
+    system bin/"pantheon-local", "config", "set", "provider", "lando"
+    assert_equal "lando", shell_output("#{bin}/pantheon-local config get provider").strip
   end
 end
 EOF

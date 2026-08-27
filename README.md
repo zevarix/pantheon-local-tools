@@ -2,7 +2,7 @@
 
 Local development helpers for Pantheon and Lando workflows.
 
-This project is being built to make common Pantheon local-development tasks safer and more repeatable without hard-coding one developer's machine layout or organization naming conventions.
+This project is being built to make common Pantheon local-development tasks safer and more repeatable without hard-coding one developer's machine layout, employer, organization naming conventions, Pantheon tags, or local directory mappings.
 
 ## Planned commands
 
@@ -14,10 +14,13 @@ This project is being built to make common Pantheon local-development tasks safe
 
 - Use Terminus as the authoritative source for Pantheon site/environment data.
 - Keep local filesystem roots configurable per developer.
-- Support Pantheon site tags for routing sites into local project families.
+- Allow optional Pantheon tag-to-local-directory routing through user configuration.
+- Keep all organization-specific prefixes, Pantheon tags, and local directory mappings in user configuration rather than source code.
 - Generate per-checkout `.lando.local.yml` files for isolated multidev names and URLs.
 - Fail safely rather than overwrite an existing checkout or guess when routing is ambiguous.
 - Keep machine-specific configuration outside the repository.
+
+For example, one organization might map a Pantheon tag such as `Agency` to a local `agency/` directory while another developer may use no tag routing at all. Those choices belong in that developer's local configuration and are not project defaults.
 
 ## Status
 
@@ -36,7 +39,7 @@ Exact supported versions will be documented after integration testing.
 
 ## Contributing
 
-Contributions are welcome. See `CONTRIBUTING.md` once the initial project baseline lands.
+Contributions are welcome. See `CONTRIBUTING.md`.
 
 ## License
 

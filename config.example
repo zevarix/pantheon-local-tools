@@ -1,0 +1,23 @@
+# Pantheon Local Tools user configuration example
+#
+# Copy this file to:
+#   ~/.config/pantheon-local-tools/config
+#
+# Machine- and organization-specific values belong in the user config, not
+# in this repository.
+
+# Root directory under which local Pantheon projects are organized.
+PANTHEON_LOCAL_ROOT="$HOME/lando"
+
+# Optional organization/site prefix. Leave empty when no shared prefix is used.
+PANTHEON_SITE_PREFIX=""
+
+# Optional Pantheon tag -> local folder routing.
+#
+# These examples are intentionally generic. Replace or remove them in your
+# local config. The implementation will fail rather than guess when routing is
+# ambiguous.
+declare -A PANTHEON_TAG_ROUTES=(
+  ["ExampleGroup"]="example-group"
+  ["AnotherGroup"]="another-group"
+)

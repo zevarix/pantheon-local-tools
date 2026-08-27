@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose an improvement to Pantheon Local Tools
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow
+      description: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the behavior you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional. Describe workarounds or alternative designs you considered.
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety or compatibility considerations
+      description: Note any remote writes, destructive operations, path handling, platform compatibility, or configuration concerns.

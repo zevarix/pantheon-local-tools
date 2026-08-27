@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible problem with Pantheon Local Tools
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Do not include credentials, tokens, SSH keys, or other secrets.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest reliable set of steps and commands that reproduces the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, shell, Lando version, Terminus version, and relevant tool version when known.
+      placeholder: |
+        OS:
+        Shell:
+        Lando:
+        Terminus:
+        Pantheon Local Tools:
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: Paste sanitized output or logs. Remove credentials and private data first.
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, tokens, keys, passwords, and other secrets from this report.
+          required: true

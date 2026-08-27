@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local pull ENV [--provider ddev|lando]
+
+Refresh the local database and files from one Pantheon environment without
+changing checked-out Git code.
+USAGE
+}
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+validate_environment() {
+  local env=$1
+  [ -n "$env" ] || die 'Pantheon environment cannot be empty'
+  printf '%s\n' "$env" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]*$' || \
+    die "Pantheon environment contains unsupported characters: $env"
+}
+
+git_root() {
+  git rev-parse --show-toplevel 2>/dev/null || die 'pull must be run inside a Git checkout'
+}
+
+git_dir_for_root() {
+  local root=$1 git_dir
+  git_dir=$(git -C "$root" rev-parse --git-dir)
+  case "$git_dir" in
+    /*) printf '%s\n' "$git_dir" ;;
+    *) printf '%s/%s\n' "$root" "$git_dir" ;;
+  esac
+}
+
+state_get() {
+  local state=$1 key=$2
+  [ -f "$state" ] || return 1
+  git config --file "$state" --get "$key" 2>/dev/null
+}
+
+provider_config_present() {
+  local root=$1 provider=$2
+  case "$provider" in
+    ddev) [ -f "$root/.ddev/config.yaml" ] ;;
+    lando) [ -f "$root/.lando.yml" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+detect_provider() {
+  local root=$1 has_ddev=false has_lando=false
+  provider_config_present "$root" ddev && has_ddev=true
+  provider_config_present "$root" lando && has_lando=true
+
+  case "$has_ddev:$has_lando" in
+    true:false) printf '%s\n' ddev ;;
+    false:true) printf '%s\n' lando ;;
+    true:true) die 'both DDEV and Lando project configuration were found; choose --provider explicitly' ;;
+    false:false) die 'neither DDEV nor Lando project configuration was found' ;;
+  esac
+}
+
+resolve_provider() {
+  local root=$1 state=$2 override=$3 recorded=''
+
+  if [ -n "$override" ]; then
+    case "$override" in
+      ddev|lando) ;;
+      *) die '--provider must be ddev or lando' ;;
+    esac
+    provider_config_present "$root" "$override" || \
+      die "$override provider selected but its project configuration is missing"
+    printf '%s\n' "$override"
+    return
+  fi
+
+  recorded=$(state_get "$state" local.provider || true)
+  if [ -n "$recorded" ]; then
+    case "$recorded" in
+      ddev|lando)
+        provider_config_present "$root" "$recorded" || \
+          die "recorded provider $recorded no longer has project configuration"
+        printf '%s\n' "$recorded"
+        return
+        ;;
+      *) die "unsupported provider recorded in local state: $recorded" ;;
+    esac
+  fi
+
+  detect_provider "$root"
+}
+
+tracked_fingerprint() {
+  local root=$1
+  git -C "$root" diff --binary HEAD -- | git hash-object --stdin
+}
+
+run_lando_pull() {
+  local root=$1 env=$2
+  require_command lando
+  (
+    cd "$root"
+    lando pull --code=none --database="$env" --files="$env"
+  )
+}
+
+run_ddev_pull() {
+  local root=$1 env=$2 site=$3 environment_arg
+  require_command ddev
+  [ -f "$root/.ddev/providers/pantheon.yaml" ] || \
+    die 'DDEV Pantheon provider is missing: .ddev/providers/pantheon.yaml'
+
+  if [ -n "$site" ]; then
+    environment_arg="DDEV_PANTHEON_SITE=$site,DDEV_PANTHEON_ENVIRONMENT=$env"
+  else
+    environment_arg="DDEV_PANTHEON_ENVIRONMENT=$env"
+  fi
+
+  (
+    cd "$root"
+    ddev pull pantheon --environment="$environment_arg" -y
+  )
+}
+
+record_pull_state() {
+  local state=$1 provider=$2 env=$3
+  mkdir -p "${state%/*}"
+  git config --file "$state" --replace-all local.provider "$provider"
+  git config --file "$state" --replace-all data.source "$env"
+}
+
+pull_command() {
+  local env='' provider_override='' root git_dir state provider site
+  local head_before head_after diff_before diff_after
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --provider)
+        [ "$#" -ge 2 ] || die '--provider requires ddev or lando'
+        provider_override=$2
+        shift 2
+        ;;
+      -h|--help|help)
+        usage
+        return
+        ;;
+      --*) die "unknown pull option: $1" ;;
+      *)
+        [ -z "$env" ] || die 'pull accepts exactly one Pantheon environment'
+        env=$1
+        shift
+        ;;
+    esac
+  done
+
+  [ -n "$env" ] || die 'usage: pantheon-local pull ENV [--provider ddev|lando]'
+  validate_environment "$env"
+  require_command git
+
+  root=$(git_root)
+  git_dir=$(git_dir_for_root "$root")
+  state="$git_dir/pantheon-local-tools/state"
+  provider=$(resolve_provider "$root" "$state" "$provider_override")
+  site=$(state_get "$state" pantheon.site || true)
+
+  head_before=$(git -C "$root" rev-parse HEAD)
+  diff_before=$(tracked_fingerprint "$root")
+
+  printf 'Pulling Pantheon data\n\n'
+  printf 'Environment: %s\n' "$env"
+  printf 'Provider:    %s\n' "$provider"
+  printf 'Directory:   %s\n\n' "$root"
+
+  case "$provider" in
+    lando) run_lando_pull "$root" "$env" ;;
+    ddev) run_ddev_pull "$root" "$env" "$site" ;;
+    *) die "unsupported provider: $provider" ;;
+  esac
+
+  head_after=$(git -C "$root" rev-parse HEAD)
+  diff_after=$(tracked_fingerprint "$root")
+
+  [ "$head_before" = "$head_after" ] || \
+    die 'provider pull changed Git HEAD; refusing to record data provenance'
+  [ "$diff_before" = "$diff_after" ] || \
+    die 'provider pull changed tracked Git content; refusing to record data provenance'
+
+  record_pull_state "$state" "$provider" "$env"
+
+  printf '\nPantheon data pull complete\n'
+  printf 'Data source: %s\n' "$env"
+  printf 'Git code:    unchanged\n'
+}
+
+pull_command "$@"

@@ -1,5 +1,9 @@
 # Pantheon Local Tools
 
+[![Validate](https://github.com/zevarix/pantheon-local-tools/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/zevarix/pantheon-local-tools/actions/workflows/validate.yml)
+
+> **Pre-release:** `v0.1.0` is still completing real DDEV, WSL2, and clean-host validation. The command/configuration surface is documented, but no stable release has been tagged yet. See [`CHANGELOG.md`](CHANGELOG.md) and [release readiness](https://github.com/zevarix/pantheon-local-tools/issues/7).
+
 Provider-neutral local development helpers for Pantheon workflows, with DDEV and Lando as the first supported local providers.
 
 Pantheon Local Tools is being built to make common Pantheon local-development tasks safer and more repeatable without hard-coding one developer's machine layout, employer, organization naming conventions, Pantheon Tags, local directory mappings, or local development stack.
@@ -222,6 +226,8 @@ pantheon-local --version
 
 The documented command/configuration and safety guarantees for the `0.1.x` line are defined in [`docs/compatibility.md`](docs/compatibility.md). Patch releases should preserve that contract; intentionally breaking pre-1.0 changes belong in a future minor release with release notes/migration guidance.
 
+See [`CHANGELOG.md`](CHANGELOG.md) for user-visible changes and current pre-release validation status.
+
 ## Installation and distribution
 
 ### Install from a clone
@@ -264,7 +270,7 @@ The package installs application files under `/usr/lib/pantheon-local-tools`, ex
 
 The clone installer remains supported as the portable fallback for macOS, Linux, WSL, contributors, and CI even after package-manager distribution is published.
 
-Maintainers should follow [`docs/releasing.md`](docs/releasing.md) for the tag, deterministic source archive, checksums, GitHub Release, Homebrew formula, and Debian artifact sequence.
+Maintainers should follow [`docs/releasing.md`](docs/releasing.md) for the tag, deterministic source archive, checksums, GitHub Release, Homebrew formula, and Debian artifact sequence. Real provider/host release gates are in [`docs/real-integration-validation.md`](docs/real-integration-validation.md).
 
 ## Development
 
@@ -288,8 +294,12 @@ CI runs syntax validation, ShellCheck, and the full shell integration suite on b
 
 ## Contributing
 
-Contributions are welcome. See `CONTRIBUTING.md`.
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
-MIT license. See `LICENSE`.
+MIT license. See [`LICENSE`](LICENSE).
+
+## Independence
+
+Pantheon Local Tools is an independent open-source project. It is not an official Pantheon Systems project, and Pantheon remains authoritative for its platform, Terminus, and published product documentation.

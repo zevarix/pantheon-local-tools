@@ -134,9 +134,9 @@ See [`docs/pull.md`](docs/pull.md) for the complete pull safety contract and pro
 
 ## Local checkout status
 
-`pantheon-local status` is a local, read-only inspection command. It can be run from the checkout root or any subdirectory and does not contact Pantheon or start a provider.
+`pantheon-local status` is a local, read-only inspection command. It can be run from the checkout root or any subdirectory and does not contact Pantheon or start/rebuild a provider.
 
-For checkouts created by Pantheon Local Tools it reports recorded Pantheon metadata together with current Git state and independent database/files provenance:
+For checkouts created by Pantheon Local Tools it reports recorded Pantheon metadata together with current Git state and independent database/files provenance. When provider runtime metadata is safely available, the provider's actual application URL takes precedence over a recorded fallback:
 
 ```text
 Pantheon Local Tools status
@@ -148,7 +148,8 @@ Tag:             Client Sites
 Provider:        lando
 Provider config: present
 Local name:      example-site-feature-a
-Local URL:       http://example-site-feature-a.lndo.site
+Local URL:       https://example-site-feature-a.example.test
+URL source:      provider runtime
 Git branch:      feature-a
 Git tracking:    origin/feature-a
 Git state:       clean
@@ -157,6 +158,8 @@ Files source:    live
 ```
 
 Existing Git checkouts are also supported. When no Pantheon Local Tools state exists, status detects an unambiguous DDEV/Lando project configuration and shows unavailable Pantheon-specific metadata as `(not recorded)` rather than guessing.
+
+URL discovery is best-effort and read-only: Lando is inspected through `lando info`, while DDEV exposes its `primary_url` through `ddev describe -j`. The tool does not assume a universal `lndo.site` or `ddev.site` suffix and never starts or rewrites a provider just to obtain a URL. If runtime discovery is unavailable, status falls back to recorded local metadata.
 
 Database/files sources are written only after successful `pantheon-local pull` operations; they are never inferred from the Git branch.
 
@@ -184,7 +187,9 @@ Drupal.org recommends DDEV for Drupal local development, while existing Pantheon
 
 For multidev creation, provider selection follows the explicit option, configured default, then safe auto-detection after clone. For commands operating on an existing checkout such as `pull`, recorded checkout state or the checkout's actual provider configuration takes precedence over the global default.
 
-For multidev, DDEV requires an existing `.ddev/config.yaml` and receives a local `.ddev/config.local.yaml` name override. Lando requires an existing `.lando.yml` and receives a local `.lando.local.yml` name override; Drupal Lando projects also receive an isolated `DRUSH_OPTIONS_URI`.
+For multidev, DDEV requires an existing `.ddev/config.yaml` and receives a local `.ddev/config.local.yaml` name override. Lando requires an existing `.lando.yml` and receives a local `.lando.local.yml` isolation override.
+
+Pantheon Local Tools is additive around provider-owned project configuration. It does not replace `.lando.yml` or `.ddev/config.yaml`, and it must preserve existing services/tooling/add-ons such as phpMyAdmin, Redis, Solr, MailHog, custom Lando tooling, DDEV extra hostnames, and `docker-compose.*.yaml` services. If a local override cannot be changed safely, the tool must fail rather than clobber it.
 
 Generated provider overrides are added to the checkout's `.git/info/exclude`; the project's shared `.gitignore` is not modified.
 
@@ -212,7 +217,7 @@ cd pantheon-local-tools
 
 The installer creates a symlink at `~/.local/bin/pantheon-local` by default and refuses to overwrite an unrelated existing command. Set `PANTHEON_LOCAL_BIN_DIR` to choose a different destination.
 
-A Homebrew installation path is planned for the first shareable tagged release. The clone installer remains the portable fallback for macOS, Linux, WSL, contributors, and CI.
+A Homebrew installation path is planned for the first shareable tagged release. A native architecture-independent Debian package is also planned for Linux/WSL, with a signed APT repository following after the package layout and upgrade behavior are proven. The clone installer remains the portable fallback for macOS, Linux, WSL, contributors, and CI.
 
 ## Development
 

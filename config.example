@@ -7,12 +7,19 @@
 # in this repository.
 
 # Root directory under which local Pantheon projects are organized.
-PANTHEON_LOCAL_ROOT="$HOME/lando"
+# Override this with any layout that works for your machine.
+PANTHEON_LOCAL_ROOT="$HOME/sites/pantheon"
+
+# Local development provider.
+# Supported planned values: auto, ddev, lando
+# "auto" uses an unambiguous project configuration when one is present and
+# otherwise requires an explicit choice rather than guessing.
+PANTHEON_LOCAL_PROVIDER="auto"
 
 # Optional organization/site prefix. Leave empty when no shared prefix is used.
 PANTHEON_SITE_PREFIX=""
 
-# Optional Pantheon tag -> local folder routing.
+# Optional Pantheon Tag -> local directory routing.
 #
 # These examples are intentionally generic. Replace or remove them in your
 # local config. The implementation will fail rather than guess when routing is

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+REPO_ROOT=$(unset CDPATH; cd -- "$(dirname -- "$0")/.." && pwd)
 CLI=${CLI:-"$REPO_ROOT/bin/pantheon-local"}
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
@@ -23,7 +23,8 @@ assert_eq "$(bash "$CLI" config path)" "$PANTHEON_LOCAL_CONFIG"
 assert_eq "$(bash "$CLI" config get provider)" 'auto'
 assert_eq "$(bash "$CLI" config get root)" "$HOME/sites/pantheon"
 
-bash "$CLI" config set root '~/Pantheon Sites'
+tilde='~'
+bash "$CLI" config set root "$tilde/Pantheon Sites"
 assert_eq "$(bash "$CLI" config get root)" "$HOME/Pantheon Sites"
 
 # WSL uses Linux paths; /mnt/<drive>/... is accepted while native Windows paths are rejected.

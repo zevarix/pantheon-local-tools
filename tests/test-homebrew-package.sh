@@ -13,7 +13,7 @@ BREW_CORE_WAS_TAPPED=0
 cleanup() {
   if command -v brew >/dev/null 2>&1; then
     if brew list --formula "$FORMULA_NAME" >/dev/null 2>&1; then
-      HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
+      HOMEBREW_NO_AUTO_UPDATE=1 \
         brew uninstall --force "$FORMULA_NAME" >/dev/null 2>&1 || true
     fi
     if brew tap | grep -Fx "$TAP" >/dev/null 2>&1; then
@@ -66,9 +66,9 @@ FORMULA="$TAP_ROOT/Formula/pantheon-local-tools.rb"
 bash "$REPO_ROOT/packaging/homebrew/render-formula.sh" "$VERSION" "$URL" "$SHA256" "$FORMULA" >/dev/null
 ruby -c "$FORMULA" >/dev/null
 
-HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
+HOMEBREW_NO_AUTO_UPDATE=1 \
   brew install --build-from-source "$FULL_FORMULA" >/dev/null
-HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
+HOMEBREW_NO_AUTO_UPDATE=1 \
   brew test "$FULL_FORMULA" >/dev/null
 
 PREFIX=$(brew --prefix "$FORMULA_NAME")

@@ -30,6 +30,8 @@ pantheon-local pull live --files-only
 pantheon-local pull feature-a --provider lando
 
 pantheon-local status
+pantheon-local version
+pantheon-local --version
 ```
 
 Convenience wrapper commands may be added after the canonical `pantheon-local` interface is stable.
@@ -206,6 +208,19 @@ The command-line tooling targets:
 On Windows, commands run inside the WSL Linux environment and use Linux paths. Native PowerShell and Command Prompt are not initial targets. The selected local provider must also be installed in a supported configuration for that host environment.
 
 The shipped shell code intentionally avoids Bash 4-only features so it remains compatible with the older Bash supplied by macOS as well as modern Bash on Linux and WSL.
+
+## Versioning and compatibility
+
+The repository-root `VERSION` file is the canonical project version. Development snapshots use a SemVer prerelease such as `0.1.0-dev`; a tagged release contains the exact release version and uses the corresponding `vVERSION` Git tag.
+
+Check the installed version with either:
+
+```bash
+pantheon-local version
+pantheon-local --version
+```
+
+The documented command/configuration and safety guarantees for the `0.1.x` line are defined in [`docs/compatibility.md`](docs/compatibility.md). Patch releases should preserve that contract; intentionally breaking pre-1.0 changes belong in a future minor release with release notes/migration guidance.
 
 ## Install from a clone
 

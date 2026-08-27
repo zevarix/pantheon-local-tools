@@ -24,7 +24,7 @@ The core is responsible for:
 - choosing and creating the local destination path;
 - refusing to overwrite an existing checkout;
 - selecting a provider without guessing when the result is ambiguous;
-- recording non-secret local state and data provenance; and
+- recording non-secret local state and component-specific data provenance; and
 - presenting consistent errors and status output.
 
 The shared layer must not reimplement DDEV or Lando database/files synchronization when the provider already supplies a supported Pantheon workflow.
@@ -50,7 +50,13 @@ The multidev workflow requires an existing `.ddev/config.yaml`; it does not synt
 
 For data pulls, DDEV's Pantheon provider is the implementation boundary. `pantheon-local pull ENV` delegates to `ddev pull pantheon` and supplies the requested environment as a one-time `DDEV_PANTHEON_ENVIRONMENT` override. When Pantheon Local Tools has a recorded site name, it also supplies `DDEV_PANTHEON_SITE` for an explicit site/environment binding. The project configuration is not rewritten.
 
-DDEV's provider integration pulls database and files, not Git code.
+Component selectors map directly to DDEV's supported skip flags:
+
+- default: database + files;
+- `--database-only`: add `--skip-files`;
+- `--files-only`: add `--skip-db`.
+
+DDEV's provider integration pulls data, not Git code.
 
 ### Lando
 
@@ -58,13 +64,27 @@ Lando projects use `.lando.yml`. Checkout-specific settings can be placed in `.l
 
 The multidev workflow requires an existing `.lando.yml` and creates only the minimum local override needed for an isolated checkout. For Drupal sites it also corrects `DRUSH_OPTIONS_URI` to the isolated local app URL.
 
-For data pulls, `pantheon-local pull ENV` delegates to Lando's Pantheon recipe with explicit sources:
+For data pulls, Pantheon Local Tools always passes explicit sources and disables code pulls.
+
+Default database + files:
 
 ```text
 lando pull --code=none --database=ENV --files=ENV
 ```
 
-The explicit `--code=none` avoids Lando's default behavior of deriving a code source from the current Git branch.
+Database only:
+
+```text
+lando pull --code=none --database=ENV --files=none
+```
+
+Files only:
+
+```text
+lando pull --code=none --database=none --files=ENV
+```
+
+The explicit source values avoid Lando's default behavior of deriving unspecified sources from the current Git branch.
 
 ## Provider selection
 
@@ -96,7 +116,16 @@ Non-secret state lives inside the checkout's Git metadata:
 .git/pantheon-local-tools/state
 ```
 
-Multidev records site/environment/Tag/provider/local identity. A successful `pull` records `data.source=ENV` only after the provider returns success and the tool verifies that Git `HEAD` and tracked content are unchanged.
+Multidev records site/environment/Tag/provider/local identity. Successful pulls record database and files provenance independently:
+
+```text
+data.database-source=ENV
+data.files-source=ENV
+```
+
+A full pull updates both. A component-only pull updates only the component that actually changed. Provenance is written only after the provider returns success and the tool verifies that Git `HEAD` and tracked content are unchanged.
+
+Older state containing `data.source=ENV` is treated as both component sources and migrated losslessly on the next successful component-aware pull.
 
 This state is local metadata, not application configuration, and is never committed.
 
@@ -123,8 +152,9 @@ Pantheon Tag routing is also user-defined. Pantheon Tags are the authoritative s
 - Never start, rebuild, delete, or otherwise mutate a local runtime as an unrelated hidden side effect.
 - Never perform a Pantheon remote write unless the user explicitly requested an operation that requires it.
 - Pull database/files through documented provider interfaces rather than reimplementing synchronization.
-- Pass explicit pull environments instead of inferring data provenance from the Git branch.
+- Pass explicit pull environments and component choices instead of inferring data provenance from the Git branch.
 - Verify that data pulls did not change Git `HEAD` or tracked content before recording provenance.
+- Record database/files provenance separately so a partial pull cannot misrepresent the untouched component.
 - Fail on ambiguous Tag routing or provider selection instead of guessing.
 - Keep organization-specific Pantheon Tags and directory mappings out of the repository.
 

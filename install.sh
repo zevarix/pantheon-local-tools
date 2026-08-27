@@ -10,7 +10,7 @@ die() {
 
 [ -n "${HOME:-}" ] || die 'HOME is not set'
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 SOURCE="$SCRIPT_DIR/bin/pantheon-local"
 BIN_DIR=${PANTHEON_LOCAL_BIN_DIR:-"$HOME/.local/bin"}
 DESTINATION="$BIN_DIR/pantheon-local"

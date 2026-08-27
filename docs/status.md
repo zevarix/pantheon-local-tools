@@ -1,6 +1,6 @@
 # Local Checkout Status
 
-`pantheon-local status` reports local checkout metadata without contacting Pantheon and without starting, stopping, or otherwise changing the selected local provider.
+`pantheon-local status` reports local checkout metadata without contacting Pantheon and without starting, stopping, rebuilding, or otherwise changing the selected local provider.
 
 Run it from the checkout root or any subdirectory:
 
@@ -22,7 +22,8 @@ Tag:             Client Sites
 Provider:        lando
 Provider config: present
 Local name:      example-site-feature-a
-Local URL:       http://example-site-feature-a.lndo.site
+Local URL:       https://example-site-feature-a.example.test
+URL source:      provider runtime
 Git branch:      feature-a
 Git tracking:    origin/feature-a
 Git state:       clean
@@ -49,14 +50,47 @@ Status reports:
 
 The command does not invoke a pager.
 
-## Provider behavior
+## Provider URL discovery
 
-Status only checks whether the expected provider project configuration is present:
+The local provider is authoritative for the URL it actually serves. Pantheon Local Tools must not assume that every Lando project uses `*.lndo.site` or every DDEV project uses `*.ddev.site`.
 
-- DDEV: `.ddev/config.yaml`
-- Lando: `.lando.yml`
+When the provider executable is available, status performs a best-effort, read-only inspection:
 
-It does not run `ddev`, `lando`, Docker, or Terminus. Runtime health and provider-discovered URLs can be added later without changing the local/offline status contract.
+- Lando: service URL data from `lando info`;
+- DDEV: `primary_url` from `ddev describe -j`.
+
+Status prefers an HTTPS non-loopback application URL when the provider reports multiple Lando URLs. Provider-specific extra services such as phpMyAdmin, Redis, Solr, MailHog, or custom services are not selected as the application's primary URL merely because they also expose URLs.
+
+Runtime discovery is optional. If the provider is unavailable, stopped in a way that prevents inspection, or does not return a usable application URL, status falls back to the URL already recorded in local checkout state. If neither source is available, it reports `(not available)`.
+
+`URL source` makes that distinction visible:
+
+```text
+URL source:      provider runtime
+```
+
+or:
+
+```text
+URL source:      recorded fallback
+```
+
+Status never starts or rebuilds a provider to discover a URL.
+
+## Provider compatibility contract
+
+Pantheon Local Tools is an additive orchestration layer around an existing local-development project. Provider-owned project configuration remains authoritative.
+
+Status and URL discovery must not:
+
+- rewrite or replace `.lando.yml` or `.ddev/config.yaml`;
+- remove, rename, recreate, or reorder provider-defined services or tooling;
+- alter Lando proxy definitions, custom domains, phpMyAdmin, Redis, Solr, MailHog, or other services;
+- alter DDEV add-ons, `docker-compose.*.yaml` files, extra hostnames, or custom service definitions;
+- start, stop, rebuild, or destroy the provider merely to obtain status information; or
+- write a preferred hostname back into provider configuration.
+
+This contract is covered by regression fixtures containing representative extra services and custom tooling. If future provider behavior cannot be inspected safely, status must fall back rather than mutate the project.
 
 ## Data provenance
 
@@ -95,7 +129,8 @@ Provider failures or post-pull Git-safety failures do not update component prove
 
 - contact Pantheon;
 - require Terminus authentication;
-- start or stop DDEV/Lando;
+- start, stop, rebuild, or destroy DDEV/Lando;
 - alter Git state;
-- write project files; or
+- write project files;
+- rewrite provider configuration; or
 - read or store machine tokens.

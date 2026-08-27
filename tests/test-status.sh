@@ -37,6 +37,7 @@ assert_contains "$(bash "$CLI" --help)" 'pantheon-local status'
 MANAGED="$TMP_ROOT/managed"
 create_repo "$MANAGED" lando
 mkdir -p "$MANAGED/subdir" "$MANAGED/.git/pantheon-local-tools"
+MANAGED_PHYSICAL=$(cd "$MANAGED" && pwd -P)
 STATE="$MANAGED/.git/pantheon-local-tools/state"
 git config --file "$STATE" pantheon.site example-site
 git config --file "$STATE" pantheon.environment feature1
@@ -46,7 +47,7 @@ git config --file "$STATE" local.name example-site-feature1
 git config --file "$STATE" local.url http://example-site-feature1.lndo.site
 
 managed_output=$(cd "$MANAGED/subdir" && bash "$CLI" status)
-assert_contains "$managed_output" "Directory:       $MANAGED"
+assert_contains "$managed_output" "Directory:       $MANAGED_PHYSICAL"
 assert_contains "$managed_output" 'Managed:         yes'
 assert_contains "$managed_output" 'Pantheon:        example-site.feature1'
 assert_contains "$managed_output" 'Tag:             Example Group'

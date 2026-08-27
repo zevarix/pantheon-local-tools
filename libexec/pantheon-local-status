@@ -44,10 +44,18 @@ provider_config_status() {
   local root=$1 provider=$2
   case "$provider" in
     ddev)
-      [ -f "$root/.ddev/config.yaml" ] && printf '%s\n' present || printf '%s\n' missing
+      if [ -f "$root/.ddev/config.yaml" ]; then
+        printf '%s\n' present
+      else
+        printf '%s\n' missing
+      fi
       ;;
     lando)
-      [ -f "$root/.lando.yml" ] && printf '%s\n' present || printf '%s\n' missing
+      if [ -f "$root/.lando.yml" ]; then
+        printf '%s\n' present
+      else
+        printf '%s\n' missing
+      fi
       ;;
     ambiguous) printf '%s\n' ambiguous ;;
     *) printf '%s\n' unknown ;;

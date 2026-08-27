@@ -41,7 +41,7 @@ class PantheonLocalTools < Formula
   sha256 "$SHA256_NORMALIZED"
   license "MIT"
 
-  depends_on "git"
+  uses_from_macos "git"
 
   def install
     libexec.install "bin", "libexec", "VERSION", "LICENSE", "README.md"

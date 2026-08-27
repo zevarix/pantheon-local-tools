@@ -42,9 +42,6 @@ bash "$CLI" config set provider lando
 assert_eq "$(bash "$CLI" config get provider)" 'lando'
 if bash "$CLI" config set provider nope >/dev/null 2>&1; then fail 'invalid provider was accepted'; fi
 
-bash "$CLI" config set site-prefix example
-assert_eq "$(bash "$CLI" config get site-prefix)" 'example'
-
 bash "$CLI" config tag set 'Client Sites.v2' 'clients/main'
 assert_eq "$(bash "$CLI" config tag get 'Client Sites.v2')" 'clients/main'
 assert_contains "$(bash "$CLI" config tag list)" 'Client Sites.v2=clients/main'
@@ -56,8 +53,8 @@ if bash "$CLI" config tag set Unsafe 'foo\\bar' >/dev/null 2>&1; then fail 'back
 output=$(bash "$CLI" config list)
 assert_contains "$output" "root=$HOME/Pantheon Sites"
 assert_contains "$output" 'provider=lando'
-assert_contains "$output" 'site-prefix=example'
 assert_contains "$output" 'tag.Client Sites.v2=clients/main'
+if printf '%s\n' "$output" | grep -q 'site-prefix'; then fail 'removed site-prefix setting is still exposed'; fi
 
 bash "$CLI" config unset provider
 assert_eq "$(bash "$CLI" config get provider)" 'auto'

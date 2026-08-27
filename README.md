@@ -2,13 +2,13 @@
 
 [![Validate](https://github.com/zevarix/pantheon-local-tools/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/zevarix/pantheon-local-tools/actions/workflows/validate.yml)
 
-> **Pre-release:** `v0.1.0` is still completing real DDEV, WSL2, and clean-host validation. The command/configuration surface is documented, but no stable release has been tagged yet. See [`CHANGELOG.md`](CHANGELOG.md) and [release readiness](https://github.com/zevarix/pantheon-local-tools/issues/7).
+> **v0.1.0:** The first public release has completed its required real-provider and real-host validation. See [`CHANGELOG.md`](CHANGELOG.md) and [release readiness](https://github.com/zevarix/pantheon-local-tools/issues/7).
 
 Provider-neutral local development helpers for Pantheon workflows, with DDEV and Lando as the first supported local providers.
 
-Pantheon Local Tools is being built to make common Pantheon local-development tasks safer and more repeatable without hard-coding one developer's machine layout, employer, organization naming conventions, Pantheon Tags, local directory mappings, or local development stack.
+Pantheon Local Tools is built to make common Pantheon local-development tasks safer and more repeatable without hard-coding one developer's machine layout, employer, organization naming conventions, Pantheon Tags, local directory mappings, or local development stack.
 
-The initial release is being validated against Drupal projects. The shared Pantheon/Terminus core stays framework-neutral where doing so does not weaken safety or validation.
+The initial release was validated against Drupal projects. The shared Pantheon/Terminus core stays framework-neutral where doing so does not weaken safety or validation.
 
 ## Commands
 
@@ -226,13 +226,13 @@ pantheon-local --version
 
 The documented command/configuration and safety guarantees for the `0.1.x` line are defined in [`docs/compatibility.md`](docs/compatibility.md). Patch releases should preserve that contract; intentionally breaking pre-1.0 changes belong in a future minor release with release notes/migration guidance.
 
-See [`CHANGELOG.md`](CHANGELOG.md) for user-visible changes and current pre-release validation status.
+See [`CHANGELOG.md`](CHANGELOG.md) for user-visible changes and validation notes.
 
 ## Installation and distribution
 
 ### Install from a clone
 
-The clone installer is the currently usable portable installation path while `v0.1.0` release validation is completed:
+The clone installer is the supported portable installation path and package-manager fallback:
 
 ```bash
 git clone git@github.com:zevarix/pantheon-local-tools.git
@@ -244,17 +244,17 @@ The installer creates a symlink at `~/.local/bin/pantheon-local` by default and 
 
 ### Homebrew
 
-The Homebrew formula path is implemented and exercised by macOS CI through a real temporary tap. After the first tagged release and publication of `zevarix/homebrew-tap`, the intended end-user command is:
+The Homebrew formula path is implemented and exercised by macOS CI through a real temporary tap. The v0.1.0 release publishes the intended end-user install path:
 
 ```bash
 brew install zevarix/tap/pantheon-local-tools
 ```
 
-The publishable formula is deliberately generated only after the immutable release source artifact URL and SHA256 are available. See [`packaging/homebrew/README.md`](packaging/homebrew/README.md).
+The publishable formula is generated only from the immutable release source artifact URL and verified SHA256. See [`packaging/homebrew/README.md`](packaging/homebrew/README.md).
 
 ### Debian / Ubuntu / WSL
 
-An architecture-independent Debian package builder is implemented and tested on Ubuntu:
+An architecture-independent Debian package builder is implemented and tested on Ubuntu and WSL2:
 
 ```bash
 bash packaging/debian/build-deb.sh
@@ -266,7 +266,7 @@ Tagged releases may attach `pantheon-local-tools_<VERSION>_all.deb`. A downloade
 sudo apt install ./pantheon-local-tools_<VERSION>_all.deb
 ```
 
-The package installs application files under `/usr/lib/pantheon-local-tools`, exposes `/usr/bin/pantheon-local`, and leaves user configuration/checkouts outside package ownership. Real WSL install/upgrade/uninstall validation remains a release gate. A hosted signed APT repository is a later distribution layer, not a prerequisite for the first `.deb`. See [`packaging/debian/README.md`](packaging/debian/README.md).
+The package installs application files under `/usr/lib/pantheon-local-tools`, exposes `/usr/bin/pantheon-local`, and leaves user configuration/checkouts outside package ownership. Real package install/upgrade/uninstall validation and any hosted signed APT repository remain follow-up distribution work tracked in #9; they are not implied by shipping the first `.deb`. See [`packaging/debian/README.md`](packaging/debian/README.md).
 
 The clone installer remains supported as the portable fallback for macOS, Linux, WSL, contributors, and CI even after package-manager distribution is published.
 
@@ -290,7 +290,7 @@ Run ShellCheck when available:
 shellcheck bin/pantheon-local libexec/pantheon-local-* install.sh tests/test-*.sh packaging/debian/*.sh packaging/homebrew/*.sh packaging/release/*.sh
 ```
 
-CI runs syntax validation, ShellCheck, and the full shell integration suite on both Ubuntu and macOS. The suite includes isolated-home installer coverage, provider mocks, deterministic release-source packaging, Ubuntu `.deb` layout validation, and macOS Homebrew temporary-tap installation. WSL behavior is covered by Linux-path contract tests and still requires a real WSL integration pass before the first tagged release.
+CI runs syntax validation, ShellCheck, and the full shell integration suite on both Ubuntu and macOS. The suite includes isolated-home installer coverage, provider mocks, deterministic release-source packaging, Ubuntu `.deb` layout validation, and macOS Homebrew temporary-tap installation. Real WSL2 fresh-clone/install/full-suite validation is also complete for v0.1.0.
 
 ## Contributing
 

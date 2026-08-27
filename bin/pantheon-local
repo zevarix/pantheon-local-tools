@@ -10,6 +10,8 @@ Usage:
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
   pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]
   pantheon-local status
+  pantheon-local version
+  pantheon-local --version
 
 Run `pantheon-local config help` for configuration commands.
 USAGE
@@ -37,14 +39,35 @@ script_dir() {
   cd -- "$(dirname -- "$script")" && pwd
 }
 
+print_version() {
+  local version_file=$1 version
+  [ -f "$version_file" ] || die "version file is missing: $version_file"
+  IFS= read -r version < "$version_file" || true
+  [ -n "$version" ] || die "version file is empty: $version_file"
+  case "$version" in
+    *$'\n'*|*$'\r'*|*' '*) die "version file contains an invalid version: $version" ;;
+  esac
+  printf '%s %s\n' "$PROGRAM_NAME" "$version"
+}
+
 SCRIPT_DIR=$(script_dir "$0")
-LIBEXEC_DIR="$SCRIPT_DIR/../libexec"
+PROJECT_ROOT="$SCRIPT_DIR/.."
+VERSION_FILE="$PROJECT_ROOT/VERSION"
+LIBEXEC_DIR="$PROJECT_ROOT/libexec"
 CORE="$LIBEXEC_DIR/pantheon-local-core"
 PULL="$LIBEXEC_DIR/pantheon-local-pull"
 STATUS="$LIBEXEC_DIR/pantheon-local-status"
 
 command=${1:-}
 case "$command" in
+  version)
+    [ "$#" -eq 1 ] || die 'usage: pantheon-local version'
+    print_version "$VERSION_FILE"
+    ;;
+  --version)
+    [ "$#" -eq 1 ] || die 'usage: pantheon-local --version'
+    print_version "$VERSION_FILE"
+    ;;
   pull)
     [ -x "$PULL" ] || die "pull module is missing or not executable: $PULL"
     shift

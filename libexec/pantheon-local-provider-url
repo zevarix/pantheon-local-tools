@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+
+usage() {
+  printf 'usage: %s <ddev|lando> <checkout-root>\n' "$PROGRAM_NAME" >&2
+}
+
+extract_urls() {
+  # Provider output may be JSON, a quoted scalar, or a compact array. URLs do
+  # not contain whitespace, quotes, or commas, so extract them without adding
+  # a JSON-parser runtime dependency to this Bash 3.2-compatible project.
+  grep -Eo 'https?://[^"[:space:],]+' 2>/dev/null || true
+}
+
+is_loopback_url() {
+  case "$1" in
+    http://localhost*|https://localhost*|http://127.*|https://127.*|http://\[::1\]*|https://\[::1\]*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+choose_external_url() {
+  local url first_external=''
+
+  while IFS= read -r url; do
+    [ -n "$url" ] || continue
+    url=${url%/]}
+    is_loopback_url "$url" && continue
+
+    [ -n "$first_external" ] || first_external=$url
+    case "$url" in
+      https://*) printf '%s\n' "$url"; return 0 ;;
+    esac
+  done
+
+  [ -n "$first_external" ] || return 1
+  printf '%s\n' "$first_external"
+}
+
+lando_url() {
+  local root=$1 output service
+  command -v lando >/dev/null 2>&1 || return 1
+
+  # Pantheon's nginx proxy service is appserver_nginx. The fallbacks keep this
+  # useful for older/current recipe shapes without assuming that extra services
+  # (phpMyAdmin, Redis, Solr, etc.) have any particular ordering in lando info.
+  for service in appserver_nginx appserver-nginx appserver; do
+    if output=$(cd "$root" && lando info --service "$service" --format json --path urls 2>/dev/null); then
+      if printf '%s\n' "$output" | extract_urls | choose_external_url; then
+        return 0
+      fi
+    fi
+  done
+
+  return 1
+}
+
+ddev_url() {
+  local root=$1 output url
+  command -v ddev >/dev/null 2>&1 || return 1
+
+  if ! output=$(cd "$root" && ddev describe -j 2>/dev/null); then
+    return 1
+  fi
+
+  # DDEV's JSON describe data exposes primary_url. Extracting the scalar keeps
+  # the host requirements to shell tools already used by this project.
+  url=$(printf '%s\n' "$output" | sed -n 's/.*"primary_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+  [ -n "$url" ] || return 1
+  printf '%s\n' "$url"
+}
+
+main() {
+  [ "$#" -eq 2 ] || { usage; return 2; }
+  local provider=$1 root=$2
+  [ -d "$root" ] || return 1
+
+  case "$provider" in
+    lando) lando_url "$root" ;;
+    ddev) ddev_url "$root" ;;
+    *) usage; return 2 ;;
+  esac
+}
+
+main "$@"

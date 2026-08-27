@@ -2,6 +2,8 @@
 set -euo pipefail
 
 PROGRAM_NAME="pantheon-local"
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+PROVIDER_URL="$SCRIPT_DIR/pantheon-local-provider-url"
 
 usage() {
   cat <<'USAGE'
@@ -9,6 +11,8 @@ Usage:
   pantheon-local status
 
 Shows local checkout metadata without contacting Pantheon or starting a provider.
+When the selected provider is already running, status may query its read-only
+runtime information to report the provider's authoritative local URL.
 USAGE
 }
 
@@ -64,8 +68,8 @@ provider_config_status() {
 
 status_command() {
   local root git_dir state branch tracking git_state dirty managed
-  local site env target tag provider local_name local_url provider_config
-  local legacy_data_source database_source files_source
+  local site env target tag provider provider_base local_name recorded_url local_url url_source provider_config
+  local legacy_data_source database_source files_source runtime_url=''
 
   require_command git
 
@@ -106,7 +110,7 @@ status_command() {
   tag=$(state_get "$state" pantheon.tag || true)
   provider=$(state_get "$state" local.provider || true)
   local_name=$(state_get "$state" local.name || true)
-  local_url=$(state_get "$state" local.url || true)
+  recorded_url=$(state_get "$state" local.url || true)
   legacy_data_source=$(state_get "$state" data.source || true)
   database_source=$(state_get "$state" data.database-source || true)
   files_source=$(state_get "$state" data.files-source || true)
@@ -127,21 +131,40 @@ status_command() {
   fi
 
   if [ -z "$provider" ]; then
-    provider=$(detect_provider_status "$root")
-    case "$provider" in
-      ddev|lando) provider="$provider (detected)" ;;
+    provider_base=$(detect_provider_status "$root")
+    provider=$provider_base
+    case "$provider_base" in
+      ddev|lando) provider="$provider_base (detected)" ;;
+    esac
+  else
+    provider_base=$provider
+  fi
+
+  provider_config=$(provider_config_status "$root" "$provider_base")
+
+  # Runtime discovery is intentionally best-effort and read-only. It never
+  # starts/rebuilds a provider and never makes status depend on provider tools.
+  if [ -x "$PROVIDER_URL" ]; then
+    case "$provider_base" in
+      ddev|lando)
+        runtime_url=$("$PROVIDER_URL" "$provider_base" "$root" 2>/dev/null || true)
+        ;;
     esac
   fi
 
-  case "$provider" in
-    'ddev (detected)') provider_config=$(provider_config_status "$root" ddev) ;;
-    'lando (detected)') provider_config=$(provider_config_status "$root" lando) ;;
-    *) provider_config=$(provider_config_status "$root" "$provider") ;;
-  esac
+  if [ -n "$runtime_url" ]; then
+    local_url=$runtime_url
+    url_source='provider runtime'
+  elif [ -n "$recorded_url" ]; then
+    local_url=$recorded_url
+    url_source='recorded fallback'
+  else
+    local_url='(not available)'
+    url_source='not available'
+  fi
 
   [ -n "$tag" ] || tag='(not recorded)'
   [ -n "$local_name" ] || local_name='(not recorded)'
-  [ -n "$local_url" ] || local_url='(not recorded)'
   [ -n "$database_source" ] || database_source='(not recorded)'
   [ -n "$files_source" ] || files_source='(not recorded)'
 
@@ -154,6 +177,7 @@ status_command() {
   printf 'Provider config: %s\n' "$provider_config"
   printf 'Local name:      %s\n' "$local_name"
   printf 'Local URL:       %s\n' "$local_url"
+  printf 'URL source:      %s\n' "$url_source"
   printf 'Git branch:      %s\n' "$branch"
   printf 'Git tracking:    %s\n' "$tracking"
   printf 'Git state:       %s\n' "$git_state"

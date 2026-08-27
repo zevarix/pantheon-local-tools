@@ -25,7 +25,8 @@ pantheon-local multidev SITE.ENV --provider lando --group migration
 pantheon-local multidev SITE.ENV --provider ddev --start
 
 pantheon-local pull live
-pantheon-local pull test
+pantheon-local pull test --database-only
+pantheon-local pull live --files-only
 pantheon-local pull feature-a --provider lando
 
 pantheon-local status
@@ -104,27 +105,30 @@ See [`docs/multidev.md`](docs/multidev.md) for the full safety and provider beha
 
 ## Data pulls
 
-`pantheon-local pull ENV` refreshes the local database and files from one explicitly named Pantheon environment while preserving the checkout's Git code.
+`pantheon-local pull ENV` refreshes local Pantheon data from one explicitly named environment while preserving the checkout's Git code.
+
+By default both database and files are refreshed. Component-specific workflows are explicit:
+
+```bash
+pantheon-local pull live --database-only
+pantheon-local pull live --files-only
+```
+
+This is useful for Drupal workflows such as refreshing only the database before `drush updb` and `drush cex`, where synchronizing files would add time without helping the change being developed.
 
 The command uses the provider already associated with the checkout. If no provider has been recorded, it detects an unambiguous `.lando.yml` or `.ddev/config.yaml`; ambiguous checkouts require `--provider ddev|lando`.
 
-For Lando, the adapter delegates to the Pantheon recipe with explicit data sources and no code source:
+For Lando, the adapter delegates to the Pantheon recipe with explicit sources and always disables code pulls. For example, database-only becomes:
 
 ```text
-lando pull --code=none --database=ENV --files=ENV
+lando pull --code=none --database=ENV --files=none
 ```
 
-For DDEV, the adapter delegates to DDEV's Pantheon provider with a one-time environment override rather than rewriting project configuration:
-
-```text
-ddev pull pantheon --environment="DDEV_PANTHEON_ENVIRONMENT=ENV" -y
-```
-
-When a Pantheon site name is already recorded in local state, DDEV receives both `DDEV_PANTHEON_SITE` and `DDEV_PANTHEON_ENVIRONMENT` for an explicit binding.
+For DDEV, the adapter delegates to DDEV's Pantheon provider with a one-time environment override and maps component selection to DDEV's `--skip-files` / `--skip-db` flags rather than rewriting project configuration.
 
 Pantheon Local Tools does not collect provider machine tokens. Lando/DDEV own their supported Pantheon authentication workflows.
 
-Before and after the provider pull, the tool verifies that Git `HEAD` and all tracked content are unchanged. Only after provider success and that verification does it record `data.source=ENV` for `pantheon-local status`.
+Before and after the provider pull, the tool verifies that Git `HEAD` and all tracked content are unchanged. Only after provider success and that verification does it update component-specific provenance for `pantheon-local status`.
 
 See [`docs/pull.md`](docs/pull.md) for the complete pull safety contract and provider details.
 
@@ -132,7 +136,7 @@ See [`docs/pull.md`](docs/pull.md) for the complete pull safety contract and pro
 
 `pantheon-local status` is a local, read-only inspection command. It can be run from the checkout root or any subdirectory and does not contact Pantheon or start a provider.
 
-For checkouts created by Pantheon Local Tools it reports recorded Pantheon metadata together with current Git state:
+For checkouts created by Pantheon Local Tools it reports recorded Pantheon metadata together with current Git state and independent database/files provenance:
 
 ```text
 Pantheon Local Tools status
@@ -148,12 +152,13 @@ Local URL:       http://example-site-feature-a.lndo.site
 Git branch:      feature-a
 Git tracking:    origin/feature-a
 Git state:       clean
-Data source:     live
+Database source: test
+Files source:    live
 ```
 
 Existing Git checkouts are also supported. When no Pantheon Local Tools state exists, status detects an unambiguous DDEV/Lando project configuration and shows unavailable Pantheon-specific metadata as `(not recorded)` rather than guessing.
 
-`Data source` is written only after a successful `pantheon-local pull`; it is never inferred from the Git branch.
+Database/files sources are written only after successful `pantheon-local pull` operations; they are never inferred from the Git branch.
 
 See [`docs/status.md`](docs/status.md) for the complete status contract.
 

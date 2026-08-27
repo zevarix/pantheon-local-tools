@@ -433,14 +433,16 @@ ensure_provider_project() {
 }
 
 add_local_exclude() {
-  local checkout=$1 path=$2 exclude="$checkout/.git/info/exclude"
+  local checkout=$1 path=$2 exclude
+  exclude="$checkout/.git/info/exclude"
   mkdir -p "${exclude%/*}"
   touch "$exclude"
   grep -Fx "$path" "$exclude" >/dev/null 2>&1 || printf '%s\n' "$path" >> "$exclude"
 }
 
 write_lando_override() {
-  local checkout=$1 local_name=$2 framework=$3 file="$checkout/.lando.local.yml"
+  local checkout=$1 local_name=$2 framework=$3 file
+  file="$checkout/.lando.local.yml"
   [ ! -e "$file" ] || die 'refusing to overwrite existing .lando.local.yml'
 
   {
@@ -458,7 +460,8 @@ write_lando_override() {
 }
 
 write_ddev_override() {
-  local checkout=$1 local_name=$2 file="$checkout/.ddev/config.local.yaml"
+  local checkout=$1 local_name=$2 file
+  file="$checkout/.ddev/config.local.yaml"
   [ ! -e "$file" ] || die 'refusing to overwrite existing .ddev/config.local.yaml'
   printf 'name: %s\n' "$local_name" > "$file"
   add_local_exclude "$checkout" '.ddev/config.local.yaml'

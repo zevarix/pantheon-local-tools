@@ -79,15 +79,15 @@ default_value() {
 }
 
 expand_home() {
-  local value=$1
+  local value=$1 tilde='~'
   case "$value" in
-    '~')
+    "$tilde")
       [ -n "${HOME:-}" ] || die 'HOME is not set; cannot expand ~'
       printf '%s\n' "$HOME"
       ;;
-    '~/'*)
+    "$tilde"/*)
       [ -n "${HOME:-}" ] || die 'HOME is not set; cannot expand ~/'
-      printf '%s/%s\n' "${HOME%/}" "${value#\~/}"
+      printf '%s/%s\n' "${HOME%/}" "${value#*/}"
       ;;
     *) printf '%s\n' "$value" ;;
   esac

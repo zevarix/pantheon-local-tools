@@ -56,7 +56,25 @@ assert_contains "$managed_output" 'Provider config: present'
 assert_contains "$managed_output" 'Local name:      example-site-feature1'
 assert_contains "$managed_output" 'Local URL:       http://example-site-feature1.lndo.site'
 assert_contains "$managed_output" 'Git state:       clean'
-assert_contains "$managed_output" 'Data source:     (not recorded)'
+assert_contains "$managed_output" 'Database source: (not recorded)'
+assert_contains "$managed_output" 'Files source:    (not recorded)'
+
+# Component-specific provenance remains independent.
+git config --file "$STATE" data.database-source test
+git config --file "$STATE" data.files-source live
+component_output=$(cd "$MANAGED" && bash "$CLI" status)
+assert_contains "$component_output" 'Database source: test'
+assert_contains "$component_output" 'Files source:    live'
+git config --file "$STATE" --unset-all data.database-source
+git config --file "$STATE" --unset-all data.files-source
+
+# Legacy single-source state is interpreted as both components without mutating state.
+git config --file "$STATE" data.source legacy-env
+legacy_output=$(cd "$MANAGED" && bash "$CLI" status)
+assert_contains "$legacy_output" 'Database source: legacy-env'
+assert_contains "$legacy_output" 'Files source:    legacy-env'
+[ "$(git config --file "$STATE" --get data.source)" = legacy-env ] || fail 'status mutated legacy provenance'
+git config --file "$STATE" --unset-all data.source
 
 printf 'dirty\n' >> "$MANAGED/README.md"
 dirty_output=$(cd "$MANAGED" && bash "$CLI" status)
@@ -71,6 +89,8 @@ assert_contains "$unmanaged_output" 'Pantheon:        (not recorded)'
 assert_contains "$unmanaged_output" 'Provider:        ddev (detected)'
 assert_contains "$unmanaged_output" 'Provider config: present'
 assert_contains "$unmanaged_output" 'Local name:      (not recorded)'
+assert_contains "$unmanaged_output" 'Database source: (not recorded)'
+assert_contains "$unmanaged_output" 'Files source:    (not recorded)'
 
 # The installed command is a symlink, so the router must resolve its real script directory.
 mkdir -p "$TMP_ROOT/bin"

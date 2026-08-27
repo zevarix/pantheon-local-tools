@@ -6,6 +6,9 @@ TMP_ROOT=$(mktemp -d)
 FORMULA_NAME='pantheon-local-tools'
 TAP='zevarix-ci/pantheon-local-tools-ci'
 FULL_FORMULA="$TAP/$FORMULA_NAME"
+CORE_TAP='homebrew/core'
+BREW_DEVELOPER_WAS_ENABLED=0
+BREW_CORE_WAS_TAPPED=0
 
 cleanup() {
   if command -v brew >/dev/null 2>&1; then
@@ -15,6 +18,12 @@ cleanup() {
     fi
     if brew tap | grep -Fx "$TAP" >/dev/null 2>&1; then
       HOMEBREW_NO_AUTO_UPDATE=1 brew untap "$TAP" >/dev/null 2>&1 || true
+    fi
+    if [ "$BREW_CORE_WAS_TAPPED" -eq 0 ] && brew tap | grep -Fx "$CORE_TAP" >/dev/null 2>&1; then
+      HOMEBREW_NO_AUTO_UPDATE=1 brew untap "$CORE_TAP" >/dev/null 2>&1 || true
+    fi
+    if [ "$BREW_DEVELOPER_WAS_ENABLED" -eq 0 ]; then
+      HOMEBREW_NO_AUTO_UPDATE=1 brew developer off >/dev/null 2>&1 || true
     fi
   fi
   rm -rf "$TMP_ROOT"
@@ -27,6 +36,13 @@ assert_eq() { [ "$1" = "$2" ] || fail "expected [$2], got [$1]"; }
 if ! command -v brew >/dev/null 2>&1; then
   printf 'homebrew package tests skipped (brew unavailable)\n'
   exit 0
+fi
+
+if brew developer 2>/dev/null | grep -qi 'enabled'; then
+  BREW_DEVELOPER_WAS_ENABLED=1
+fi
+if brew tap | grep -Fx "$CORE_TAP" >/dev/null 2>&1; then
+  BREW_CORE_WAS_TAPPED=1
 fi
 
 if brew list --formula "$FORMULA_NAME" >/dev/null 2>&1; then
@@ -56,6 +72,8 @@ HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
   brew test "$FULL_FORMULA" >/dev/null
 
 PREFIX=$(brew --prefix "$FORMULA_NAME")
+FORMULA_CLI="$PREFIX/bin/pantheon-local"
+[ -x "$FORMULA_CLI" ] || fail 'Homebrew public command is missing'
 [ -x "$PREFIX/libexec/bin/pantheon-local" ] || fail 'Homebrew command payload is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-core" ] || fail 'Homebrew core module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-provider-url" ] || fail 'Homebrew provider URL module is missing'
@@ -64,11 +82,11 @@ PREFIX=$(brew --prefix "$FORMULA_NAME")
 [ -f "$PREFIX/libexec/VERSION" ] || fail 'Homebrew VERSION is missing'
 
 expected="pantheon-local $VERSION"
-assert_eq "$(pantheon-local --version)" "$expected"
-assert_eq "$(pantheon-local version)" "$expected"
+assert_eq "$("$FORMULA_CLI" --version)" "$expected"
+assert_eq "$("$FORMULA_CLI" version)" "$expected"
 
 TEST_HOME="$TMP_ROOT/home"
 mkdir -p "$TEST_HOME"
-assert_eq "$(HOME="$TEST_HOME" pantheon-local config path)" "$TEST_HOME/.config/pantheon-local-tools/config"
+assert_eq "$(HOME="$TEST_HOME" "$FORMULA_CLI" config path)" "$TEST_HOME/.config/pantheon-local-tools/config"
 
 printf 'homebrew package tests passed\n'

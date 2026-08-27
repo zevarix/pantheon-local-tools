@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Editor and IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Test and coverage output
+coverage/
+tmp/
+
+# Local tool configuration must not be committed
+config.local

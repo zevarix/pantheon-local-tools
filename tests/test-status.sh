@@ -16,7 +16,11 @@ cat > "$MOCK_BIN/lando" <<'MOCK'
 set -euo pipefail
 [ "${1:-}" = info ] || exit 2
 [ "${MOCK_LANDO_FAIL:-false}" != true ] || exit 9
-printf '%s\n' "${MOCK_LANDO_URLS:-[\"http://localhost:49152\",\"http://example-runtime.test/\",\"https://example-runtime.test/\"]}"
+if [ -n "${MOCK_LANDO_URLS:-}" ]; then
+  printf '%s\n' "$MOCK_LANDO_URLS"
+else
+  printf '%s\n' '["http://localhost:49152","http://example-runtime.test/","https://example-runtime.test/"]'
+fi
 MOCK
 chmod +x "$MOCK_BIN/lando"
 
@@ -26,7 +30,11 @@ set -euo pipefail
 [ "${1:-}" = describe ] || exit 2
 [ "${2:-}" = -j ] || exit 2
 [ "${MOCK_DDEV_FAIL:-false}" != true ] || exit 9
-printf '%s\n' "${MOCK_DDEV_JSON:-{\"raw\":{\"primary_url\":\"https://example-ddev.test\"}}}"
+if [ -n "${MOCK_DDEV_JSON:-}" ]; then
+  printf '%s\n' "$MOCK_DDEV_JSON"
+else
+  printf '%s\n' '{"raw":{"primary_url":"https://example-ddev.test"}}'
+fi
 MOCK
 chmod +x "$MOCK_BIN/ddev"
 

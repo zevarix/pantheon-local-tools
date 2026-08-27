@@ -27,6 +27,7 @@ escape_ruby_string() {
 
 VERSION_ESCAPED=$(escape_ruby_string "$VERSION")
 URL_ESCAPED=$(escape_ruby_string "$URL")
+SHA256_NORMALIZED=$(printf '%s' "$SHA256" | tr '[:upper:]' '[:lower:]')
 OUTPUT_DIR=${OUTPUT%/*}
 [ "$OUTPUT_DIR" != "$OUTPUT" ] || OUTPUT_DIR='.'
 mkdir -p "$OUTPUT_DIR"
@@ -37,7 +38,7 @@ class PantheonLocalTools < Formula
   homepage "https://github.com/zevarix/pantheon-local-tools"
   url "$URL_ESCAPED"
   version "$VERSION_ESCAPED"
-  sha256 "${SHA256,,}"
+  sha256 "$SHA256_NORMALIZED"
   license "MIT"
 
   def install

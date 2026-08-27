@@ -19,15 +19,17 @@ For every real pass:
 
 ---
 
-# A. Real DDEV + Pantheon integration
+# A. Real DDEV + Pantheon provider integration
 
 ## Purpose
 
-Prove that the generic DDEV adapter works against a real Pantheon project without replacing project-owned DDEV configuration.
+Prove that the DDEV adapter works against a real Pantheon project without replacing project-owned DDEV configuration or allowing provider data transfer to mutate checked-out Git code.
 
-The selected Pantheon environment must already contain a valid project `.ddev/config.yaml` and `.ddev/providers/pantheon.yaml`, because `pantheon-local multidev` deliberately does not synthesize a project's base DDEV setup.
+The selected project must already contain valid `.ddev/config.yaml` and `.ddev/providers/pantheon.yaml`. Pantheon Local Tools deliberately does not synthesize a project's base DDEV setup.
 
 DDEV's current Pantheon integration uses `DDEV_PANTHEON_SITE` and `DDEV_PANTHEON_ENVIRONMENT`; the older unprefixed variables are deprecated. DDEV provider pulls transfer database/files rather than Git code. Provider authentication remains DDEV-owned.
+
+A real Pantheon Multidev command/clone path is already validated through the Lando provider. The additional combination of DDEV with an entitled real Pantheon Multidev is tracked separately in #24 and is not required to repeat the provider-runtime/data-transfer proof below.
 
 Upstream references:
 
@@ -57,102 +59,66 @@ Ensure DDEV's Pantheon provider authentication is configured through DDEV's supp
 Choose privately:
 
 ```bash
-TARGET='SITE.MULTIDEV_ENV'
+PROJECT_ROOT='/path/to/disposable/pantheon-checkout'
 DATA_ENV='SOURCE_ENV'
 ```
 
-`TARGET` must be an existing Pantheon environment whose Git branch includes the DDEV project/provider configuration. `DATA_ENV` should be an environment safe and appropriate to copy into the disposable local checkout.
+`PROJECT_ROOT` must be a safe disposable/local checkout whose current Pantheon code contains the DDEV project/provider configuration. `DATA_ENV` must be an environment safe and appropriate to copy into the local checkout.
 
-## Use isolated Pantheon Local Tools configuration
+## Use the exact release-candidate CLI and isolated user configuration
 
-Do not disturb the developer's normal routing/config while validating.
+Validate from the exact current `main` commit intended for release testing. Use an isolated Pantheon Local Tools config so normal developer routing/configuration is untouched:
 
 ```bash
+PLT_ROOT='/path/to/pantheon-local-tools'
+CLI="$PLT_ROOT/bin/pantheon-local"
+
 VALIDATION_ROOT=$(mktemp -d)
 export PANTHEON_LOCAL_CONFIG="$VALIDATION_ROOT/config"
 
-pantheon-local config set root "$VALIDATION_ROOT/checkouts"
-pantheon-local config set provider ddev
-pantheon-local config list
+"$CLI" config set root "$VALIDATION_ROOT/checkouts"
+"$CLI" config set provider ddev
+"$CLI" config list
+"$CLI" --version
 ```
 
-The validation config intentionally contains no organization Tag mappings, so the disposable checkout should route directly below `<root>/multidev/`.
+The configured checkout root is intentionally disposable even when this validation operates on an already-cloned project. The provider pull/status commands should not need to write there.
 
-## 1. Dry-run
+## 1. Start DDEV
 
-```bash
-pantheon-local multidev "$TARGET" --dry-run
-```
-
-Verify:
-
-- target site/environment is correct;
-- provider is `ddev`;
-- destination is under the isolated validation root;
-- no destination directory is created; and
-- no local URL is invented merely because DDEV was selected.
-
-## 2. Clone and isolate
+From the project checkout:
 
 ```bash
-pantheon-local multidev "$TARGET"
-```
-
-Change into the created checkout path printed by the command, then inspect:
-
-```bash
-git --no-pager status --short --branch
-cat .ddev/config.local.yaml
-git --no-pager check-ignore -v .ddev/config.local.yaml || true
-```
-
-Verify:
-
-- Git branch equals the Pantheon environment branch;
-- `.ddev/config.yaml` remains project-owned and unchanged;
-- `.ddev/config.local.yaml` contains only the isolated local project name written by Pantheon Local Tools;
-- the generated local override is excluded from Git;
-- provider-defined extra services/add-ons/hostnames/Compose files remain present; and
-- tracked Git state is clean.
-
-## 3. Start DDEV
-
-```bash
+cd "$PROJECT_ROOT"
 ddev start
-```
-
-Then:
-
-```bash
-pantheon-local status
-ddev describe -j
-git --no-pager status --short --branch
+ddev describe
 ```
 
 Verify:
 
-- DDEV starts the isolated checkout successfully;
-- `pantheon-local status` reports provider `ddev`;
-- the local URL comes from DDEV runtime metadata rather than an assumed `ddev.site` suffix;
-- custom/additional hostnames are not rewritten by Pantheon Local Tools; and
-- tracked Git remains clean.
+- DDEV starts successfully on the real host/container runtime;
+- the project reports the expected Drupal/PHP/runtime configuration;
+- the project-owned Pantheon provider recipe is detected; and
+- tracked Git state remains clean.
 
-## 4. Real data pull
+## 2. Full real provider pull and Git-integrity proof
 
-First capture the code state:
+Capture the code state before the provider operation:
 
 ```bash
 BEFORE_HEAD=$(git rev-parse HEAD)
 BEFORE_DIFF=$(git diff --binary HEAD -- | git hash-object --stdin)
+
+git --no-pager status --short --branch
 ```
 
-Run the normal real provider path:
+Run the real provider path through Pantheon Local Tools:
 
 ```bash
-pantheon-local pull "$DATA_ENV"
+"$CLI" pull "$DATA_ENV" --provider ddev
 ```
 
-DDEV may take time while Pantheon generates/downloads data. The provider owns its authentication and data-transfer prompts/errors.
+DDEV may take time while Pantheon generates/downloads data. The provider owns authentication and data-transfer behavior.
 
 After success:
 
@@ -163,38 +129,70 @@ AFTER_DIFF=$(git diff --binary HEAD -- | git hash-object --stdin)
 printf 'HEAD unchanged: %s\n' "$([ "$BEFORE_HEAD" = "$AFTER_HEAD" ] && printf yes || printf no)"
 printf 'Tracked diff unchanged: %s\n' "$([ "$BEFORE_DIFF" = "$AFTER_DIFF" ] && printf yes || printf no)"
 
-pantheon-local status
+"$CLI" status
 git --no-pager status --short --branch
 ```
 
 Required result:
 
-- provider pull succeeds;
+- the real DDEV Pantheon pull succeeds;
 - `HEAD` is unchanged;
 - tracked diff fingerprint is unchanged;
-- status records database and files provenance for `DATA_ENV` after the full pull;
-- runtime URL remains provider-derived; and
+- `status` reports provider `ddev`;
+- `status` records database and files provenance for `DATA_ENV`;
+- the local URL comes from DDEV runtime metadata rather than an invented provider suffix;
+- provider-owned project configuration remains intact; and
 - no Pantheon Local Tools credential material appears in checkout state/config.
 
-If a full files pull is unreasonably large for the selected project, do **not** silently redefine the release gate. Either select a smaller representative site/environment or keep real DDEV files-transfer proof explicitly open while separately validating database-only behavior.
+If a full files pull is unreasonably large for the selected project, do **not** silently redefine the release gate. Select a smaller representative environment or keep real DDEV files-transfer proof explicitly open while separately validating database-only behavior.
 
-## 5. Component-selective behavior
+## 3. Component-selective behavior
 
-After the full pull proof, exercise at least database-only selection:
-
-```bash
-pantheon-local pull "$DATA_ENV" --database-only
-pantheon-local status
-```
-
-Verify database provenance updates without falsely changing files provenance. If practical, also exercise:
+After the full pull proof, exercise database-only selection:
 
 ```bash
-pantheon-local pull "$DATA_ENV" --files-only
-pantheon-local status
+"$CLI" pull "$DATA_ENV" --database-only
+"$CLI" status
 ```
 
-## 6. Cleanup
+Verify the provider skips files and the recorded provenance remains truthful.
+
+Also exercise files-only selection:
+
+```bash
+"$CLI" pull "$DATA_ENV" --files-only
+"$CLI" status
+```
+
+Verify the provider skips the database and the recorded provenance remains truthful.
+
+## 4. Credential boundary and final Git state
+
+Inspect only Pantheon Local Tools-owned state/config, not provider credential stores:
+
+```bash
+STATE_FILE="$(git rev-parse --git-dir)/pantheon-local-tools/state"
+
+if grep -RniE \
+  'machine.?token|TERMINUS_MACHINE_TOKEN|password|secret' \
+  "$PANTHEON_LOCAL_CONFIG" \
+  "$STATE_FILE" \
+  2>/dev/null; then
+  printf 'FAIL: credential-like material found in Pantheon Local Tools state/config\n' >&2
+  exit 1
+else
+  printf 'PASS: Pantheon Local Tools contains no provider credentials\n'
+fi
+
+git --no-pager status --short --branch
+```
+
+Required result:
+
+- Pantheon Local Tools state/config contains no provider credential material; and
+- final tracked Git state is clean.
+
+## 5. Cleanup
 
 Preserve failure evidence first. After a successful pass:
 
@@ -202,11 +200,13 @@ Preserve failure evidence first. After a successful pass:
 ddev stop
 ```
 
-Remove only the disposable validation root after confirming it is the intended path. The runbook intentionally does not provide a broad `rm -rf` copy/paste command.
+Remove only disposable validation paths after confirming each path is the intended one. The runbook intentionally does not provide a broad `rm -rf` copy/paste command.
 
 ### DDEV gate completion
 
-The real DDEV release gate is complete only when clone/isolation, start, provider-derived status URL, full real data pull, Git-integrity proof, and provenance behavior all pass against a real Pantheon project.
+The v0.1.0 real DDEV provider gate is complete when a real Pantheon-backed DDEV project passes startup, provider-derived status URL discovery, full database/files transfer, component-selective pulls, Git-integrity enforcement, provenance recording, credential separation, and final clean tracked state.
+
+A real entitled **DDEV + Pantheon Multidev** combination remains valuable additional validation and is tracked separately in #24. Do not report that combination as completed unless it has actually run.
 
 ---
 
@@ -315,9 +315,9 @@ Verify no WSL-specific path/permission failure appears.
 
 ## 5. Real Pantheon/provider path when available
 
-For the strongest WSL proof, install/configure Terminus and a supported local provider inside the same WSL environment and run the corresponding real multidev/status/pull integration rather than stopping at local tests.
+For the strongest WSL proof, install/configure Terminus and a supported local provider inside the same WSL environment and run the corresponding real status/pull integration rather than stopping at local tests.
 
-If DDEV is used, this WSL pass can also satisfy the real DDEV gate **only if the complete DDEV checklist in section A passes**. Merely running `ddev --version` inside WSL does not satisfy the provider integration gate.
+If DDEV is used, this WSL pass can also satisfy the real DDEV provider gate **only if the complete DDEV checklist in section A passes**. Merely running `ddev --version` inside WSL does not satisfy the provider integration gate.
 
 ### WSL gate completion
 
@@ -385,16 +385,19 @@ The clean macOS gate is complete when the fresh clone, isolated install, canonic
 After a real pass, a public issue comment should report only generic evidence, for example:
 
 ```text
-Real DDEV integration: PASS
-- real existing Pantheon multidev cloned with DDEV provider
-- isolated DDEV project started successfully
+Real DDEV provider integration: PASS
+- real Pantheon-backed DDEV project started successfully
 - status URL derived from provider runtime metadata
-- explicit environment data pull succeeded
-- Git HEAD/tracked diff unchanged
+- full database/files pull succeeded through DDEV
+- database-only and files-only selections succeeded
+- Git HEAD/tracked diff remained unchanged
 - database/files provenance recorded correctly
-- no provider/project configuration clobbered
+- Pantheon Local Tools stored no provider credentials
+- final tracked Git state clean
 
 Private site/account/path/token details intentionally omitted.
 ```
+
+If a separate real DDEV-on-Multidev pass is later completed, record it against #24 rather than folding it retroactively into this v0.1.0 provider proof.
 
 Do not paste raw environment dumps or credential-bearing provider configuration into the public repository.

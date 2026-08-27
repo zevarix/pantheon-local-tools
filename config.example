@@ -7,14 +7,11 @@
 #   ~/.config/pantheon-local-tools/config
 #
 # All values below are generic examples only. Organization-specific Pantheon
-# Tags, prefixes, and directory names belong in each user's local config.
+# Tags and directory names belong in each user's local config.
 
 [local]
     root = ~/sites/pantheon
     provider = auto
-
-[pantheon]
-    sitePrefix =
 
 [tag "Example Group"]
     directory = example-group

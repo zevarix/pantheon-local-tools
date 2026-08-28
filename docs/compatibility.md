@@ -110,7 +110,7 @@ Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success 
 
 ## Packaging contract
 
-Homebrew, Debian packages, the clone installer, and any future signed APT repository must package the same tagged project contents and report the same `VERSION`.
+Homebrew, Debian packages, the signed APT repository, and the clone installer must package the same tagged project contents and report the same `VERSION`.
 
 Package installation/uninstallation must not:
 
@@ -118,6 +118,8 @@ Package installation/uninstallation must not:
 - rewrite user project files or provider configuration;
 - delete the user's Pantheon Local Tools configuration; or
 - delete checkout-local metadata inside user repositories.
+
+The project website may be published alongside machine-consumed package metadata on the same static origin, but presentation changes must not weaken package trust, mutate historical release artifacts, or change the package/version contract.
 
 ## Breaking changes
 

@@ -2,13 +2,13 @@
 
 Pantheon Local Tools is published through a small external Homebrew tap using immutable tagged release artifacts.
 
-The intended tap repository is:
+The public tap repository is:
 
 ```text
 zevarix/homebrew-tap
 ```
 
-Homebrew maps that GitHub repository to the short tap name `zevarix/tap`. The formula should live at:
+Homebrew maps that GitHub repository to the short tap name `zevarix/tap`. The formula lives at:
 
 ```text
 Formula/pantheon-local-tools.rb
@@ -59,10 +59,10 @@ bash packaging/homebrew/render-formula.sh VERSION URL SHA256 OUTPUT
 
 For a release, `VERSION` must equal the repository-root `VERSION` and the `vVERSION` Git tag. `URL` should be the uploaded deterministic GitHub Release source asset URL and `SHA256` must match that exact published asset. Do not use GitHub's automatically generated tag archive for release formula metadata.
 
-Example shape after `v0.1.0` exists:
+Example for the tagged release currently checked out:
 
 ```bash
-VERSION=0.1.0
+VERSION=$(cat VERSION)
 URL="https://github.com/zevarix/pantheon-local-tools/releases/download/v${VERSION}/pantheon-local-tools-${VERSION}.tar.gz"
 SHA256="<verified uploaded release source asset sha256>"
 bash packaging/homebrew/render-formula.sh \

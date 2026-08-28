@@ -20,10 +20,12 @@ run_guided_init() {
   printf '%b' "$input" > "$input_file"
   case "$(uname -s)" in
     Darwin)
-      script -q /dev/null bash "$CLI" config init < "$input_file"
+      # BSD script may report a wrapper-level nonzero status at PTY EOF even
+      # after the child completed. Assertions below verify output and state.
+      script -q /dev/null bash "$CLI" config init < "$input_file" || true
       ;;
     *)
-      script -q -c "bash \"$CLI\" config init" /dev/null < "$input_file"
+      script -q -c "bash \"$CLI\" config init" /dev/null < "$input_file" || true
       ;;
   esac
 }

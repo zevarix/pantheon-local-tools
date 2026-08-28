@@ -147,11 +147,24 @@ then
   fail 'repository builder accepted a repository without the current version'
 fi
 
+OVERRIDE_REPOSITORY="$TMP_ROOT/override-version-repository"
+PANTHEON_LOCAL_APT_CURRENT_VERSION="$OLDER_VERSION" \
+  bash "$REPO_ROOT/packaging/debian/build-apt-repository.sh" \
+    "$OVERRIDE_REPOSITORY" "$OLDER_PACKAGE" >/dev/null
+
+grep -Fx "Version: $OLDER_VERSION" \
+  "$OVERRIDE_REPOSITORY/dists/stable/main/binary-all/Packages" >/dev/null ||
+  fail 'explicit repository target version did not build the requested version'
+
 GNUPGHOME="$TMP_ROOT/gnupg"
 export GNUPGHOME
 mkdir -m 0700 "$GNUPGHOME"
 
-gpg --batch --passphrase '' --quick-generate-key \
+TEST_SIGNING_PASSPHRASE='apt-test-passphrase'
+
+gpg --batch --pinentry-mode loopback \
+  --passphrase "$TEST_SIGNING_PASSPHRASE" \
+  --quick-generate-key \
   'Pantheon Local Tools CI <ci@example.invalid>' \
   rsa2048 sign 1d >/dev/null 2>&1
 
@@ -162,8 +175,9 @@ SIGNING_KEY=$(
 
 [ -n "$SIGNING_KEY" ] || fail 'ephemeral signing key fingerprint is missing'
 
-bash "$REPO_ROOT/packaging/debian/sign-apt-repository.sh" \
-  "$REPOSITORY_ONE" "$SIGNING_KEY" >/dev/null
+PANTHEON_LOCAL_APT_SIGNING_PASSPHRASE="$TEST_SIGNING_PASSPHRASE" \
+  bash "$REPO_ROOT/packaging/debian/sign-apt-repository.sh" \
+    "$REPOSITORY_ONE" "$SIGNING_KEY" >/dev/null
 
 INRELEASE="$REPOSITORY_ONE/dists/stable/InRelease"
 RELEASE_GPG="$REPOSITORY_ONE/dists/stable/Release.gpg"

@@ -1,0 +1,226 @@
+name: Publish APT Repository
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/publish-apt-repository.yml'
+      - 'packaging/debian/**'
+      - 'tests/test-apt-repository.sh'
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable release version to publish, for example 0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apt-repository-publication
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name != 'release' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Debian and signing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes dpkg-dev gnupg
+
+      - name: Resolve target version
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          case "$EVENT_NAME" in
+            pull_request)
+              version=$(cat VERSION)
+              ;;
+            release)
+              version=${RELEASE_TAG#v}
+              ;;
+            workflow_dispatch)
+              version=${DISPATCH_VERSION#v}
+              ;;
+            *)
+              printf 'unsupported event: %s\n' "$EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+
+          [ -n "$version" ] || {
+            echo 'target version cannot be empty' >&2
+            exit 1
+          }
+
+          dpkg --validate-version "$version"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble verified repository from stable releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash packaging/debian/build-published-apt-repository.sh \
+            "$RUNNER_TEMP/apt-repository" \
+            "$GITHUB_REPOSITORY" \
+            '${{ steps.version.outputs.version }}'
+
+      - name: Sign dry-run repository with ephemeral key
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 0700 "$GNUPGHOME"
+          passphrase='apt-publication-pr-test'
+
+          gpg --batch --pinentry-mode loopback \
+            --passphrase "$passphrase" \
+            --quick-generate-key \
+            'Pantheon Local Tools PR <ci@example.invalid>' \
+            rsa2048 sign 1d >/dev/null 2>&1
+
+          fingerprint=$(
+            gpg --batch --with-colons --list-secret-keys |
+              awk -F: '$1 == "fpr" && !found { print $10; found = 1 }'
+          )
+
+          [ -n "$fingerprint" ]
+
+          PANTHEON_LOCAL_APT_SIGNING_PASSPHRASE="$passphrase" \
+            bash packaging/debian/sign-apt-repository.sh \
+              "$RUNNER_TEMP/apt-repository" \
+              "$fingerprint"
+
+      - name: Import production archive signing key and sign repository
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          APT_SIGNING_PRIVATE_KEY: ${{ secrets.APT_SIGNING_PRIVATE_KEY }}
+          APT_SIGNING_PASSPHRASE: ${{ secrets.APT_SIGNING_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+
+          [ -n "$APT_SIGNING_PRIVATE_KEY" ] || {
+            echo 'APT_SIGNING_PRIVATE_KEY is not configured' >&2
+            exit 1
+          }
+
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 0700 "$GNUPGHOME"
+          printf '%s\n' "$APT_SIGNING_PRIVATE_KEY" | gpg --batch --import >/dev/null 2>&1
+
+          fingerprint=$(
+            gpg --batch --with-colons --list-secret-keys |
+              awk -F: '$1 == "fpr" && !found { print $10; found = 1 }'
+          )
+
+          [ -n "$fingerprint" ] || {
+            echo 'production signing key fingerprint could not be resolved' >&2
+            exit 1
+          }
+
+          PANTHEON_LOCAL_APT_SIGNING_PASSPHRASE="$APT_SIGNING_PASSPHRASE" \
+            bash packaging/debian/sign-apt-repository.sh \
+              "$RUNNER_TEMP/apt-repository" \
+              "$fingerprint"
+
+      - name: Validate signed repository with isolated APT client
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repository="$RUNNER_TEMP/apt-repository"
+          keyring="$repository/pantheon-local-tools-archive-keyring.gpg"
+          version='${{ steps.version.outputs.version }}'
+
+          gpgv --keyring "$keyring" \
+            "$repository/dists/stable/InRelease" >/dev/null
+
+          apt_root="$RUNNER_TEMP/apt-client"
+          mkdir -p \
+            "$apt_root/lists/partial" \
+            "$apt_root/cache/archives/partial"
+          touch "$apt_root/status"
+
+          source_list="$RUNNER_TEMP/pantheon-local-tools.list"
+          printf 'deb [signed-by=%s] file:%s stable main\n' \
+            "$keyring" "$repository" > "$source_list"
+
+          apt_options=(
+            -o "Dir::Etc::sourcelist=$source_list"
+            -o 'Dir::Etc::sourceparts=-'
+            -o "Dir::State::lists=$apt_root/lists"
+            -o "Dir::State::status=$apt_root/status"
+            -o "Dir::Cache=$apt_root/cache"
+            -o "Dir::Cache::archives=$apt_root/cache/archives"
+            -o "Dir::Cache::pkgcache=$apt_root/cache/pkgcache.bin"
+            -o "Dir::Cache::srcpkgcache=$apt_root/cache/srcpkgcache.bin"
+            -o 'APT::Get::List-Cleanup=0'
+          )
+
+          apt-get "${apt_options[@]}" update >/dev/null
+
+          candidate=$(
+            apt-cache "${apt_options[@]}" policy pantheon-local-tools |
+              awk '/Candidate:/ && !found { print $2; found = 1 }'
+          )
+
+          [ "$candidate" = "$version" ] || {
+            printf 'expected candidate %s, got %s\n' "$version" "$candidate" >&2
+            exit 1
+          }
+
+          download_root="$RUNNER_TEMP/apt-download"
+          mkdir -p "$download_root"
+          (
+            cd "$download_root"
+            apt-get "${apt_options[@]}" download \
+              "pantheon-local-tools=$version" >/dev/null 2>&1
+          )
+
+          downloaded="$download_root/pantheon-local-tools_${version}_all.deb"
+          published="$repository/pool/main/p/pantheon-local-tools/pantheon-local-tools_${version}_all.deb"
+
+          cmp "$downloaded" "$published"
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: ${{ runner.temp }}/apt-repository
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy APT repository to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

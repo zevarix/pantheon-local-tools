@@ -139,12 +139,19 @@ PANTHEON_LOCAL_APT_CURRENT_VERSION="$TARGET_VERSION" \
     "$OUTPUT_DIR" "${packages[@]}" >/dev/null
 
 [ -f "$REPO_ROOT/packaging/debian/apt-index.html" ] ||
-  die 'APT landing-page HTML source is missing'
+  die 'Pages landing-page HTML source is missing'
 [ -f "$REPO_ROOT/packaging/debian/apt-index.css" ] ||
-  die 'APT landing-page CSS source is missing'
+  die 'Pages landing-page CSS source is missing'
 
 cp "$REPO_ROOT/packaging/debian/apt-index.html" "$OUTPUT_DIR/index.html"
 cp "$REPO_ROOT/packaging/debian/apt-index.css" "$OUTPUT_DIR/apt-index.css"
 chmod 0644 "$OUTPUT_DIR/index.html" "$OUTPUT_DIR/apt-index.css"
+
+[ -s "$OUTPUT_DIR/index.html" ] || die 'published index.html is empty'
+[ -s "$OUTPUT_DIR/apt-index.css" ] || die 'published landing-page stylesheet is empty'
+grep -Fq 'Pantheon work, locally.' "$OUTPUT_DIR/index.html" ||
+  die 'published index.html is missing the product-page hero'
+grep -Fq 'dists/stable/InRelease' "$OUTPUT_DIR/index.html" ||
+  die 'published index.html is missing the signed repository metadata link'
 
 printf '%s\n' "$OUTPUT_DIR"

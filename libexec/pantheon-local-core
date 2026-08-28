@@ -11,6 +11,7 @@ PROVIDER_URL="$SCRIPT_DIR/pantheon-local-provider-url"
 usage() {
   cat <<'USAGE'
 Usage:
+  pantheon-local config init [--root PATH] [--provider auto|ddev|lando]
   pantheon-local config path
   pantheon-local config get KEY
   pantheon-local config set KEY VALUE
@@ -25,6 +26,9 @@ Usage:
 Configuration keys:
   root      Absolute local root for Pantheon checkouts.
   provider  auto, ddev, or lando.
+
+Run `pantheon-local config init` in a terminal for guided setup. Supply
+--root and/or --provider for a non-interactive one-command configuration.
 USAGE
 }
 
@@ -244,9 +248,135 @@ config_list() {
   done
 }
 
+config_init_summary() {
+  local root=$1 provider=$2
+  printf 'Configuration:\n'
+  printf '  Root:     %s\n' "$root"
+  printf '  Provider: %s\n' "$provider"
+}
+
+config_init_result() {
+  printf 'Configuration saved.\n'
+  printf 'root=%s\n' "$(config_get root)"
+  printf 'provider=%s\n' "$(config_get provider)"
+}
+
+config_init_interactive() {
+  local root provider answer choice default_choice confirm
+
+  root=$(config_get root)
+  provider=$(config_get provider)
+  validate_value provider "$provider"
+
+  printf 'Pantheon Local Tools setup\n\n'
+  printf 'Local checkout root [%s]: ' "$root"
+  IFS= read -r answer || die 'interactive setup ended before root selection'
+  [ -z "$answer" ] || root=$answer
+  root=$(expand_home "$root")
+  validate_value root "$root"
+
+  case "$provider" in
+    auto) default_choice=1 ;;
+    ddev) default_choice=2 ;;
+    lando) default_choice=3 ;;
+    *) die "unsupported configured provider: $provider" ;;
+  esac
+
+  while :; do
+    printf '\nProvider:\n'
+    printf '  1) Auto - use the project DDEV or Lando configuration (recommended)\n'
+    printf '  2) DDEV\n'
+    printf '  3) Lando\n'
+    printf 'Choice [%s]: ' "$default_choice"
+    IFS= read -r choice || die 'interactive setup ended before provider selection'
+    [ -n "$choice" ] || choice=$default_choice
+    case "$choice" in
+      1|auto|Auto|AUTO) provider=auto; break ;;
+      2|ddev|DDEV|Ddev) provider=ddev; break ;;
+      3|lando|Lando|LANDO) provider=lando; break ;;
+      *) printf 'Please choose 1, 2, or 3.\n' >&2 ;;
+    esac
+  done
+  validate_value provider "$provider"
+
+  printf '\n'
+  config_init_summary "$root" "$provider"
+
+  while :; do
+    printf '\nSave configuration? [Y/n] '
+    IFS= read -r confirm || die 'interactive setup ended before confirmation'
+    case "$confirm" in
+      ''|y|Y|yes|YES|Yes) break ;;
+      n|N|no|NO|No)
+        printf 'Configuration not changed.\n'
+        return
+        ;;
+      *) printf 'Please answer y or n.\n' >&2 ;;
+    esac
+  done
+
+  # Both values have been normalized and validated before either write.
+  config_set root "$root"
+  config_set provider "$provider"
+  config_init_result
+}
+
+config_init_command() {
+  local root='' provider='' root_set=false provider_set=false
+
+  if [ "$#" -eq 0 ]; then
+    [ -t 0 ] || die 'interactive config init requires a terminal; supply --root PATH and/or --provider auto|ddev|lando'
+    config_init_interactive
+    return
+  fi
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --root)
+        [ "$#" -ge 2 ] || die '--root requires an absolute path or ~/path'
+        root=$2
+        root_set=true
+        shift 2
+        ;;
+      --provider)
+        [ "$#" -ge 2 ] || die '--provider requires auto, ddev, or lando'
+        provider=$2
+        provider_set=true
+        shift 2
+        ;;
+      -h|--help|help)
+        printf 'Usage: pantheon-local config init [--root PATH] [--provider auto|ddev|lando]\n'
+        printf 'With no options in a terminal, starts guided setup.\n'
+        return
+        ;;
+      *) die "unknown config init option: $1" ;;
+    esac
+  done
+
+  [ "$root_set" = true ] || [ "$provider_set" = true ] ||
+    die 'config init requires --root and/or --provider outside guided setup'
+
+  if [ "$root_set" = true ]; then
+    root=$(expand_home "$root")
+    validate_value root "$root"
+  fi
+  if [ "$provider_set" = true ]; then
+    validate_value provider "$provider"
+  fi
+
+  # Validate every requested value before writing any of them.
+  [ "$root_set" = false ] || config_set root "$root"
+  [ "$provider_set" = false ] || config_set provider "$provider"
+  config_init_result
+}
+
 config_command() {
   local action=${1:-}
   case "$action" in
+    init)
+      shift
+      config_init_command "$@"
+      ;;
     path)
       [ "$#" -eq 1 ] || die 'usage: pantheon-local config path'
       config_path

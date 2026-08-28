@@ -5,66 +5,193 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#02060b">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="Signed APT repository for Pantheon Local Tools.">
-  <title>Pantheon Local Tools — Signed APT Repository</title>
+  <meta name="description" content="Pantheon Local Tools is a free, provider-neutral CLI for safer Pantheon local development with DDEV and Lando.">
+  <title>Pantheon Local Tools — Safer Pantheon local development</title>
   <link rel="stylesheet" href="apt-index.css">
 </head>
 <body>
   <header class="site-header">
     <div class="shell header-inner">
-      <a class="wordmark" href="https://github.com/zevarix/pantheon-local-tools">pantheon-local<span>/tools</span></a>
-      <a class="header-link" href="https://github.com/zevarix/pantheon-local-tools">GitHub repository →</a>
+      <a class="wordmark" href="#top">pantheon-local<span>/tools</span></a>
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <a href="#workflow">Workflow</a>
+        <a href="#install">Install</a>
+        <a href="#safety">Safety</a>
+        <a class="nav-cta" href="https://github.com/zevarix/pantheon-local-tools">GitHub →</a>
+      </nav>
     </div>
   </header>
 
-  <main>
+  <main id="top">
     <section class="shell hero">
       <div class="hero-copy">
-        <h1>Pantheon Local <span>Tools.</span></h1>
-        <p class="lede">A signed APT repository for the provider-neutral Pantheon local-development CLI, with DDEV and Lando support and a trust path designed for Ubuntu, Debian, and WSL.</p>
+        <h1>Pantheon work, locally. <span>Without the glue scripts.</span></h1>
+        <p class="lede">Pantheon Local Tools is a free, open-source CLI that makes common Pantheon local-development workflows safer and repeatable across DDEV and Lando — without hard-coding your machine, organization, directory layout, or local stack.</p>
         <div class="actions">
-          <a class="button" href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/apt-repository.md">Installation guide</a>
-          <a class="button button--quiet" href="https://github.com/zevarix/pantheon-local-tools/releases/latest">Latest release</a>
+          <a class="button" href="#install">Install v0.1.0</a>
+          <a class="button button--quiet" href="https://github.com/zevarix/pantheon-local-tools/blob/main/README.md">Read the docs</a>
         </div>
+        <p class="hero-meta">MIT licensed · macOS · Linux · Windows via WSL/WSL2</p>
       </div>
 
-      <aside class="repo-panel" aria-labelledby="repository-status">
-        <h2 id="repository-status">Repository status</h2>
-        <dl class="repo-facts">
-          <div><dt>Channel</dt><dd>stable</dd></div>
-          <div><dt>Packages</dt><dd>architecture-independent</dd></div>
-          <div><dt>Metadata</dt><dd>OpenPGP signed</dd></div>
-          <div><dt>Endpoint</dt><dd class="status">live</dd></div>
-        </dl>
-      </aside>
+      <div class="terminal terminal--hero" aria-label="Pantheon Local Tools command examples">
+        <div class="terminal-bar" aria-hidden="true">
+          <span></span><span></span><span></span>
+          <strong>pantheon-local</strong>
+        </div>
+        <pre><code><i>$</i> pantheon-local multidev SITE.ENV --dry-run
+<i>$</i> pantheon-local multidev SITE.ENV --provider ddev --start
+
+<i>$</i> pantheon-local pull live --database-only
+<i>$</i> pantheon-local status</code></pre>
+      </div>
+    </section>
+
+    <section class="section section--intro">
+      <div class="shell section-grid">
+        <div class="section-title">Why</div>
+        <div class="section-copy">
+          <h2>Keep the workflow. Lose the machine-specific magic.</h2>
+          <p>Pantheon projects tend to accumulate shell aliases, copy-pasted commands, one-off checkout directories, and local-provider assumptions. Pantheon Local Tools puts the repeatable parts behind one CLI while leaving Pantheon, Terminus, DDEV, Lando, Git, and your project configuration in charge of the things they already own.</p>
+          <div class="principles">
+            <div><strong>Provider-neutral</strong><span>Use DDEV or Lando without rewriting the project around the tool.</span></div>
+            <div><strong>Configuration-driven</strong><span>Choose your root, provider, and optional Pantheon Tag routing instead of editing the script.</span></div>
+            <div><strong>Fail closed</strong><span>Ambiguous providers, unsafe overrides, and occupied destinations stop instead of guessing.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="workflow">
+      <div class="shell">
+        <div class="section-heading">
+          <div class="section-title">Workflow</div>
+          <div>
+            <h2>Built around the Pantheon work you actually repeat.</h2>
+            <p>Each command stays narrow: resolve the intent, protect the checkout, delegate to the right upstream tool, and leave useful local state behind.</p>
+          </div>
+        </div>
+
+        <article class="feature-row">
+          <div class="feature-copy">
+            <p class="feature-number">01 / MULTIDEV</p>
+            <h3>Clone an existing Multidev into an isolated local checkout.</h3>
+            <p>Resolve the authoritative Git URL through Terminus, route the checkout through your configured root or Pantheon Tag mapping, configure DDEV or Lando locally, and refuse to overwrite an existing destination. The command never creates or deletes the remote Multidev.</p>
+            <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/multidev.md">Multidev behavior →</a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <pre><code><i>$</i> pantheon-local multidev SITE.ENV --dry-run
+<i>$</i> pantheon-local multidev SITE.ENV --provider lando --group migration
+<i>$</i> pantheon-local multidev SITE.ENV --provider ddev --start</code></pre>
+          </div>
+        </article>
+
+        <article class="feature-row">
+          <div class="feature-copy">
+            <p class="feature-number">02 / PULL</p>
+            <h3>Refresh the database, files, or both — without pulling code.</h3>
+            <p>Use the provider already associated with the checkout and request only the data you need. Pantheon Local Tools verifies Git HEAD and tracked content before and after the provider pull, then records database and file provenance only after success.</p>
+            <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/pull.md">Pull safety contract →</a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <pre><code><i>$</i> pantheon-local pull live
+<i>$</i> pantheon-local pull test --database-only
+<i>$</i> pantheon-local pull live --files-only</code></pre>
+          </div>
+        </article>
+
+        <article class="feature-row">
+          <div class="feature-copy">
+            <p class="feature-number">03 / STATUS</p>
+            <h3>Know what this checkout is before you touch it.</h3>
+            <p>Run a local, read-only inspection from the checkout root or any subdirectory. See Pantheon metadata when it is recorded, the detected local provider, Git state, runtime URL when safely available, and independent database/files provenance — without contacting Pantheon or starting the provider.</p>
+            <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/status.md">Status contract →</a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <pre><code><i>$</i> pantheon-local status
+<i>$</i> pantheon-local config list
+<i>$</i> pantheon-local --version</code></pre>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section section--providers">
+      <div class="shell section-grid">
+        <div class="section-title">Providers</div>
+        <div class="section-copy">
+          <h2>DDEV or Lando. Same intent.</h2>
+          <p>The shared Pantheon and Terminus core stays provider-neutral. Provider-specific adapters handle the runtime details while preserving the project's existing <code>.ddev/config.yaml</code>, <code>.lando.yml</code>, services, add-ons, and custom tooling.</p>
+          <div class="provider-lines">
+            <div><strong>DDEV</strong><code>pantheon-local config set provider ddev</code></div>
+            <div><strong>Lando</strong><code>pantheon-local config set provider lando</code></div>
+            <div><strong>Auto</strong><code>pantheon-local config unset provider</code></div>
+          </div>
+          <a class="text-link" href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/local-provider-architecture.md">Provider architecture →</a>
+        </div>
+      </div>
     </section>
 
     <section class="section" id="install">
       <div class="shell section-grid">
         <div class="section-title">Install</div>
         <div class="section-copy">
-          <h2>Use APT after verifying trust.</h2>
-          <p>The archive key is a trust anchor. Verify its published primary fingerprint against the project documentation before installing the keyring and adding this repository to your APT sources.</p>
-          <div class="terminal" aria-label="APT installation commands">
-            <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-            <pre><code>sudo apt-get update
-sudo apt-get install pantheon-local-tools</code></pre>
+          <h2>Free to use. Pick the install path that fits your host.</h2>
+          <p>The v0.1.0 release is available through Homebrew, a signed Debian/APT repository, downloadable release artifacts, or the portable clone installer.</p>
+
+          <div class="install-list">
+            <article class="install-row">
+              <div><strong>Homebrew</strong><span>macOS</span></div>
+              <code>brew install zevarix/tap/pantheon-local-tools</code>
+              <a href="https://github.com/zevarix/homebrew-tap">Tap →</a>
+            </article>
+            <article class="install-row">
+              <div><strong>APT</strong><span>Debian · Ubuntu · WSL</span></div>
+              <code>sudo apt-get install pantheon-local-tools</code>
+              <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/apt-repository.md">Trust setup →</a>
+            </article>
+            <article class="install-row">
+              <div><strong>Portable</strong><span>macOS · Linux · WSL</span></div>
+              <code>./install.sh</code>
+              <a href="https://github.com/zevarix/pantheon-local-tools#install-from-a-clone">Clone install →</a>
+            </article>
           </div>
-          <p class="security-note"><strong>Do not skip fingerprint verification.</strong> The complete <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/apt-repository.md">APT setup guide</a> owns the current keyring, <code>Signed-By</code>, rotation, and recovery procedure.</p>
+
+          <p class="security-note"><strong>APT requires a one-time trust setup.</strong> Verify the published archive fingerprint and install the keyring with <code>Signed-By</code> before running the APT install command above.</p>
         </div>
       </div>
     </section>
 
-    <section class="section" id="repository-files">
+    <section class="section" id="safety">
       <div class="shell section-grid">
-        <div class="section-title">Repository</div>
+        <div class="section-title">Safety</div>
         <div class="section-copy">
-          <h2>Signed metadata, directly inspectable.</h2>
-          <p>The human landing page lives beside the same files APT consumes. These links expose the public trust material and package metadata without adding another distribution service or hidden backend.</p>
+          <h2>Useful automation without pretending the local machine is disposable.</h2>
+          <p>The tool is intentionally conservative around code, credentials, provider configuration, and filesystem boundaries.</p>
+          <ul class="safety-list">
+            <li><strong>Dry-run before clone.</strong><span>Resolve Pantheon and local routing without creating directories or starting a provider.</span></li>
+            <li><strong>Git code stays code.</strong><span>Data pulls verify HEAD and tracked content remain unchanged before recording success.</span></li>
+            <li><strong>No token vault.</strong><span>Terminus and the local providers keep ownership of their supported Pantheon authentication flows.</span></li>
+            <li><strong>No provider takeover.</strong><span>Local overrides are additive; unsafe changes fail instead of clobbering project configuration.</span></li>
+            <li><strong>No guessing on ambiguity.</strong><span>Provider selection, checkout paths, and existing destinations must resolve safely or the command stops.</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--repository" id="repository">
+      <div class="shell section-grid">
+        <div class="section-title">Repository trust</div>
+        <div class="section-copy">
+          <h2>The website and signed APT repository share this endpoint.</h2>
+          <p>This landing page is static. APT reads the signed metadata below directly from GitHub Pages; there is no application server or hidden package backend between the client and the published repository files.</p>
           <ul class="file-list">
             <li><a href="dists/stable/InRelease">InRelease</a><span>Clear-signed stable repository metadata consumed by APT.</span></li>
             <li><a href="pantheon-local-tools-archive-keyring.gpg">Archive keyring</a><span>Public OpenPGP keyring. Verify its fingerprint before trusting it.</span></li>
-            <li><a href="dists/stable/main/binary-all/Packages">Packages</a><span>Package index for the architecture-independent Debian artifacts.</span></li>
+            <li><a href="dists/stable/main/binary-all/Packages">Packages</a><span>Package index for architecture-independent Debian artifacts.</span></li>
           </ul>
         </div>
       </div>
@@ -72,9 +199,16 @@ sudo apt-get install pantheon-local-tools</code></pre>
   </main>
 
   <footer>
-    <div class="shell">
-      <span>Pantheon Local Tools is an independent open-source project.</span>
-      <a href="https://github.com/zevarix/pantheon-local-tools">Source and documentation</a>
+    <div class="shell footer-inner">
+      <div>
+        <strong>Pantheon Local Tools</strong>
+        <span>Independent, MIT-licensed open source.</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/zevarix/pantheon-local-tools/releases/latest">Latest release</a>
+        <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/zevarix/pantheon-local-tools">Source</a>
+      </div>
     </div>
   </footer>
 </body>

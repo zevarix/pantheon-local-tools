@@ -66,6 +66,17 @@ FORMULA="$TAP_ROOT/Formula/pantheon-local-tools.rb"
 bash "$REPO_ROOT/packaging/homebrew/render-formula.sh" "$VERSION" "$URL" "$SHA256" "$FORMULA" >/dev/null
 ruby -c "$FORMULA" >/dev/null
 
+if grep -Eq '^[[:space:]]*version[[:space:]]' "$FORMULA"; then
+  fail 'Homebrew formula should infer its version from the release URL'
+fi
+
+if grep -Fq 'uses_from_macos "git"' "$FORMULA"; then
+  fail 'Homebrew formula should not declare git as a dependency'
+fi
+
+HOMEBREW_NO_AUTO_UPDATE=1 \
+  brew style "$FULL_FORMULA" >/dev/null
+
 HOMEBREW_NO_AUTO_UPDATE=1 \
   brew install --build-from-source "$FULL_FORMULA" >/dev/null
 HOMEBREW_NO_AUTO_UPDATE=1 \

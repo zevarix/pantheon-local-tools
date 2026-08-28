@@ -25,7 +25,6 @@ escape_ruby_string() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-VERSION_ESCAPED=$(escape_ruby_string "$VERSION")
 URL_ESCAPED=$(escape_ruby_string "$URL")
 SHA256_NORMALIZED=$(printf '%s' "$SHA256" | tr '[:upper:]' '[:lower:]')
 OUTPUT_DIR=${OUTPUT%/*}
@@ -37,11 +36,8 @@ class PantheonLocalTools < Formula
   desc "Provider-neutral local development helpers for Pantheon"
   homepage "https://github.com/zevarix/pantheon-local-tools"
   url "$URL_ESCAPED"
-  version "$VERSION_ESCAPED"
   sha256 "$SHA256_NORMALIZED"
   license "MIT"
-
-  uses_from_macos "git"
 
   def install
     libexec.install "bin", "libexec", "VERSION", "LICENSE", "README.md"

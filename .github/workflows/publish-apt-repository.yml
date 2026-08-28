@@ -6,6 +6,12 @@ on:
       - '.github/workflows/publish-apt-repository.yml'
       - 'packaging/debian/**'
       - 'tests/test-apt-repository.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packaging/debian/apt-index.html'
+      - 'packaging/debian/apt-index.css'
   release:
     types:
       - published
@@ -51,7 +57,7 @@ jobs:
           set -euo pipefail
 
           case "$EVENT_NAME" in
-            pull_request)
+            pull_request|push)
               release_tag=$(
                 gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
                   --jq '.tag_name'

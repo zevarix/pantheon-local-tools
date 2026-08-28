@@ -105,7 +105,7 @@ PACKAGES_GZ="$PACKAGES.gz"
 
 (
   cd "$STAGE"
-  dpkg-scanpackages --arch all "$POOL_REL"
+  dpkg-scanpackages --arch all --multiversion "$POOL_REL"
 ) > "$PACKAGES"
 
 gzip -n -9 -c "$PACKAGES" > "$PACKAGES_GZ"

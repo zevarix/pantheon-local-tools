@@ -111,7 +111,7 @@ The repository builder:
 - rejects duplicate package versions;
 - requires at least one input package whose version matches the checkout's root `VERSION`;
 - writes package files under `pool/`;
-- generates `Packages` plus deterministic `Packages.gz`;
+- indexes every supplied released version with `dpkg-scanpackages --multiversion` and generates `Packages` plus deterministic `Packages.gz`;
 - covers both indexes with SHA-256 and SHA-512 entries in `Release`; and
 - produces reproducible repository metadata when `SOURCE_DATE_EPOCH` is fixed.
 

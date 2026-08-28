@@ -27,16 +27,45 @@ done
 VERSION=$(cat "$REPO_ROOT/VERSION")
 PACKAGE=$(bash "$REPO_ROOT/packaging/debian/build-deb.sh" "$TMP_ROOT/package")
 
+OLDER_VERSION='0.0.0-test1'
+OLDER_STAGE="$TMP_ROOT/older-stage"
+OLDER_PACKAGE="$TMP_ROOT/pantheon-local-tools_${OLDER_VERSION}_all.deb"
+
+mkdir -p "$OLDER_STAGE"
+dpkg-deb -R "$PACKAGE" "$OLDER_STAGE"
+
+python3 - "$OLDER_STAGE/DEBIAN/control" "$OLDER_VERSION" <<'PY_CONTROL'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+version = sys.argv[2]
+text = path.read_text()
+
+lines = text.splitlines()
+for index, line in enumerate(lines):
+    if line.startswith("Version: "):
+        lines[index] = f"Version: {version}"
+        break
+else:
+    raise SystemExit("STOP: extracted package control has no Version field")
+
+path.write_text("\n".join(lines) + "\n")
+PY_CONTROL
+
+dpkg-deb --root-owner-group --build "$OLDER_STAGE" "$OLDER_PACKAGE" >/dev/null
+assert_eq "$(dpkg-deb -f "$OLDER_PACKAGE" Version)" "$OLDER_VERSION"
+
 REPOSITORY_ONE="$TMP_ROOT/repository-one"
 REPOSITORY_TWO="$TMP_ROOT/repository-two"
 SOURCE_DATE_EPOCH=1787875200
 export SOURCE_DATE_EPOCH
 
 bash "$REPO_ROOT/packaging/debian/build-apt-repository.sh" \
-  "$REPOSITORY_ONE" "$PACKAGE" >/dev/null
+  "$REPOSITORY_ONE" "$OLDER_PACKAGE" "$PACKAGE" >/dev/null
 
 bash "$REPO_ROOT/packaging/debian/build-apt-repository.sh" \
-  "$REPOSITORY_TWO" "$PACKAGE" >/dev/null
+  "$REPOSITORY_TWO" "$OLDER_PACKAGE" "$PACKAGE" >/dev/null
 
 diff -ru "$REPOSITORY_ONE" "$REPOSITORY_TWO" >/dev/null ||
   fail 'APT repository metadata is not reproducible with fixed SOURCE_DATE_EPOCH'
@@ -45,8 +74,10 @@ PACKAGES="$REPOSITORY_ONE/dists/stable/main/binary-all/Packages"
 PACKAGES_GZ="$PACKAGES.gz"
 RELEASE="$REPOSITORY_ONE/dists/stable/Release"
 POOL_PACKAGE="$REPOSITORY_ONE/pool/main/p/pantheon-local-tools/pantheon-local-tools_${VERSION}_all.deb"
+OLDER_POOL_PACKAGE="$REPOSITORY_ONE/pool/main/p/pantheon-local-tools/pantheon-local-tools_${OLDER_VERSION}_all.deb"
 
-[ -f "$POOL_PACKAGE" ] || fail 'APT pool package is missing'
+[ -f "$POOL_PACKAGE" ] || fail 'APT current pool package is missing'
+[ -f "$OLDER_POOL_PACKAGE" ] || fail 'APT older pool package is missing'
 [ -f "$PACKAGES" ] || fail 'APT Packages index is missing'
 [ -f "$PACKAGES_GZ" ] || fail 'APT Packages.gz index is missing'
 [ -f "$RELEASE" ] || fail 'APT Release file is missing'
@@ -70,19 +101,51 @@ grep -F ' main/binary-all/Packages' "$RELEASE" >/dev/null ||
 grep -F ' main/binary-all/Packages.gz' "$RELEASE" >/dev/null ||
   fail 'Release does not cover Packages.gz'
 
-grep -Fx 'Package: pantheon-local-tools' "$PACKAGES" >/dev/null ||
-  fail 'Packages index is missing package name'
+PACKAGE_STANZAS=$(grep -c '^Package: pantheon-local-tools$' "$PACKAGES")
+assert_eq "$PACKAGE_STANZAS" '2'
+
 grep -Fx "Version: $VERSION" "$PACKAGES" >/dev/null ||
   fail 'Packages index is missing current version'
-grep -Fx 'Architecture: all' "$PACKAGES" >/dev/null ||
-  fail 'Packages index is missing architecture'
+grep -Fx "Version: $OLDER_VERSION" "$PACKAGES" >/dev/null ||
+  fail 'Packages index is missing older version'
+
+ARCHITECTURE_STANZAS=$(grep -c '^Architecture: all$' "$PACKAGES")
+assert_eq "$ARCHITECTURE_STANZAS" '2'
+
 grep -Fx "Filename: pool/main/p/pantheon-local-tools/pantheon-local-tools_${VERSION}_all.deb" \
   "$PACKAGES" >/dev/null ||
-  fail 'Packages index has the wrong package path'
+  fail 'Packages index is missing current package path'
+
+grep -Fx "Filename: pool/main/p/pantheon-local-tools/pantheon-local-tools_${OLDER_VERSION}_all.deb" \
+  "$PACKAGES" >/dev/null ||
+  fail 'Packages index is missing older package path'
 
 PACKAGE_SHA=$(sha256sum "$PACKAGE" | awk '{print $1}')
-INDEX_SHA=$(awk '/^SHA256:/ {print $2; exit}' "$PACKAGES")
+INDEX_SHA=$(
+  awk -v version="$VERSION" '
+    /^Version: / {
+      current = ($2 == version)
+    }
+    current && /^SHA256: / {
+      print $2
+    }
+  ' "$PACKAGES"
+)
 assert_eq "$INDEX_SHA" "$PACKAGE_SHA"
+
+if bash "$REPO_ROOT/packaging/debian/build-apt-repository.sh" \
+  "$TMP_ROOT/duplicate-version-repository" "$PACKAGE" "$PACKAGE" \
+  >/dev/null 2>&1
+then
+  fail 'repository builder accepted duplicate package versions'
+fi
+
+if bash "$REPO_ROOT/packaging/debian/build-apt-repository.sh" \
+  "$TMP_ROOT/missing-current-repository" "$OLDER_PACKAGE" \
+  >/dev/null 2>&1
+then
+  fail 'repository builder accepted a repository without the current version'
+fi
 
 GNUPGHOME="$TMP_ROOT/gnupg"
 export GNUPGHOME

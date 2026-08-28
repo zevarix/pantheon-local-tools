@@ -147,7 +147,7 @@ Before advertising upgrade support, exercise a real previous-version -> current-
 
 A signed hosted APT repository is a separate distribution layer and does not become implied merely because a `.deb` exists.
 
-When signed APT publication is enabled, `.github/workflows/publish-apt-repository.yml` assembles every stable published Debian package up to the target version, verifies each against its release `SHA256SUMS`, signs the resulting multiversion repository, validates it with an isolated APT client, and deploys the static tree to GitHub Pages. Pull requests exercise the same assembly/sign/validation path with an ephemeral key but never deploy.
+When signed APT publication is enabled, `.github/workflows/publish-apt-repository.yml` assembles every stable published Debian package up to the target version, verifies each against its release `SHA256SUMS`, signs the resulting multiversion repository, validates it with an isolated APT client, and deploys the static tree to GitHub Pages. Pull requests exercise the same assembly/sign/validation path against the latest already-published stable release with an ephemeral key, but never deploy.
 
 Production APT publication requires the dedicated signing subkey secrets and GitHub Pages configured with **Source: GitHub Actions**. A manual workflow dispatch can bootstrap or republish an existing stable version; stable future release publication can trigger the same workflow automatically.
 

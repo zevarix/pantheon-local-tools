@@ -180,7 +180,7 @@ The public repository URL and production key installation commands are documente
 
 ### Publication boundary
 
-Repository hosting and production signing are tracked separately from deterministic packaging. `.github/workflows/publish-apt-repository.yml` performs a real publication dry run on relevant pull requests with an ephemeral key. Stable release events and manual dispatches use the configured production signing secrets, upload the generated static archive as a GitHub Pages artifact, and deploy it through the `github-pages` environment.
+Repository hosting and production signing are tracked separately from deterministic packaging. `.github/workflows/publish-apt-repository.yml` performs a real publication dry run on relevant pull requests with an ephemeral key against the latest already-published stable release. Stable release events and manual dispatches use the configured production signing secrets, upload the generated static archive as a GitHub Pages artifact, and deploy it through the `github-pages` environment.
 
 The workflow intentionally assembles historical `.deb` files from their published GitHub Release assets rather than rebuilding old packages. GitHub Pages must be enabled with **Source: GitHub Actions** before the first production deployment, and the production signing secrets must be configured first.
 

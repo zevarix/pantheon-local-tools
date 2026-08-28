@@ -52,7 +52,10 @@ jobs:
 
           case "$EVENT_NAME" in
             pull_request)
-              version=$(cat VERSION)
+              release_tag=$(
+                gh api "repos/$GITHUB_REPOSITORY/releases/latest"                   --jq '.tag_name'
+              )
+              version=${release_tag#v}
               ;;
             release)
               version=${RELEASE_TAG#v}
@@ -76,12 +79,14 @@ jobs:
 
       - name: Assemble verified repository from stable releases
         shell: bash
+        env:
+          TARGET_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           bash packaging/debian/build-published-apt-repository.sh \
             "$RUNNER_TEMP/apt-repository" \
             "$GITHUB_REPOSITORY" \
-            '${{ steps.version.outputs.version }}'
+            "$TARGET_VERSION"
 
       - name: Sign dry-run repository with ephemeral key
         if: github.event_name == 'pull_request'
@@ -146,12 +151,14 @@ jobs:
 
       - name: Validate signed repository with isolated APT client
         shell: bash
+        env:
+          TARGET_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
 
           repository="$RUNNER_TEMP/apt-repository"
           keyring="$repository/pantheon-local-tools-archive-keyring.gpg"
-          version='${{ steps.version.outputs.version }}'
+          version="$TARGET_VERSION"
 
           gpgv --keyring "$keyring" \
             "$repository/dists/stable/InRelease" >/dev/null

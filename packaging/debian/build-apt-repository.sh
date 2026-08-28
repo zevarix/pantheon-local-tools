@@ -39,7 +39,7 @@ require_command wc
 CURRENT_VERSION=${PANTHEON_LOCAL_APT_CURRENT_VERSION:-$(cat "$VERSION_FILE")}
 [ -n "$CURRENT_VERSION" ] || die 'current repository version cannot be empty'
 case "$CURRENT_VERSION" in
-  *$'\n'*|*$'\r'*) die 'VERSION must be a single line' ;;
+  *$'\n'*|*$'\r'*) die 'current repository version must be a single line' ;;
 esac
 
 case "$OUTPUT_DIR" in

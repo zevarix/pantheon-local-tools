@@ -1,10 +1,12 @@
 # Signed APT repository
 
-Pantheon Local Tools publishes a signed Debian/Ubuntu/WSL repository at:
+Pantheon Local Tools publishes its project website and signed Debian/Ubuntu/WSL repository from the same GitHub Pages origin:
 
 ```text
-https://zevarix.github.io/pantheon-local-tools
+https://zevarix.github.io/pantheon-local-tools/
 ```
+
+The root URL is the human-facing product page. APT clients consume signed metadata, package indexes, the public archive keyring, and package files beneath that same origin.
 
 The repository uses the `stable` suite and `main` component. Client trust is scoped to a dedicated keyring through APT's `Signed-By` mechanism; `apt-key` is not used.
 
@@ -133,6 +135,8 @@ Never place a private primary key, private signing subkey, passphrase, decrypted
 
 ## Validation status
 
-The initial v0.1.0 repository has been published through GitHub Pages with signed `InRelease`/`Release.gpg` metadata. The public WSL2 path has been exercised through `apt update`, candidate discovery, install, CLI/config verification, reinstall with configuration preservation, uninstall, and package-file removal. `.github/workflows/validate-published-apt.yml` provides the corresponding clean GitHub-hosted Ubuntu validation against the public URL.
+The initial v0.1.0 repository was published through GitHub Pages with signed `InRelease`/`Release.gpg` metadata. The public WSL2 path was exercised through `apt update`, candidate discovery, install, CLI/config verification, reinstall with configuration preservation, uninstall, and package-file removal. `.github/workflows/validate-published-apt.yml` provides the corresponding clean GitHub-hosted Ubuntu validation against the public URL.
+
+The product homepage is deployed as part of the same static Pages artifact without changing APT's signed metadata or trust path.
 
 A real previous-version to newer-version upgrade remains deferred until a second stable Debian package has actually been published.

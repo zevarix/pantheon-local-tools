@@ -151,6 +151,8 @@ chmod 0644 "$OUTPUT_DIR/index.html" "$OUTPUT_DIR/apt-index.css"
 [ -s "$OUTPUT_DIR/apt-index.css" ] || die 'published landing-page stylesheet is empty'
 grep -Fq 'Pantheon work, locally.' "$OUTPUT_DIR/index.html" ||
   die 'published index.html is missing the product-page hero'
+grep -Fq 'install-apt.sh' "$OUTPUT_DIR/index.html" ||
+  die 'published index.html is missing the one-command APT install'
 grep -Fq 'dists/stable/InRelease' "$OUTPUT_DIR/index.html" ||
   die 'published index.html is missing the signed repository metadata link'
 

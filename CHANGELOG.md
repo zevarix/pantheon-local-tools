@@ -11,12 +11,14 @@ The project follows Semantic Versioning for its public command/configuration con
 - Published the current stable release through the public Homebrew tap at `zevarix/tap`.
 - Published a signed Debian/Ubuntu/WSL APT repository on GitHub Pages with dedicated `Signed-By` keyring trust, hosted-Ubuntu validation, and real WSL2 validation.
 - Added the public Pantheon Local Tools product homepage at the same GitHub Pages origin used by the signed APT repository.
+- Added a one-command Debian/Ubuntu/WSL APT bootstrap that verifies the canonical archive fingerprint, configures the scoped keyring/source, refreshes APT, and installs the package.
 
 ### Changed
 
 - Hardened APT publication around immutable release assets, reduced signing-subkey material, explicit rotation boundaries, deterministic repository assembly, and public-client validation.
 - Refreshed repository documentation after the first public release so the README acts as a concise project front door and deep implementation/release details remain in focused docs.
 - Generalized maintainer release and packaging documentation for future releases instead of leaving first-release-only instructions in durable runbooks.
+- Simplified the normal signed-APT onboarding path from several manual copy/paste blocks to one reviewed bootstrap command while retaining the full manual trust procedure.
 
 The current public CLI payload remains the v0.1.0 release; these entries describe post-tag distribution, publication, website, and documentation work on `main` unless a later release notes otherwise.
 

@@ -79,7 +79,7 @@ https://zevarix.github.io/pantheon-local-tools/
 
 The root is the human-facing product page. APT consumes the signed repository files beneath that same origin.
 
-End-user key verification, `/etc/apt/keyrings` installation, deb822 `Signed-By` setup, removal, signing-key rotation, revocation, and recovery procedures are documented in [`docs/apt-repository.md`](../../docs/apt-repository.md).
+Normal Debian/Ubuntu/WSL onboarding uses the repository-root [`install-apt.sh`](../../install-apt.sh) helper, which verifies the canonical primary fingerprint before installing the dedicated keyring/source and package. The complete manual setup, key verification, `/etc/apt/keyrings` installation, deb822 `Signed-By` setup, removal, signing-key rotation, revocation, and recovery procedures remain documented in [`docs/apt-repository.md`](../../docs/apt-repository.md).
 
 Repository tooling uses a conventional Debian archive layout:
 
@@ -180,7 +180,13 @@ Production key creation, secure backup, rotation/recovery policy, and publicatio
 
 Clients use a dedicated keyring under `/etc/apt/keyrings` and APT's `Signed-By` mechanism. The project does not use deprecated `apt-key` or add the archive key to global APT trust.
 
-The live deb822 source is:
+The normal client path is the one-command helper:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zevarix/pantheon-local-tools/main/install-apt.sh | bash
+```
+
+The live deb822 source it configures is:
 
 ```text
 Types: deb
@@ -190,7 +196,7 @@ Components: main
 Signed-By: /etc/apt/keyrings/pantheon-local-tools.gpg
 ```
 
-Do not install the keyring without verifying the documented primary fingerprint first. The complete copy/paste-safe client procedure and current public fingerprint are in [`docs/apt-repository.md`](../../docs/apt-repository.md).
+The helper verifies the documented primary fingerprint before installing the keyring. The complete manual client procedure and current public fingerprint are in [`docs/apt-repository.md`](../../docs/apt-repository.md).
 
 ### Publication boundary
 
@@ -200,6 +206,6 @@ Changes on `main` limited to the checked-in landing-page HTML/CSS also republish
 
 GitHub Pages is enabled with **Source: GitHub Actions**, and the initial v0.1.0 repository was published and signature-verified through the real public URL. The workflow intentionally assembles historical `.deb` files from their published GitHub Release assets rather than rebuilding old packages.
 
-`.github/workflows/validate-published-apt.yml` exercises the public HTTPS repository on clean hosted Ubuntu, including archive fingerprint verification, `apt update`, candidate discovery, install, reinstall with user-configuration preservation, and uninstall. The same public v0.1.0 path also completed real WSL2 validation.
+`.github/workflows/validate-published-apt.yml` exercises the public HTTPS repository on clean hosted Ubuntu, including archive fingerprint verification, `apt update`, candidate discovery, install, reinstall with user-configuration preservation, and uninstall. A separate job in the same workflow executes the one-command bootstrap itself against the public repository. The same public v0.1.0 path also completed real WSL2 validation.
 
 The first real previous-version to newer-version package upgrade remains deferred until a second published Debian package exists.

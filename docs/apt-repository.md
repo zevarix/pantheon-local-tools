@@ -10,7 +10,29 @@ The root URL is the human-facing product page. APT clients consume signed metada
 
 The repository uses the `stable` suite and `main` component. Client trust is scoped to a dedicated keyring through APT's `Signed-By` mechanism; `apt-key` is not used.
 
-## Install from the repository
+## Quick install
+
+On Debian, Ubuntu, or WSL, the normal installation path is one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zevarix/pantheon-local-tools/main/install-apt.sh | bash
+```
+
+The checked-in [`install-apt.sh`](../install-apt.sh) helper downloads the public archive keyring from the Pages repository, verifies the canonical primary fingerprint before making privileged changes, installs only the dedicated `Signed-By` keyring and deb822 source, refreshes APT, and installs `pantheon-local-tools`. It uses `sudo` only when the current user is not root.
+
+The helper keeps the trust model described below; it only removes the repetitive setup steps. It fails before configuring APT if the downloaded keyring does not match the fingerprint embedded in the reviewed repository script.
+
+Verify the installed command with:
+
+```bash
+pantheon-local --version
+```
+
+APT will use the published repository for later package upgrades when newer stable versions exist.
+
+## Manual / auditable setup
+
+The following procedure performs the same setup explicitly. Use it when you want to inspect each trust and configuration step rather than use the helper.
 
 Install the small set of tools used to retrieve and verify the archive key:
 
@@ -61,14 +83,6 @@ EOF
 sudo apt-get update
 sudo apt-get install pantheon-local-tools
 ```
-
-Verify the installed command with:
-
-```bash
-pantheon-local --version
-```
-
-APT will use the published repository for later package upgrades when newer stable versions exist.
 
 ## Remove the package or repository
 
@@ -135,7 +149,7 @@ Never place a private primary key, private signing subkey, passphrase, decrypted
 
 ## Validation status
 
-The initial v0.1.0 repository was published through GitHub Pages with signed `InRelease`/`Release.gpg` metadata. The public WSL2 path was exercised through `apt update`, candidate discovery, install, CLI/config verification, reinstall with configuration preservation, uninstall, and package-file removal. `.github/workflows/validate-published-apt.yml` provides the corresponding clean GitHub-hosted Ubuntu validation against the public URL.
+The initial v0.1.0 repository was published through GitHub Pages with signed `InRelease`/`Release.gpg` metadata. The public WSL2 path was exercised through `apt update`, candidate discovery, install, CLI/config verification, reinstall with configuration preservation, uninstall, and package-file removal. `.github/workflows/validate-published-apt.yml` provides the corresponding clean GitHub-hosted Ubuntu validation against the public URL and now separately exercises the one-command bootstrap helper against that same public repository.
 
 The product homepage is deployed as part of the same static Pages artifact without changing APT's signed metadata or trust path.
 

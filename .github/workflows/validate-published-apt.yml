@@ -4,16 +4,20 @@ on:
   pull_request:
     paths:
       - '.github/workflows/validate-published-apt.yml'
+      - 'install-apt.sh'
       - 'docs/apt-repository.md'
       - 'packaging/debian/README.md'
+      - 'packaging/debian/apt-index.html'
       - 'README.md'
   push:
     branches:
       - main
     paths:
       - '.github/workflows/validate-published-apt.yml'
+      - 'install-apt.sh'
       - 'docs/apt-repository.md'
       - 'packaging/debian/README.md'
+      - 'packaging/debian/apt-index.html'
       - 'README.md'
   workflow_dispatch:
     inputs:
@@ -174,6 +178,40 @@ jobs:
         if: always()
         shell: bash
         run: |
+          sudo rm -f \
+            /etc/apt/sources.list.d/pantheon-local-tools.sources \
+            /etc/apt/keyrings/pantheon-local-tools.gpg
+
+  one-command-install:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install through the one-command APT bootstrap
+        shell: bash
+        run: bash ./install-apt.sh
+
+      - name: Verify bootstrap result
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [ -r /etc/apt/keyrings/pantheon-local-tools.gpg ]
+          [ -r /etc/apt/sources.list.d/pantheon-local-tools.sources ]
+          grep -Fq \
+            'Signed-By: /etc/apt/keyrings/pantheon-local-tools.gpg' \
+            /etc/apt/sources.list.d/pantheon-local-tools.sources
+          dpkg-query -W -f='${Status}\n' pantheon-local-tools |
+            grep -qx 'install ok installed'
+          /usr/bin/pantheon-local --version
+
+      - name: Remove bootstrap validation state
+        if: always()
+        shell: bash
+        run: |
+          sudo apt-get remove --yes pantheon-local-tools || true
           sudo rm -f \
             /etc/apt/sources.list.d/pantheon-local-tools.sources \
             /etc/apt/keyrings/pantheon-local-tools.gpg

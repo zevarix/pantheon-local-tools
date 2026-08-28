@@ -15,19 +15,42 @@ assert_contains() { case "$1" in *"$2"*) ;; *) fail "expected output to contain 
 
 run_guided_init() {
   input=$1
-  input_file="$TMP_ROOT/guided-input"
-  command -v script >/dev/null 2>&1 || fail 'script command is required for guided config tests'
-  printf '%b' "$input" > "$input_file"
-  case "$(uname -s)" in
-    Darwin)
-      # BSD script may report a wrapper-level nonzero status at PTY EOF even
-      # after the child completed. Assertions below verify output and state.
-      script -q /dev/null bash "$CLI" config init < "$input_file" || true
-      ;;
-    *)
-      script -q -c "bash \"$CLI\" config init" /dev/null < "$input_file" || true
-      ;;
-  esac
+  command -v python3 >/dev/null 2>&1 || fail 'python3 is required for guided config PTY tests'
+  python3 - "$CLI" "$input" <<'PY'
+import errno
+import os
+import pty
+import sys
+
+cli = sys.argv[1]
+data = sys.argv[2].encode()
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv('/bin/bash', ['bash', cli, 'config', 'init'])
+
+while data:
+    written = os.write(fd, data)
+    data = data[written:]
+
+while True:
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError as exc:
+        if exc.errno == errno.EIO:
+            break
+        raise
+    if not chunk:
+        break
+    sys.stdout.buffer.write(chunk)
+    sys.stdout.buffer.flush()
+
+_, status = os.waitpid(pid, 0)
+if os.WIFEXITED(status):
+    raise SystemExit(os.WEXITSTATUS(status))
+if os.WIFSIGNALED(status):
+    raise SystemExit(128 + os.WTERMSIG(status))
+raise SystemExit(1)
+PY
 }
 
 # The documented example must remain valid Git config data, not executable shell.
@@ -72,23 +95,23 @@ assert_eq "$(bash "$CLI" config get provider)" 'lando'
 
 # Guided setup uses effective defaults/current values and confirms before writing.
 rm -f "$PANTHEON_LOCAL_CONFIG"
-output=$(run_guided_init '\n\n\n')
+output=$(run_guided_init $'\n\n\n')
 assert_contains "$output" 'Auto - use the project DDEV or Lando configuration (recommended)'
 assert_contains "$output" 'Configuration saved.'
 assert_eq "$(bash "$CLI" config get root)" "$HOME/sites/pantheon"
 assert_eq "$(bash "$CLI" config get provider)" 'auto'
 
 rm -f "$PANTHEON_LOCAL_CONFIG"
-run_guided_init '\n2\n\n' >/dev/null
+run_guided_init $'\n2\n\n' >/dev/null
 assert_eq "$(bash "$CLI" config get provider)" 'ddev'
 
 rm -f "$PANTHEON_LOCAL_CONFIG"
-run_guided_init '\n3\n\n' >/dev/null
+run_guided_init $'\n3\n\n' >/dev/null
 assert_eq "$(bash "$CLI" config get provider)" 'lando'
 
 bash "$CLI" config set root "$HOME/Keep Root"
 bash "$CLI" config set provider auto
-output=$(run_guided_init "$HOME/Cancelled Root\n2\nn\n")
+output=$(run_guided_init "$HOME/Cancelled Root"$'\n2\nn\n')
 assert_contains "$output" 'Configuration not changed.'
 assert_eq "$(bash "$CLI" config get root)" "$HOME/Keep Root"
 assert_eq "$(bash "$CLI" config get provider)" 'auto'

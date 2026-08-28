@@ -138,4 +138,13 @@ PANTHEON_LOCAL_APT_CURRENT_VERSION="$TARGET_VERSION" \
   bash "$REPO_ROOT/packaging/debian/build-apt-repository.sh" \
     "$OUTPUT_DIR" "${packages[@]}" >/dev/null
 
+[ -f "$REPO_ROOT/packaging/debian/apt-index.html" ] ||
+  die 'APT landing-page HTML source is missing'
+[ -f "$REPO_ROOT/packaging/debian/apt-index.css" ] ||
+  die 'APT landing-page CSS source is missing'
+
+cp "$REPO_ROOT/packaging/debian/apt-index.html" "$OUTPUT_DIR/index.html"
+cp "$REPO_ROOT/packaging/debian/apt-index.css" "$OUTPUT_DIR/apt-index.css"
+chmod 0644 "$OUTPUT_DIR/index.html" "$OUTPUT_DIR/apt-index.css"
+
 printf '%s\n' "$OUTPUT_DIR"

@@ -104,6 +104,7 @@ assert_file_contains "$CAPTURE_SOURCE" 'Types: deb'
 assert_file_contains "$CAPTURE_SOURCE" 'URIs: https://zevarix.github.io/pantheon-local-tools'
 assert_file_contains "$CAPTURE_SOURCE" 'Suites: stable'
 assert_file_contains "$CAPTURE_SOURCE" 'Components: main'
+assert_file_contains "$CAPTURE_SOURCE" 'Architectures: all'
 assert_file_contains "$CAPTURE_SOURCE" 'Signed-By: /etc/apt/keyrings/pantheon-local-tools.gpg'
 
 # A fingerprint mismatch must fail before any privileged write or APT action.

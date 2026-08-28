@@ -69,6 +69,7 @@ Types: deb
 URIs: $APT_REPOSITORY_URL
 Suites: stable
 Components: main
+Architectures: all
 Signed-By: $APT_KEYRING_PATH
 EOF
 

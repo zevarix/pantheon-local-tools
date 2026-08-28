@@ -1,0 +1,132 @@
+name: Validate published Debian package
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/validate-published-deb.yml
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/validate-published-deb.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the v prefix
+        required: true
+        default: "0.1.0"
+      sha256:
+        description: Expected SHA256 for the published Debian package
+        required: true
+        default: "dbf9ef3c832c8c8e15c024690b8aecad910ce92f89f2e05f5b9a954402cd4235"
+
+permissions:
+  contents: read
+
+jobs:
+  published-deb:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download and verify published package
+        shell: bash
+        env:
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          DISPATCH_SHA256: ${{ github.event.inputs.sha256 }}
+        run: |
+          set -euo pipefail
+
+          version="${DISPATCH_VERSION:-0.1.0}"
+          expected_sha="${DISPATCH_SHA256:-dbf9ef3c832c8c8e15c024690b8aecad910ce92f89f2e05f5b9a954402cd4235}"
+
+          [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] || {
+            echo "Invalid SHA256 input"
+            exit 1
+          }
+
+          asset="pantheon-local-tools_${version}_all.deb"
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${version}"
+
+          curl --fail --location --show-error             --output "$RUNNER_TEMP/$asset"             "$release_url/$asset"
+
+          curl --fail --location --show-error             --output "$RUNNER_TEMP/SHA256SUMS"             "$release_url/SHA256SUMS"
+
+          actual_sha="$(sha256sum "$RUNNER_TEMP/$asset" | awk '{print $1}')"
+
+          printf 'expected SHA256: %s\n' "$expected_sha"
+          printf 'actual SHA256:   %s\n' "$actual_sha"
+
+          [[ "$actual_sha" == "$expected_sha" ]]
+
+          grep -Fx             "$expected_sha  $asset"             "$RUNNER_TEMP/SHA256SUMS"
+
+          {
+            echo "PACKAGE_VERSION=$version"
+            echo "PACKAGE_PATH=$RUNNER_TEMP/$asset"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$(dpkg-deb -f "$PACKAGE_PATH" Version)" == "$PACKAGE_VERSION" ]]
+          [[ "$(dpkg-deb -f "$PACKAGE_PATH" Architecture)" == "all" ]]
+
+      - name: Install published package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ! dpkg-query -W -f='${Status}\n' pantheon-local-tools 2>/dev/null |
+            grep -qx 'install ok installed'
+
+          [[ ! -e /usr/bin/pantheon-local ]]
+
+          sudo apt install --yes "$PACKAGE_PATH"
+
+      - name: Verify installed package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dpkg-query -W             -f='package=${Package}\nversion=${Version}\narchitecture=${Architecture}\nstatus=${Status}\n'             pantheon-local-tools
+
+          [[ "$(/usr/bin/pantheon-local --version)" == "pantheon-local $PACKAGE_VERSION" ]]
+
+          command_target="$(readlink -f /usr/bin/pantheon-local)"
+          printf 'command target: %s\n' "$command_target"
+
+          case "$command_target" in
+            /usr/lib/pantheon-local-tools/*) ;;
+            *) exit 1 ;;
+          esac
+
+      - name: Verify config preservation and uninstall
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          validation_root="$(mktemp -d)"
+          config="$validation_root/config"
+
+          PANTHEON_LOCAL_CONFIG="$config"             /usr/bin/pantheon-local config set provider ddev
+
+          [[ "$(
+            PANTHEON_LOCAL_CONFIG="$config"               /usr/bin/pantheon-local config get provider
+          )" == "ddev" ]]
+
+          [[ "$(
+            git config --file "$config" --get local.provider
+          )" == "ddev" ]]
+
+          sudo apt remove --yes pantheon-local-tools
+
+          ! dpkg-query -W -f='${Status}\n' pantheon-local-tools 2>/dev/null |
+            grep -qx 'install ok installed'
+
+          [[ ! -e /usr/bin/pantheon-local ]]
+          [[ ! -d /usr/lib/pantheon-local-tools ]]
+
+          [[ -f "$config" ]]
+          [[ "$(git config --file "$config" --get local.provider)" == "ddev" ]]

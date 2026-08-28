@@ -132,7 +132,7 @@ Then verify the installed `pantheon-local --version`, configuration path/write/r
 
 The repository CI already proves the same formula layout through an isolated temporary tap before publication; the released tap check proves the actual end-user distribution path.
 
-## 6. Validate the Debian release artifact
+## 6. Validate and publish the Debian/APT release
 
 For a downloaded release package on Ubuntu/Debian:
 
@@ -145,11 +145,21 @@ Verify user configuration remains outside package ownership and survives package
 
 Before advertising upgrade support, exercise a real previous-version -> current-version package upgrade. WSL/WSL2 requires its own real validation pass; Ubuntu CI is useful contract evidence but is not a substitute for WSL runtime proof.
 
-A signed hosted APT repository is a separate distribution layer and does not become implied merely because a `.deb` exists.
+The signed hosted APT repository is published separately from the downloadable `.deb` at:
 
-When signed APT publication is enabled, `.github/workflows/publish-apt-repository.yml` assembles every stable published Debian package up to the target version, verifies each against its release `SHA256SUMS`, signs the resulting multiversion repository, validates it with an isolated APT client, and deploys the static tree to GitHub Pages. Pull requests exercise the same assembly/sign/validation path against the latest already-published stable release with an ephemeral key, but never deploy.
+```text
+https://zevarix.github.io/pantheon-local-tools
+```
 
-Production APT publication requires the dedicated signing subkey secrets and GitHub Pages configured with **Source: GitHub Actions**. A manual workflow dispatch can bootstrap or republish an existing stable version; stable future release publication can trigger the same workflow automatically.
+`.github/workflows/publish-apt-repository.yml` assembles every stable published Debian package up to the target version, verifies each against its release `SHA256SUMS`, signs the resulting multiversion repository, validates it with an isolated APT client, and deploys the static tree to GitHub Pages. Pull requests exercise the same assembly/sign/validation path against the latest already-published stable release with an ephemeral key, but never deploy.
+
+Production APT publication uses the passphrase-protected signing-subkey material stored in the dedicated Actions secrets. The certification-capable primary key stays offline. When the optional `APT_SIGNING_SUBKEY_FINGERPRINT` secret is configured, publication forces GPG to use that exact imported signing subkey; use this during rotation overlap rather than relying on implicit GPG subkey selection.
+
+Stable non-prerelease GitHub Release publication triggers the APT publication workflow automatically. A manual workflow dispatch can bootstrap or republish an existing stable version without rebuilding historical package artifacts.
+
+After each APT publication, verify the real public path with `.github/workflows/validate-published-apt.yml` and, for release gates that require it, a WSL2 client. The clean hosted-Ubuntu workflow verifies the pinned archive fingerprint, `apt update`, candidate discovery, package installation, CLI/config behavior, reinstall with user-configuration preservation, and uninstall.
+
+Client trust, the pinned public fingerprint, keyring refresh, signing-subkey rotation, revocation, and recovery procedures are defined in [`docs/apt-repository.md`](apt-repository.md). A signing-subkey rotation must preserve an overlap window: publish a refreshed keyring while still signing with the old explicitly selected subkey, allow clients to refresh their dedicated keyring, then switch the exact signer and validate again.
 
 ## 7. Post-release verification
 
@@ -161,6 +171,9 @@ After publication, verify:
 - clean Homebrew installation from `zevarix/tap`;
 - Homebrew test and uninstall;
 - Debian installation when shipped;
+- signed APT repository fingerprint/signature and package discovery when Debian distribution is enabled;
+- clean hosted-Ubuntu APT install/reinstall/uninstall through the public HTTPS repository;
+- required WSL2 APT validation through the same public repository;
 - configuration remains user-owned;
 - no provider/project state is created merely by package installation; and
 - the portable clone installer remains documented and functional.
@@ -170,3 +183,5 @@ Only then mark the corresponding release-tracker items complete.
 ## Recovery rule
 
 If a published artifact or package metadata is wrong, preserve evidence and correct it explicitly. Do not silently move an existing release tag to different source bytes or replace a checksum without documenting the correction. Prefer a new patch release when users may already have consumed the published artifact.
+
+If an APT signing key or subkey is suspected compromised, stop automated APT publication and follow the revocation/recovery procedure in [`docs/apt-repository.md`](apt-repository.md) before publishing new metadata.

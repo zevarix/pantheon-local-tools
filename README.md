@@ -254,23 +254,40 @@ The publishable formula is generated only from the immutable release source arti
 
 ### Debian / Ubuntu / WSL
 
-An architecture-independent Debian package builder is implemented and tested on Ubuntu and WSL2:
+The v0.1.0 Debian package is published both as a downloadable release artifact and through the signed APT repository:
+
+```text
+https://zevarix.github.io/pantheon-local-tools
+```
+
+The repository uses a dedicated `/etc/apt/keyrings` keyring and deb822 `Signed-By` source. Because the archive key is a trust anchor, follow the fingerprint-verifying installation procedure in [`docs/apt-repository.md`](docs/apt-repository.md) rather than piping an unverified key directly into APT.
+
+After the repository is configured, installation is the normal APT path:
+
+```bash
+sudo apt-get update
+sudo apt-get install pantheon-local-tools
+```
+
+The public v0.1.0 repository path has completed real WSL2 validation and clean GitHub-hosted Ubuntu validation, including archive fingerprint/signature verification, `apt update`, candidate discovery, install, CLI/config checks, reinstall with configuration preservation, and uninstall. A real previous-version to newer-version upgrade remains deferred to #30 because v0.1.0 is the first published Debian package.
+
+The architecture-independent package builder remains available to maintainers and contributors:
 
 ```bash
 bash packaging/debian/build-deb.sh
 ```
 
-Tagged releases may attach `pantheon-local-tools_<VERSION>_all.deb`. A downloaded package installs with:
+A downloaded GitHub Release package can also be installed directly:
 
 ```bash
 sudo apt install ./pantheon-local-tools_<VERSION>_all.deb
 ```
 
-The package installs application files under `/usr/lib/pantheon-local-tools`, exposes `/usr/bin/pantheon-local`, and leaves user configuration/checkouts outside package ownership. Real package install/upgrade/uninstall validation and any hosted signed APT repository remain follow-up distribution work tracked in #9; they are not implied by shipping the first `.deb`. See [`packaging/debian/README.md`](packaging/debian/README.md).
+The package installs application files under `/usr/lib/pantheon-local-tools`, exposes `/usr/bin/pantheon-local`, and leaves user configuration/checkouts outside package ownership. See [`packaging/debian/README.md`](packaging/debian/README.md) for package/repository implementation details.
 
 The clone installer remains supported as the portable fallback for macOS, Linux, WSL, contributors, and CI even after package-manager distribution is published.
 
-Maintainers should follow [`docs/releasing.md`](docs/releasing.md) for the tag, deterministic source archive, checksums, GitHub Release, Homebrew formula, and Debian artifact sequence. Real provider/host release gates are in [`docs/real-integration-validation.md`](docs/real-integration-validation.md).
+Maintainers should follow [`docs/releasing.md`](docs/releasing.md) for the tag, deterministic source archive, checksums, GitHub Release, Homebrew formula, Debian artifact, and signed APT publication sequence. Real provider/host release gates are in [`docs/real-integration-validation.md`](docs/real-integration-validation.md).
 
 ## Development
 
@@ -290,7 +307,7 @@ Run ShellCheck when available:
 shellcheck bin/pantheon-local libexec/pantheon-local-* install.sh tests/test-*.sh packaging/debian/*.sh packaging/homebrew/*.sh packaging/release/*.sh
 ```
 
-CI runs syntax validation, ShellCheck, and the full shell integration suite on both Ubuntu and macOS. The suite includes isolated-home installer coverage, provider mocks, deterministic release-source packaging, Ubuntu `.deb` layout validation, and macOS Homebrew temporary-tap installation. Real WSL2 fresh-clone/install/full-suite validation is also complete for v0.1.0.
+CI runs syntax validation, ShellCheck, and the full shell integration suite on both Ubuntu and macOS. The suite includes isolated-home installer coverage, provider mocks, deterministic release-source packaging, Ubuntu `.deb` layout validation, signed APT repository generation/signing checks, and macOS Homebrew temporary-tap installation. Real WSL2 fresh-clone/install/full-suite validation is also complete for v0.1.0, and the published APT repository has its own clean hosted-Ubuntu smoke workflow.
 
 ## Contributing
 

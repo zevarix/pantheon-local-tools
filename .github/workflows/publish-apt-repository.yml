@@ -53,7 +53,8 @@ jobs:
           case "$EVENT_NAME" in
             pull_request)
               release_tag=$(
-                gh api "repos/$GITHUB_REPOSITORY/releases/latest"                   --jq '.tag_name'
+                gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
+                  --jq '.tag_name'
               )
               version=${release_tag#v}
               ;;
@@ -122,6 +123,7 @@ jobs:
         env:
           APT_SIGNING_PRIVATE_KEY: ${{ secrets.APT_SIGNING_PRIVATE_KEY }}
           APT_SIGNING_PASSPHRASE: ${{ secrets.APT_SIGNING_PASSPHRASE }}
+          APT_SIGNING_SUBKEY_FINGERPRINT: ${{ secrets.APT_SIGNING_SUBKEY_FINGERPRINT }}
         run: |
           set -euo pipefail
 
@@ -134,20 +136,51 @@ jobs:
           mkdir -m 0700 "$GNUPGHOME"
           printf '%s\n' "$APT_SIGNING_PRIVATE_KEY" | gpg --batch --import >/dev/null 2>&1
 
-          fingerprint=$(
+          primary_fingerprint=$(
             gpg --batch --with-colons --list-secret-keys |
               awk -F: '$1 == "fpr" && !found { print $10; found = 1 }'
           )
 
-          [ -n "$fingerprint" ] || {
+          [ -n "$primary_fingerprint" ] || {
             echo 'production signing key fingerprint could not be resolved' >&2
             exit 1
           }
 
+          signing_fingerprint=$primary_fingerprint
+          exact_signing_key=0
+
+          if [ -n "$APT_SIGNING_SUBKEY_FINGERPRINT" ]; then
+            printf '%s\n' "$APT_SIGNING_SUBKEY_FINGERPRINT" |
+              grep -Eq '^[0-9A-Fa-f]{40}([0-9A-Fa-f]{24})?$' || {
+                echo 'APT_SIGNING_SUBKEY_FINGERPRINT must be a full fingerprint' >&2
+                exit 1
+              }
+
+            gpg --batch --with-colons \
+              --list-secret-keys "$APT_SIGNING_SUBKEY_FINGERPRINT" |
+              awk -F: -v wanted="$APT_SIGNING_SUBKEY_FINGERPRINT" '
+                $1 == "ssb" { want_fpr = 1; next }
+                want_fpr && $1 == "fpr" {
+                  if (toupper($10) == toupper(wanted)) {
+                    found = 1
+                  }
+                  want_fpr = 0
+                }
+                END { exit found ? 0 : 1 }
+              ' || {
+                echo 'configured exact signer is not an imported secret subkey' >&2
+                exit 1
+              }
+
+            signing_fingerprint=$APT_SIGNING_SUBKEY_FINGERPRINT
+            exact_signing_key=1
+          fi
+
           PANTHEON_LOCAL_APT_SIGNING_PASSPHRASE="$APT_SIGNING_PASSPHRASE" \
+          PANTHEON_LOCAL_APT_EXACT_SIGNING_KEY="$exact_signing_key" \
             bash packaging/debian/sign-apt-repository.sh \
               "$RUNNER_TEMP/apt-repository" \
-              "$fingerprint"
+              "$signing_fingerprint"
 
       - name: Validate signed repository with isolated APT client
         shell: bash

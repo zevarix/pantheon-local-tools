@@ -1,0 +1,179 @@
+name: Validate published APT repository
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/validate-published-apt.yml'
+      - 'docs/apt-repository.md'
+      - 'packaging/debian/README.md'
+      - 'README.md'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/validate-published-apt.yml'
+      - 'docs/apt-repository.md'
+      - 'packaging/debian/README.md'
+      - 'README.md'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published package version to validate
+        required: true
+        default: '0.1.0'
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  APT_REPOSITORY_URL: https://zevarix.github.io/pantheon-local-tools
+  APT_PRIMARY_FINGERPRINT: B75C45FA9E87AF56D7677F5785AF0D1C6E64C3F2
+
+jobs:
+  public-apt:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install validation prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ca-certificates curl gnupg
+
+      - name: Resolve validation target
+        shell: bash
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          version=${DISPATCH_VERSION:-0.1.0}
+          [ -n "$version" ] || {
+            echo 'package version cannot be empty' >&2
+            exit 1
+          }
+          dpkg --validate-version "$version"
+          printf 'PACKAGE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+
+      - name: Download and verify archive key
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          keyring="$RUNNER_TEMP/pantheon-local-tools-archive-keyring.gpg"
+          curl --fail --silent --show-error --location \
+            "$APT_REPOSITORY_URL/pantheon-local-tools-archive-keyring.gpg" \
+            --output "$keyring"
+
+          fingerprint=$(
+            gpg --batch --show-keys --with-colons "$keyring" |
+              awk -F: '$1 == "fpr" && !found { print $10; found = 1 }'
+          )
+
+          [ "$fingerprint" = "$APT_PRIMARY_FINGERPRINT" ] || {
+            printf 'expected archive fingerprint %s, got %s\n' \
+              "$APT_PRIMARY_FINGERPRINT" "$fingerprint" >&2
+            exit 1
+          }
+
+          sudo install -d -m 0755 /etc/apt/keyrings
+          sudo install -m 0644 \
+            "$keyring" \
+            /etc/apt/keyrings/pantheon-local-tools.gpg
+
+      - name: Configure repository and discover package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > "$RUNNER_TEMP/pantheon-local-tools.sources" <<EOF
+          Types: deb
+          URIs: $APT_REPOSITORY_URL
+          Suites: stable
+          Components: main
+          Signed-By: /etc/apt/keyrings/pantheon-local-tools.gpg
+          EOF
+
+          sudo install -m 0644 \
+            "$RUNNER_TEMP/pantheon-local-tools.sources" \
+            /etc/apt/sources.list.d/pantheon-local-tools.sources
+
+          sudo apt-get update
+
+          candidate=$(
+            apt-cache policy pantheon-local-tools |
+              awk '/Candidate:/ && !found { print $2; found = 1 }'
+          )
+
+          [ "$candidate" = "$PACKAGE_VERSION" ] || {
+            printf 'expected candidate %s, got %s\n' \
+              "$PACKAGE_VERSION" "$candidate" >&2
+            exit 1
+          }
+
+      - name: Install and verify published package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ! dpkg-query -W -f='${Status}\n' pantheon-local-tools 2>/dev/null |
+            grep -qx 'install ok installed'
+          [ ! -e /usr/bin/pantheon-local ]
+
+          sudo apt-get install --yes \
+            "pantheon-local-tools=$PACKAGE_VERSION"
+
+          [ "$(dpkg-query -W -f='${Version}' pantheon-local-tools)" = \
+            "$PACKAGE_VERSION" ]
+          [ "$(/usr/bin/pantheon-local --version)" = \
+            "pantheon-local $PACKAGE_VERSION" ]
+          [ "$(readlink -f /usr/bin/pantheon-local)" = \
+            '/usr/lib/pantheon-local-tools/bin/pantheon-local' ]
+
+      - name: Verify reinstall and configuration preservation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          config="$RUNNER_TEMP/pantheon-local-tools-config"
+          PANTHEON_LOCAL_CONFIG="$config" \
+            /usr/bin/pantheon-local config set provider ddev
+
+          [ "$(
+            PANTHEON_LOCAL_CONFIG="$config" \
+              /usr/bin/pantheon-local config get provider
+          )" = 'ddev' ]
+
+          sudo apt-get install --yes --reinstall \
+            "pantheon-local-tools=$PACKAGE_VERSION"
+
+          [ "$(
+            PANTHEON_LOCAL_CONFIG="$config" \
+              /usr/bin/pantheon-local config get provider
+          )" = 'ddev' ]
+          [ -f "$config" ]
+
+      - name: Verify uninstall and user-state preservation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          config="$RUNNER_TEMP/pantheon-local-tools-config"
+          sudo apt-get remove --yes pantheon-local-tools
+          hash -r
+
+          ! dpkg-query -W -f='${Status}\n' pantheon-local-tools 2>/dev/null |
+            grep -qx 'install ok installed'
+          [ ! -e /usr/bin/pantheon-local ]
+          [ ! -e /usr/lib/pantheon-local-tools ]
+          ! type -P pantheon-local >/dev/null 2>&1
+          [ -f "$config" ]
+          [ "$(git config --file "$config" --get local.provider)" = 'ddev' ]
+
+      - name: Remove validation APT source
+        if: always()
+        shell: bash
+        run: |
+          sudo rm -f \
+            /etc/apt/sources.list.d/pantheon-local-tools.sources \
+            /etc/apt/keyrings/pantheon-local-tools.gpg

@@ -53,15 +53,28 @@ cd pantheon-local-tools
 
 The portable installer links `pantheon-local` into `~/.local/bin` by default and does not edit shell startup files. Set `PANTHEON_LOCAL_BIN_DIR` to choose another destination.
 
-Verify the installation with:
+Verify the installation and discover the command surface with:
 
 ```bash
 pantheon-local --version
+pantheon-local help
 ```
 
 ### Configure and try a Multidev checkout
 
-Choose a checkout root and, optionally, a default provider:
+For guided first-run setup, run:
+
+```bash
+pantheon-local config init
+```
+
+The setup uses the current effective checkout root/provider values, lets you choose `auto`, DDEV, or Lando, summarizes the result, and confirms before writing. Experienced users and scripts can configure one or both values without prompts:
+
+```bash
+pantheon-local config init --root ~/sites/pantheon --provider ddev
+```
+
+The granular configuration commands remain available when you want direct control:
 
 ```bash
 pantheon-local config set root ~/sites/pantheon
@@ -84,7 +97,13 @@ Use `lando` instead of `ddev` when that is the project/provider you want.
 
 ## Commands
 
+Run `pantheon-local help` or `pantheon-local --help` for the complete in-tool command reference.
+
 ```text
+pantheon-local help
+pantheon-local --help
+
+pantheon-local config init [--root PATH] [--provider auto|ddev|lando]
 pantheon-local config path
 pantheon-local config get KEY
 pantheon-local config set KEY VALUE
@@ -110,6 +129,8 @@ pantheon-local status
 pantheon-local version
 pantheon-local --version
 ```
+
+Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local multidev --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
 
 ## Core workflows
 
@@ -147,7 +168,9 @@ See [`docs/status.md`](docs/status.md) for the status contract.
 
 User configuration is managed through `pantheon-local config`; hand-editing is not required.
 
-By default it lives at:
+For a human first run, `pantheon-local config init` guides root/provider selection and writes only after all selected values validate and you confirm the summary. Supplying `--root` and/or `--provider` makes the same command non-interactive; omitted values remain unchanged. The existing `config get/set/unset/list` commands remain the granular scriptable interface.
+
+By default configuration lives at:
 
 ```text
 ~/.config/pantheon-local-tools/config
@@ -161,11 +184,14 @@ Built-in defaults are:
 - `provider`: `auto`
 - Pantheon Tag mappings: none
 
+`provider=auto` detects the checkout's project configuration after clone: `.ddev/config.yaml` selects DDEV and `.lando.yml` selects Lando. If detection is ambiguous, the tool refuses to guess.
+
 Examples:
 
 ```bash
+pantheon-local config init
+pantheon-local config init --provider lando
 pantheon-local config set root ~/work/pantheon
-pantheon-local config set provider lando
 pantheon-local config tag set "Client Sites" clients
 pantheon-local config list
 ```

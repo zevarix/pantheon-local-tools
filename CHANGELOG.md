@@ -6,8 +6,15 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+## 0.1.1 — 2026-08-28
+
+First patch release after v0.1.0, focused on lower-friction onboarding, self-documenting CLI help, and completing the signed APT distribution path.
+
 ### Added
 
+- Added `pantheon-local config init` for guided first-run setup using the existing configuration defaults, validation, storage path, and granular setters.
+- Added non-interactive `config init --root PATH` and `--provider auto|ddev|lando` options for experienced users and automation.
+- Added complete top-level `pantheon-local help` / `pantheon-local --help` output that enumerates the supported public command surface, important options, provider-detection semantics, and representative examples.
 - Published the current stable release through the public Homebrew tap at `zevarix/tap`.
 - Published a signed Debian/Ubuntu/WSL APT repository on GitHub Pages with dedicated `Signed-By` keyring trust, hosted-Ubuntu validation, and real WSL2 validation.
 - Added the public Pantheon Local Tools product homepage at the same GitHub Pages origin used by the signed APT repository.
@@ -16,11 +23,12 @@ The project follows Semantic Versioning for its public command/configuration con
 ### Changed
 
 - Hardened APT publication around immutable release assets, reduced signing-subkey material, explicit rotation boundaries, deterministic repository assembly, and public-client validation.
+- Scoped the third-party APT source to the published architecture-independent index so clean installs do not emit an unsupported host-architecture warning.
 - Refreshed repository documentation after the first public release so the README acts as a concise project front door and deep implementation/release details remain in focused docs.
 - Generalized maintainer release and packaging documentation for future releases instead of leaving first-release-only instructions in durable runbooks.
 - Simplified the normal signed-APT onboarding path from several manual copy/paste blocks to one reviewed bootstrap command while retaining the full manual trust procedure.
-
-The current public CLI payload remains the v0.1.0 release; these entries describe post-tag distribution, publication, website, and documentation work on `main` unless a later release notes otherwise.
+- Kept moving-branch APT installer completion guidance compatible with the package version actually published as stable.
+- Added regression coverage so public commands/options cannot silently disappear from in-tool help.
 
 ## 0.1.0 — 2026-08-27
 

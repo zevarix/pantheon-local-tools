@@ -21,13 +21,17 @@ Both print:
 pantheon-local VERSION
 ```
 
-Development snapshots use a SemVer prerelease value such as `0.1.0-dev`. A tagged release must contain the exact release value (for example `0.1.0`) in `VERSION`, and the Git tag must match it with a leading `v` (`v0.1.0`).
+Development snapshots use a SemVer prerelease value such as `0.1.0-dev`. A tagged release must contain the exact release value (for example `0.1.1`) in `VERSION`, and the Git tag must match it with a leading `v` (`v0.1.1`).
 
 ## Public command surface
 
 The following commands/options are public for `0.1.x`:
 
 ```text
+pantheon-local help
+pantheon-local --help
+
+pantheon-local config init [--root PATH] [--provider auto|ddev|lando]
 pantheon-local config path
 pantheon-local config get KEY
 pantheon-local config set KEY VALUE
@@ -54,6 +58,8 @@ pantheon-local version
 pantheon-local --version
 ```
 
+Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local multidev --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
+
 New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning.
 
 ## Configuration contract
@@ -64,6 +70,8 @@ The following user configuration concepts are public:
 - `provider` — `auto`, `ddev`, or `lando`;
 - Pantheon Tag-to-directory mappings managed through `config tag`.
 
+`pantheon-local config init` is a convenience layer over the same configuration model. With no flags in a terminal, it guides root/provider selection, validates all proposed values, summarizes them, confirms before writing, and uses the normal configuration setters. With `--root` and/or `--provider`, it is non-interactive and changes only values explicitly supplied by the caller. Existing `config get/set/unset/list/path` and `config tag` commands remain first-class granular controls.
+
 The default configuration location follows XDG conventions as documented by the CLI/README. `PANTHEON_LOCAL_CONFIG` remains the supported complete-path override for automation/testing.
 
 The Git-compatible on-disk representation is intentionally simple, but users should prefer the CLI rather than depending on undocumented internal key names.
@@ -73,6 +81,8 @@ The Git-compatible on-disk representation is intentionally simple, but users sho
 DDEV and Lando are the supported local providers for `0.1.x`.
 
 Provider-owned project configuration remains authoritative. Pantheon Local Tools is additive and must not silently replace or strip existing provider services, tooling, add-ons, proxy/custom-hostname configuration, or custom Compose definitions.
+
+When stored configuration uses `provider=auto`, provider selection is based on project configuration after checkout (`.ddev/config.yaml` versus `.lando.yml`), not simply on which provider binaries are installed. Ambiguous detection fails rather than guessing.
 
 A provider-specific implementation detail may change in a patch release when the user-visible command contract and safety properties remain the same.
 
@@ -88,7 +98,9 @@ A compatible `0.1.x` release must preserve these properties:
 - never collect or persist Pantheon machine tokens;
 - never start/rebuild a provider unless the user requested an operation that explicitly permits it;
 - never mutate provider configuration merely to discover a runtime URL;
-- fail rather than guess on ambiguous provider or configured Tag routing.
+- fail rather than guess on ambiguous provider or configured Tag routing;
+- keep help/read-only discovery surfaces free of provider startup, authentication, or filesystem/project mutation; and
+- validate all guided `config init` selections before writing so an invalid later value cannot leave a partial configuration update.
 
 Safety tightening that converts a previously ambiguous/unsafe case into an explicit failure is considered compatible when documented in release notes.
 

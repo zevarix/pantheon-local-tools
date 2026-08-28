@@ -95,12 +95,15 @@ case "$install_output" in
   *) fail 'installer did not report successful completion' ;;
 esac
 case "$install_output" in
-  *'Next: pantheon-local config init'*) ;;
-  *) fail 'installer did not point to guided configuration' ;;
+  *'Run: pantheon-local --version'*) ;;
+  *) fail 'installer did not point to a stable-safe version check' ;;
 esac
 case "$install_output" in
   *'Help: pantheon-local help'*) ;;
   *) fail 'installer did not point to in-tool help' ;;
+esac
+case "$install_output" in
+  *'pantheon-local config init'*) fail 'installer advertised unreleased config init' ;;
 esac
 
 assert_file_contains "$CALL_LOG" 'curl keyring'

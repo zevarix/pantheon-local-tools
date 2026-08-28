@@ -4,6 +4,22 @@ All notable user-facing changes to Pantheon Local Tools are recorded here.
 
 The project follows Semantic Versioning for its public command/configuration contract. The repository-root `VERSION` file is canonical; tagged releases use the corresponding `vVERSION` Git tag.
 
+## Unreleased
+
+### Added
+
+- Published the current stable release through the public Homebrew tap at `zevarix/tap`.
+- Published a signed Debian/Ubuntu/WSL APT repository on GitHub Pages with dedicated `Signed-By` keyring trust, hosted-Ubuntu validation, and real WSL2 validation.
+- Added the public Pantheon Local Tools product homepage at the same GitHub Pages origin used by the signed APT repository.
+
+### Changed
+
+- Hardened APT publication around immutable release assets, reduced signing-subkey material, explicit rotation boundaries, deterministic repository assembly, and public-client validation.
+- Refreshed repository documentation after the first public release so the README acts as a concise project front door and deep implementation/release details remain in focused docs.
+- Generalized maintainer release and packaging documentation for future releases instead of leaving first-release-only instructions in durable runbooks.
+
+The current public CLI payload remains the v0.1.0 release; these entries describe post-tag distribution, publication, website, and documentation work on `main` unless a later release notes otherwise.
+
 ## 0.1.0 — 2026-08-27
 
 First public release of Pantheon Local Tools.

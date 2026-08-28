@@ -36,7 +36,7 @@ and provides the command through a relative symlink:
 /usr/bin/pantheon-local -> ../lib/pantheon-local-tools/bin/pantheon-local
 ```
 
-Keeping `bin/`, `libexec/`, and `VERSION` together preserves the same relative module/version resolution used by the clone installer and future Homebrew formula.
+Keeping `bin/`, `libexec/`, and `VERSION` together preserves the same relative module/version resolution used by the clone installer and Homebrew formula.
 
 ## Install a downloaded package
 
@@ -71,11 +71,13 @@ Package removal does not own that file and therefore must not delete it. Checkou
 
 ## Signed APT repository
 
-The hosted APT repository is a separate distribution layer from the downloadable `.deb` and is published at:
+The project website and hosted APT repository are separate concerns published from the same GitHub Pages origin:
 
 ```text
-https://zevarix.github.io/pantheon-local-tools
+https://zevarix.github.io/pantheon-local-tools/
 ```
+
+The root is the human-facing product page. APT consumes the signed repository files beneath that same origin.
 
 End-user key verification, `/etc/apt/keyrings` installation, deb822 `Signed-By` setup, removal, signing-key rotation, revocation, and recovery procedures are documented in [`docs/apt-repository.md`](../../docs/apt-repository.md).
 
@@ -146,6 +148,8 @@ For every stable release up to and including the target version, the assembler:
 
 When `SOURCE_DATE_EPOCH` is not supplied, the target GitHub Release publication time is used so repeated assembly of the same target produces stable unsigned repository metadata.
 
+The assembler also copies the checked-in static product-page HTML/CSS into the Pages artifact. Those presentation files are outside APT's signed package metadata and do not replace or rewrite historical release artifacts.
+
 ### Sign repository metadata
 
 Signing is intentionally separate from repository generation:
@@ -192,8 +196,10 @@ Do not install the keyring without verifying the documented primary fingerprint 
 
 `.github/workflows/publish-apt-repository.yml` performs a real publication dry run on relevant pull requests with an ephemeral key against the latest already-published stable release. Stable release events and manual dispatches use the configured production signing-subkey secrets, upload the generated static archive as a GitHub Pages artifact, and deploy it through the `github-pages` environment.
 
-GitHub Pages is enabled with **Source: GitHub Actions**, and the initial v0.1.0 repository has been published and signature-verified through the real public URL. The workflow intentionally assembles historical `.deb` files from their published GitHub Release assets rather than rebuilding old packages.
+Changes on `main` limited to the checked-in landing-page HTML/CSS also republish the latest stable repository tree. This allows normal website maintenance without creating a fake software release while keeping unrelated APT infrastructure changes behind their explicit publication boundary.
 
-`.github/workflows/validate-published-apt.yml` exercises the public HTTPS repository on clean hosted Ubuntu, including archive fingerprint verification, `apt update`, candidate discovery, install, reinstall with user-configuration preservation, and uninstall. The same public v0.1.0 path has also completed real WSL2 validation.
+GitHub Pages is enabled with **Source: GitHub Actions**, and the initial v0.1.0 repository was published and signature-verified through the real public URL. The workflow intentionally assembles historical `.deb` files from their published GitHub Release assets rather than rebuilding old packages.
+
+`.github/workflows/validate-published-apt.yml` exercises the public HTTPS repository on clean hosted Ubuntu, including archive fingerprint verification, `apt update`, candidate discovery, install, reinstall with user-configuration preservation, and uninstall. The same public v0.1.0 path also completed real WSL2 validation.
 
 The first real previous-version to newer-version package upgrade remains deferred until a second published Debian package exists.

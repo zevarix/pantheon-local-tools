@@ -43,26 +43,33 @@ jobs:
       - name: Resolve target version
         id: version
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
 
-          case "${{ github.event_name }}" in
+          case "$EVENT_NAME" in
             pull_request)
               version=$(cat VERSION)
               ;;
             release)
-              version='${{ github.event.release.tag_name }}'
-              version=${version#v}
+              version=${RELEASE_TAG#v}
               ;;
             workflow_dispatch)
-              version='${{ inputs.version }}'
-              version=${version#v}
+              version=${DISPATCH_VERSION#v}
               ;;
             *)
-              printf 'unsupported event: %s\n' '${{ github.event_name }}' >&2
+              printf 'unsupported event: %s\n' "$EVENT_NAME" >&2
               exit 1
               ;;
           esac
+
+          [ -n "$version" ] || {
+            echo 'target version cannot be empty' >&2
+            exit 1
+          }
 
           dpkg --validate-version "$version"
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"

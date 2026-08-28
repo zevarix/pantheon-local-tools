@@ -8,7 +8,7 @@ https://zevarix.github.io/pantheon-local-tools/
 
 The root URL is the human-facing product page. APT clients consume signed metadata, package indexes, the public archive keyring, and package files beneath that same origin.
 
-The repository uses the `stable` suite and `main` component. Client trust is scoped to a dedicated keyring through APT's `Signed-By` mechanism; `apt-key` is not used.
+The repository uses the `stable` suite and `main` component. Client trust is scoped to a dedicated keyring through APT's `Signed-By` mechanism; `apt-key` is not used. The package is architecture-independent (`Architecture: all`), so the client source explicitly requests only the published `binary-all` index instead of probing for host-specific indexes such as `binary-amd64`.
 
 ## Quick install
 
@@ -77,6 +77,7 @@ Types: deb
 URIs: https://zevarix.github.io/pantheon-local-tools
 Suites: stable
 Components: main
+Architectures: all
 Signed-By: /etc/apt/keyrings/pantheon-local-tools.gpg
 EOF
 
@@ -149,7 +150,7 @@ Never place a private primary key, private signing subkey, passphrase, decrypted
 
 ## Validation status
 
-The initial v0.1.0 repository was published through GitHub Pages with signed `InRelease`/`Release.gpg` metadata. The public WSL2 path was exercised through `apt update`, candidate discovery, install, CLI/config verification, reinstall with configuration preservation, uninstall, and package-file removal. `.github/workflows/validate-published-apt.yml` provides the corresponding clean GitHub-hosted Ubuntu validation against the public URL and now separately exercises the one-command bootstrap helper against that same public repository.
+The initial v0.1.0 repository was published through GitHub Pages with signed `InRelease`/`Release.gpg` metadata. The public WSL2 path was exercised through `apt update`, candidate discovery, install, CLI/config verification, reinstall with configuration preservation, uninstall, and package-file removal. `.github/workflows/validate-published-apt.yml` provides the corresponding clean GitHub-hosted Ubuntu validation against the public URL and separately exercises the one-command bootstrap helper against that same public repository. Both paths assert that the architecture-independent source does not emit a host-architecture mismatch notice.
 
 The product homepage is deployed as part of the same static Pages artifact without changing APT's signed metadata or trust path.
 

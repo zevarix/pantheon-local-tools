@@ -18,11 +18,14 @@ Do not tag first and hope to repair the release afterward. Prepare the release v
 
 ## 1. Prepare the release commit
 
-For `v0.1.0`, update the repository-root `VERSION` from the development value to:
+Set the repository-root `VERSION` to the exact version being released. For example:
 
-```text
-0.1.0
+```bash
+RELEASE_VERSION='<VERSION>'
+printf '%s\n' "$RELEASE_VERSION" > VERSION
 ```
+
+The value must be a release version such as `0.1.1`, not a development suffix such as `0.1.1-dev`.
 
 Run the full repository validation matrix and merge only when required checks pass.
 
@@ -91,7 +94,7 @@ After upload, download the published artifacts again and verify their SHA256 val
 
 ## 5. Publish the Homebrew formula
 
-The public tap is intended to be:
+The public tap repository is:
 
 ```text
 zevarix/homebrew-tap
@@ -106,7 +109,7 @@ zevarix/tap
 Use the exact published release source asset URL and its verified SHA256 to render the formula:
 
 ```bash
-VERSION=0.1.0
+VERSION=$(cat VERSION)
 URL="https://github.com/zevarix/pantheon-local-tools/releases/download/v${VERSION}/pantheon-local-tools-${VERSION}.tar.gz"
 SHA256="<verified published source artifact sha256>"
 
@@ -145,17 +148,19 @@ Verify user configuration remains outside package ownership and survives package
 
 Before advertising upgrade support, exercise a real previous-version -> current-version package upgrade. WSL/WSL2 requires its own real validation pass; Ubuntu CI is useful contract evidence but is not a substitute for WSL runtime proof.
 
-The signed hosted APT repository is published separately from the downloadable `.deb` at:
+The project website and signed hosted APT repository share this GitHub Pages origin:
 
 ```text
-https://zevarix.github.io/pantheon-local-tools
+https://zevarix.github.io/pantheon-local-tools/
 ```
+
+The root serves the human-facing product page while APT consumes the signed repository files beneath the same origin.
 
 `.github/workflows/publish-apt-repository.yml` assembles every stable published Debian package up to the target version, verifies each against its release `SHA256SUMS`, signs the resulting multiversion repository, validates it with an isolated APT client, and deploys the static tree to GitHub Pages. Pull requests exercise the same assembly/sign/validation path against the latest already-published stable release with an ephemeral key, but never deploy.
 
 Production APT publication uses the passphrase-protected signing-subkey material stored in the dedicated Actions secrets. The certification-capable primary key stays offline. When the optional `APT_SIGNING_SUBKEY_FINGERPRINT` secret is configured, publication forces GPG to use that exact imported signing subkey; use this during rotation overlap rather than relying on implicit GPG subkey selection.
 
-Stable non-prerelease GitHub Release publication triggers the APT publication workflow automatically. A manual workflow dispatch can bootstrap or republish an existing stable version without rebuilding historical package artifacts.
+Stable non-prerelease GitHub Release publication triggers the APT publication workflow automatically. A manual workflow dispatch can bootstrap or republish an existing stable version without rebuilding historical package artifacts. Changes on `main` limited to the static landing-page sources also republish the latest stable repository tree so website maintenance does not require a fake software release.
 
 After each APT publication, verify the real public path with `.github/workflows/validate-published-apt.yml` and, for release gates that require it, a WSL2 client. The clean hosted-Ubuntu workflow verifies the pinned archive fingerprint, `apt update`, candidate discovery, package installation, CLI/config behavior, reinstall with user-configuration preservation, and uninstall.
 
@@ -174,6 +179,7 @@ After publication, verify:
 - signed APT repository fingerprint/signature and package discovery when Debian distribution is enabled;
 - clean hosted-Ubuntu APT install/reinstall/uninstall through the public HTTPS repository;
 - required WSL2 APT validation through the same public repository;
+- the GitHub Pages root serves the product homepage rather than a 404, and its install/docs links point at the current maintained procedures;
 - configuration remains user-owned;
 - no provider/project state is created merely by package installation; and
 - the portable clone installer remains documented and functional.

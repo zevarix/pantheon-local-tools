@@ -95,6 +95,7 @@ jobs:
           URIs: $APT_REPOSITORY_URL
           Suites: stable
           Components: main
+          Architectures: all
           Signed-By: /etc/apt/keyrings/pantheon-local-tools.gpg
           EOF
 
@@ -102,7 +103,14 @@ jobs:
             "$RUNNER_TEMP/pantheon-local-tools.sources" \
             /etc/apt/sources.list.d/pantheon-local-tools.sources
 
-          sudo apt-get update
+          apt_output=$(sudo apt-get update 2>&1)
+          printf '%s\n' "$apt_output"
+          case "$apt_output" in
+            *"doesn't support architecture"*)
+              echo 'APT emitted an unsupported-architecture notice' >&2
+              exit 1
+              ;;
+          esac
 
           candidate=$(
             apt-cache policy pantheon-local-tools |
@@ -191,7 +199,16 @@ jobs:
 
       - name: Install through the one-command APT bootstrap
         shell: bash
-        run: bash ./install-apt.sh
+        run: |
+          set -euo pipefail
+          install_output=$(bash ./install-apt.sh 2>&1)
+          printf '%s\n' "$install_output"
+          case "$install_output" in
+            *"doesn't support architecture"*)
+              echo 'one-command install emitted an unsupported-architecture notice' >&2
+              exit 1
+              ;;
+          esac
 
       - name: Verify bootstrap result
         shell: bash
@@ -200,6 +217,9 @@ jobs:
 
           [ -r /etc/apt/keyrings/pantheon-local-tools.gpg ]
           [ -r /etc/apt/sources.list.d/pantheon-local-tools.sources ]
+          grep -Fq \
+            'Architectures: all' \
+            /etc/apt/sources.list.d/pantheon-local-tools.sources
           grep -Fq \
             'Signed-By: /etc/apt/keyrings/pantheon-local-tools.gpg' \
             /etc/apt/sources.list.d/pantheon-local-tools.sources

@@ -36,8 +36,8 @@ require_command tr
 require_command wc
 
 [ -f "$VERSION_FILE" ] || die "VERSION file not found: $VERSION_FILE"
-CURRENT_VERSION=$(cat "$VERSION_FILE")
-[ -n "$CURRENT_VERSION" ] || die 'VERSION cannot be empty'
+CURRENT_VERSION=${PANTHEON_LOCAL_APT_CURRENT_VERSION:-$(cat "$VERSION_FILE")}
+[ -n "$CURRENT_VERSION" ] || die 'current repository version cannot be empty'
 case "$CURRENT_VERSION" in
   *$'\n'*|*$'\r'*) die 'VERSION must be a single line' ;;
 esac

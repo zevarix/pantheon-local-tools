@@ -42,11 +42,22 @@ gpg --batch --list-secret-keys "$SIGNING_KEY" >/dev/null 2>&1 ||
 
 rm -f "$INRELEASE" "$RELEASE_GPG" "$KEYRING"
 
-gpg --batch --yes --local-user "$SIGNING_KEY" --armor --clearsign \
-  --output "$INRELEASE" "$RELEASE"
+gpg_sign() {
+  output=$1
+  shift
 
-gpg --batch --yes --local-user "$SIGNING_KEY" --armor --detach-sign \
-  --output "$RELEASE_GPG" "$RELEASE"
+  if [ -n "${PANTHEON_LOCAL_APT_SIGNING_PASSPHRASE:-}" ]; then
+    printf '%s' "$PANTHEON_LOCAL_APT_SIGNING_PASSPHRASE" |
+      gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+        --local-user "$SIGNING_KEY" "$@" --output "$output" "$RELEASE"
+  else
+    gpg --batch --yes --local-user "$SIGNING_KEY" \
+      "$@" --output "$output" "$RELEASE"
+  fi
+}
+
+gpg_sign "$INRELEASE" --armor --clearsign
+gpg_sign "$RELEASE_GPG" --armor --detach-sign
 
 gpg --batch --yes --export "$SIGNING_KEY" > "$KEYRING"
 [ -s "$KEYRING" ] || die 'public archive key export is empty'

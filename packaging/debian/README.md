@@ -117,6 +117,29 @@ The repository builder:
 
 The output path must not already exist. This prevents stale indexes or packages from being silently mixed into a new publication tree.
 
+For release publication automation, `PANTHEON_LOCAL_APT_CURRENT_VERSION` may explicitly select the version that must be present in the generated repository. Normal direct use defaults to the repository-root `VERSION`.
+
+### Assemble from published releases
+
+`build-published-apt-repository.sh` builds the publication input from GitHub Releases rather than rebuilding historical packages:
+
+```bash
+bash packaging/debian/build-published-apt-repository.sh \
+  dist/apt-repository \
+  zevarix/pantheon-local-tools \
+  VERSION
+```
+
+For every stable release up to and including the target version, the assembler:
+
+- downloads the versioned `.deb` plus that release's `SHA256SUMS`;
+- verifies the package bytes against the published checksum;
+- verifies package name, version, and `Architecture: all` metadata;
+- rejects a target version that is not a stable published release; and
+- feeds all verified historical packages into the multiversion repository builder.
+
+When `SOURCE_DATE_EPOCH` is not supplied, the target GitHub Release publication time is used so repeated assembly of the same target produces stable unsigned repository metadata.
+
 ### Sign repository metadata
 
 Signing is intentionally separate from repository generation:
@@ -137,7 +160,7 @@ It immediately verifies both signatures using the exported public keyring.
 
 Do **not** store a production private signing key, passphrase, or exported secret-key material in this repository, release assets, generated repository content, workflow logs, or public issue comments.
 
-CI validates the signing path with an ephemeral throwaway key. Production key creation, secure backup, rotation/recovery policy, and publication credentials are separate operational concerns.
+CI validates the signing path with an ephemeral throwaway key. `PANTHEON_LOCAL_APT_SIGNING_PASSPHRASE` optionally supplies a passphrase to GPG through loopback pinentry, allowing the production signing subkey stored in Actions secrets to remain passphrase-protected. Production key creation, secure backup, rotation/recovery policy, and publication credentials are separate operational concerns.
 
 ### Client trust
 
@@ -157,6 +180,8 @@ The public repository URL and production key installation commands are documente
 
 ### Publication boundary
 
-Repository hosting and production signing are tracked separately from deterministic packaging. The current publication plan is an Actions-built static archive on the project's GitHub Pages site, with historical released `.deb` files retained so future upgrade and downgrade/reinstall tests remain possible.
+Repository hosting and production signing are tracked separately from deterministic packaging. `.github/workflows/publish-apt-repository.yml` performs a real publication dry run on relevant pull requests with an ephemeral key. Stable release events and manual dispatches use the configured production signing secrets, upload the generated static archive as a GitHub Pages artifact, and deploy it through the `github-pages` environment.
+
+The workflow intentionally assembles historical `.deb` files from their published GitHub Release assets rather than rebuilding old packages. GitHub Pages must be enabled with **Source: GitHub Actions** before the first production deployment, and the production signing secrets must be configured first.
 
 The first real package upgrade remains deferred until a second published Debian package exists.

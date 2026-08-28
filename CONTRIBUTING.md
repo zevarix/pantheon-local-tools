@@ -37,6 +37,8 @@ Never add machine tokens or other credentials to tests, fixtures, documentation 
 
 The repository uses squash merging so each reviewed pull request becomes one canonical integration commit.
 
+For public repository work, maintainers should use a GitHub noreply address for repository-local Git author and committer identity and keep GitHub email privacy protections enabled. Before treating a merge procedure as privacy-safe, verify both author and committer metadata on the resulting public commit do not expose a private email address.
+
 ## Safety expectations
 
 This project interacts with developer environments and Pantheon sites. Changes must fail safely.

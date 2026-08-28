@@ -71,7 +71,13 @@ Package removal does not own that file and therefore must not delete it. Checkou
 
 ## Signed APT repository
 
-The hosted APT repository is a separate distribution layer from the downloadable `.deb`.
+The hosted APT repository is a separate distribution layer from the downloadable `.deb` and is published at:
+
+```text
+https://zevarix.github.io/pantheon-local-tools
+```
+
+End-user key verification, `/etc/apt/keyrings` installation, deb822 `Signed-By` setup, removal, signing-key rotation, revocation, and recovery procedures are documented in [`docs/apt-repository.md`](../../docs/apt-repository.md).
 
 Repository tooling uses a conventional Debian archive layout:
 
@@ -160,28 +166,34 @@ It immediately verifies both signatures using the exported public keyring.
 
 Do **not** store a production private signing key, passphrase, or exported secret-key material in this repository, release assets, generated repository content, workflow logs, or public issue comments.
 
-CI validates the signing path with an ephemeral throwaway key. `PANTHEON_LOCAL_APT_SIGNING_PASSPHRASE` optionally supplies a passphrase to GPG through loopback pinentry, allowing the production signing subkey stored in Actions secrets to remain passphrase-protected. Production key creation, secure backup, rotation/recovery policy, and publication credentials are separate operational concerns.
+CI validates the signing path with ephemeral throwaway keys. `PANTHEON_LOCAL_APT_SIGNING_PASSPHRASE` optionally supplies a passphrase to GPG through loopback pinentry, allowing the production signing subkey stored in Actions secrets to remain passphrase-protected.
+
+When multiple usable signing subkeys exist during a rotation overlap, set `PANTHEON_LOCAL_APT_EXACT_SIGNING_KEY=1` and pass the exact signing-subkey fingerprint. The signer appends GPG's exact-key selector (`!`) so publication never depends on implicit subkey choice. Production Actions can supply that fingerprint through the optional `APT_SIGNING_SUBKEY_FINGERPRINT` repository secret; with no such secret, the existing single-subkey behavior remains unchanged.
+
+Production key creation, secure backup, rotation/recovery policy, and publication credentials remain operational concerns documented in [`docs/apt-repository.md`](../../docs/apt-repository.md), not source-controlled secrets.
 
 ### Client trust
 
-The final public repository will use a dedicated keyring under `/etc/apt/keyrings` and APT's `Signed-By` mechanism. It must not use deprecated `apt-key` or add the archive key to global APT trust.
+Clients use a dedicated keyring under `/etc/apt/keyrings` and APT's `Signed-By` mechanism. The project does not use deprecated `apt-key` or add the archive key to global APT trust.
 
-The intended deb822 source shape is:
+The live deb822 source is:
 
 ```text
 Types: deb
-URIs: <APT_REPOSITORY_URL>
+URIs: https://zevarix.github.io/pantheon-local-tools
 Suites: stable
 Components: main
 Signed-By: /etc/apt/keyrings/pantheon-local-tools.gpg
 ```
 
-The public repository URL and production key installation commands are documented only after the repository is actually published and verified.
+Do not install the keyring without verifying the documented primary fingerprint first. The complete copy/paste-safe client procedure and current public fingerprint are in [`docs/apt-repository.md`](../../docs/apt-repository.md).
 
 ### Publication boundary
 
-Repository hosting and production signing are tracked separately from deterministic packaging. `.github/workflows/publish-apt-repository.yml` performs a real publication dry run on relevant pull requests with an ephemeral key against the latest already-published stable release. Stable release events and manual dispatches use the configured production signing secrets, upload the generated static archive as a GitHub Pages artifact, and deploy it through the `github-pages` environment.
+`.github/workflows/publish-apt-repository.yml` performs a real publication dry run on relevant pull requests with an ephemeral key against the latest already-published stable release. Stable release events and manual dispatches use the configured production signing-subkey secrets, upload the generated static archive as a GitHub Pages artifact, and deploy it through the `github-pages` environment.
 
-The workflow intentionally assembles historical `.deb` files from their published GitHub Release assets rather than rebuilding old packages. GitHub Pages must be enabled with **Source: GitHub Actions** before the first production deployment, and the production signing secrets must be configured first.
+GitHub Pages is enabled with **Source: GitHub Actions**, and the initial v0.1.0 repository has been published and signature-verified through the real public URL. The workflow intentionally assembles historical `.deb` files from their published GitHub Release assets rather than rebuilding old packages.
 
-The first real package upgrade remains deferred until a second published Debian package exists.
+`.github/workflows/validate-published-apt.yml` exercises the public HTTPS repository on clean hosted Ubuntu, including archive fingerprint verification, `apt update`, candidate discovery, install, reinstall with user-configuration preservation, and uninstall. The same public v0.1.0 path has also completed real WSL2 validation.
+
+The first real previous-version to newer-version package upgrade remains deferred until a second published Debian package exists.

@@ -1,6 +1,6 @@
 # Real integration validation
 
-This runbook defines the remaining real-host/provider evidence required before the first public release. It complements deterministic CI; it does not replace it.
+This runbook defines real-host/provider validation procedures used for release qualification and ongoing compatibility evidence. It complements deterministic CI; it does not replace it.
 
 Keep real site names, account identities, machine tokens, UUIDs, organization Tags, private paths, and provider credentials out of public issues/commits. Record only sanitized outcomes in the public release tracker.
 

@@ -1,6 +1,6 @@
 # Homebrew packaging
 
-Pantheon Local Tools is designed to be published through a small external Homebrew tap after a tagged release exists.
+Pantheon Local Tools is published through a small external Homebrew tap using immutable tagged release artifacts.
 
 The intended tap repository is:
 
@@ -16,7 +16,7 @@ Formula/pantheon-local-tools.rb
 
 ## User installation
 
-After the first tagged release and tap publication, the preferred one-command installation is:
+For published releases, the preferred one-command installation is:
 
 ```bash
 brew install zevarix/tap/pantheon-local-tools
@@ -57,14 +57,14 @@ No provider configuration, user configuration, checkout state, or Pantheon crede
 bash packaging/homebrew/render-formula.sh VERSION URL SHA256 OUTPUT
 ```
 
-For a release, `VERSION` must equal the repository-root `VERSION` and the `vVERSION` Git tag. `URL` should be the immutable GitHub release source archive URL and `SHA256` must be calculated from that exact archive.
+For a release, `VERSION` must equal the repository-root `VERSION` and the `vVERSION` Git tag. `URL` should be the uploaded deterministic GitHub Release source asset URL and `SHA256` must match that exact published asset. Do not use GitHub's automatically generated tag archive for release formula metadata.
 
 Example shape after `v0.1.0` exists:
 
 ```bash
 VERSION=0.1.0
-URL="https://github.com/zevarix/pantheon-local-tools/archive/refs/tags/v${VERSION}.tar.gz"
-SHA256="<verified release archive sha256>"
+URL="https://github.com/zevarix/pantheon-local-tools/releases/download/v${VERSION}/pantheon-local-tools-${VERSION}.tar.gz"
+SHA256="<verified uploaded release source asset sha256>"
 bash packaging/homebrew/render-formula.sh \
   "$VERSION" "$URL" "$SHA256" \
   Formula/pantheon-local-tools.rb
@@ -86,7 +86,7 @@ The repository test suite performs a local Homebrew installation on macOS CI fro
 
 The test skips on hosts where Homebrew is unavailable, while the renderer still receives normal shell syntax and ShellCheck validation.
 
-Before publishing the real tap formula, validate the final release URL/checksum with current Homebrew tooling, including a build-from-source install, `brew test`, `brew audit --strict --new --online`, and `brew style`.
+For each published tap formula, validate the final release URL/checksum with current Homebrew tooling, including a build-from-source install, `brew test`, `brew audit --strict --new --online`, and `brew style`.
 
 ## Upgrade and uninstall
 

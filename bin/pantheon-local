@@ -5,15 +5,80 @@ PROGRAM_NAME="pantheon-local"
 
 usage() {
   cat <<'USAGE'
+Pantheon Local Tools
+
 Usage:
-  pantheon-local config ...
+  pantheon-local COMMAND [OPTIONS]
+
+Commands:
+  pantheon-local config init [--root PATH] [--provider auto|ddev|lando]
+      Guided first-run setup. With flags, configure root and/or provider
+      non-interactively.
+
+  pantheon-local config path
+      Print the active configuration file path.
+
+  pantheon-local config get KEY
+      Print the effective value for a configuration key.
+
+  pantheon-local config set KEY VALUE
+      Set one configuration value. Supported keys: root, provider.
+
+  pantheon-local config unset KEY
+      Remove one stored configuration value so its default applies again.
+
+  pantheon-local config list
+      Print effective root/provider values and configured Pantheon Tag routes.
+
+  pantheon-local config tag get TAG
+      Print the local directory mapped to a Pantheon Tag.
+
+  pantheon-local config tag set TAG DIRECTORY
+      Map a Pantheon Tag to a directory relative to the configured root.
+
+  pantheon-local config tag unset TAG
+      Remove a Pantheon Tag directory mapping.
+
+  pantheon-local config tag list
+      List all configured Pantheon Tag directory mappings.
+
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
+      Clone a Pantheon Multidev into an isolated local checkout. --dry-run
+      prints the plan without writing; --start explicitly starts the provider.
+
   pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]
+      Refresh local Pantheon database/files without changing checked-out Git
+      code. By default both database and files are pulled.
+
   pantheon-local status
+      Show local checkout/provider/data-source status without contacting
+      Pantheon or starting a provider.
+
   pantheon-local version
   pantheon-local --version
+      Print the installed Pantheon Local Tools version.
 
-Run `pantheon-local config help` for configuration commands.
+Provider selection:
+  auto   Detect from project configuration after checkout: .ddev/config.yaml
+         selects DDEV and .lando.yml selects Lando. If both or neither are
+         present, the tool refuses to guess and asks for an explicit provider.
+  ddev   Use DDEV.
+  lando  Use Lando.
+
+Examples:
+  pantheon-local config init
+  pantheon-local config init --provider ddev
+  pantheon-local multidev example.feature --dry-run
+  pantheon-local pull test --database-only
+  pantheon-local status
+
+Help:
+  pantheon-local help
+  pantheon-local config help
+  pantheon-local config init --help
+  pantheon-local multidev --help
+  pantheon-local pull --help
+  pantheon-local status --help
 USAGE
 }
 

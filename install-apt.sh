@@ -83,4 +83,5 @@ run_privileged apt-get update
 run_privileged apt-get install --yes pantheon-local-tools
 
 printf 'Pantheon Local Tools is installed.\n'
-printf 'Run: pantheon-local --version\n'
+printf 'Next: pantheon-local config init\n'
+printf 'Help: pantheon-local help\n'

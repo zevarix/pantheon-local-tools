@@ -94,6 +94,14 @@ case "$install_output" in
   *'Pantheon Local Tools is installed.'*) ;;
   *) fail 'installer did not report successful completion' ;;
 esac
+case "$install_output" in
+  *'Next: pantheon-local config init'*) ;;
+  *) fail 'installer did not point to guided configuration' ;;
+esac
+case "$install_output" in
+  *'Help: pantheon-local help'*) ;;
+  *) fail 'installer did not point to in-tool help' ;;
+esac
 
 assert_file_contains "$CALL_LOG" 'curl keyring'
 assert_file_contains "$CALL_LOG" 'sudo install -d -m 0755 /etc/apt/keyrings /etc/apt/sources.list.d'

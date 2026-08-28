@@ -8,6 +8,53 @@
   <meta name="description" content="Pantheon Local Tools is a free, provider-neutral CLI for safer Pantheon local development with DDEV and Lando.">
   <title>Pantheon Local Tools — Safer Pantheon local development</title>
   <link rel="stylesheet" href="apt-index.css">
+  <style>
+    /* Product-specific terminal prompt motif. */
+    .hero-copy::after {
+      content: ">";
+      right: 2.6rem;
+      letter-spacing: 0;
+      transform: rotate(-3deg);
+    }
+
+    .hero-copy::before {
+      content: "_";
+      position: absolute;
+      z-index: -1;
+      right: -2.4rem;
+      top: -5.5rem;
+      color: rgba(84, 214, 233, .16);
+      font: 500 clamp(8rem, 18vw, 15rem)/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      text-shadow: 0 0 3rem rgba(47, 193, 249, .22);
+      transform: rotate(-3deg);
+      pointer-events: none;
+      animation: hero-terminal-cursor 1.15s steps(1, end) infinite;
+    }
+
+    @keyframes hero-terminal-cursor {
+      0%, 48% { opacity: 1; }
+      49%, 100% { opacity: .08; }
+    }
+
+    @media (max-width: 48rem) {
+      .hero-copy::after {
+        right: 1.1rem;
+      }
+
+      .hero-copy::before {
+        right: -1.6rem;
+        top: -2.7rem;
+        font-size: 8rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hero-copy::before {
+        animation: none;
+        opacity: 1;
+      }
+    }
+  </style>
 </head>
 <body>
   <header class="site-header">
@@ -39,11 +86,11 @@
           <span></span><span></span><span></span>
           <strong>pantheon-local</strong>
         </div>
-        <pre><code><i>$</i> pantheon-local multidev SITE.ENV --dry-run
-<i>$</i> pantheon-local multidev SITE.ENV --provider ddev --start
+        <pre><code><i>&gt;</i> pantheon-local multidev SITE.ENV --dry-run
+<i>&gt;</i> pantheon-local multidev SITE.ENV --provider ddev --start
 
-<i>$</i> pantheon-local pull live --database-only
-<i>$</i> pantheon-local status</code></pre>
+<i>&gt;</i> pantheon-local pull live --database-only
+<i>&gt;</i> pantheon-local status</code></pre>
       </div>
     </section>
 
@@ -81,9 +128,9 @@
           </div>
           <div class="terminal">
             <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-            <pre><code><i>$</i> pantheon-local multidev SITE.ENV --dry-run
-<i>$</i> pantheon-local multidev SITE.ENV --provider lando --group migration
-<i>$</i> pantheon-local multidev SITE.ENV --provider ddev --start</code></pre>
+            <pre><code><i>&gt;</i> pantheon-local multidev SITE.ENV --dry-run
+<i>&gt;</i> pantheon-local multidev SITE.ENV --provider lando --group migration
+<i>&gt;</i> pantheon-local multidev SITE.ENV --provider ddev --start</code></pre>
           </div>
         </article>
 
@@ -96,9 +143,9 @@
           </div>
           <div class="terminal">
             <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-            <pre><code><i>$</i> pantheon-local pull live
-<i>$</i> pantheon-local pull test --database-only
-<i>$</i> pantheon-local pull live --files-only</code></pre>
+            <pre><code><i>&gt;</i> pantheon-local pull live
+<i>&gt;</i> pantheon-local pull test --database-only
+<i>&gt;</i> pantheon-local pull live --files-only</code></pre>
           </div>
         </article>
 
@@ -111,9 +158,9 @@
           </div>
           <div class="terminal">
             <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-            <pre><code><i>$</i> pantheon-local status
-<i>$</i> pantheon-local config list
-<i>$</i> pantheon-local --version</code></pre>
+            <pre><code><i>&gt;</i> pantheon-local status
+<i>&gt;</i> pantheon-local config list
+<i>&gt;</i> pantheon-local --version</code></pre>
           </div>
         </article>
       </div>

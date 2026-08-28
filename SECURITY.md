@@ -14,10 +14,14 @@ Helpful reports include:
 - a minimal proof of concept when safe to provide; and
 - any suggested mitigation.
 
-Please avoid including real access tokens, passwords, SSH keys, database credentials, or other secrets in a report.
+Please avoid including real access tokens, passwords, SSH keys, database credentials, signing-key material, or other secrets in a report.
+
+## Supported versions
+
+The current `0.1.x` release line receives security fixes. Users should install the newest available `0.1.x` release rather than relying on an older patch release.
+
+The `main` branch is the development source and may contain changes that have not yet been released. Older pre-release snapshots are not supported as security-maintenance targets.
 
 ## Scope
 
-Security-sensitive areas include command injection, unsafe path handling, accidental overwrites, credential exposure, unintended remote writes, privilege escalation, and execution of untrusted contributor code.
-
-Supported-version information will be added after the first release.
+Security-sensitive areas include command injection, unsafe path handling, accidental overwrites, credential exposure, unintended remote writes, privilege escalation, execution of untrusted contributor code, and compromise of package or signed-repository distribution paths.

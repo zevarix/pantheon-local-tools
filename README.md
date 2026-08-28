@@ -37,12 +37,11 @@ brew install zevarix/tap/pantheon-local-tools
 
 #### Debian, Ubuntu, or WSL
 
-First complete the one-time fingerprint-verifying repository setup in [`docs/apt-repository.md`](docs/apt-repository.md). After that:
-
 ```bash
-sudo apt-get update
-sudo apt-get install pantheon-local-tools
+curl -fsSL https://raw.githubusercontent.com/zevarix/pantheon-local-tools/main/install-apt.sh | bash
 ```
+
+The helper verifies the published archive fingerprint before installing the dedicated APT keyring/source and package. See [`docs/apt-repository.md`](docs/apt-repository.md) for the manual/auditable setup and trust model.
 
 #### Portable clone install
 
@@ -233,7 +232,7 @@ done
 Run ShellCheck when available:
 
 ```bash
-shellcheck bin/pantheon-local libexec/pantheon-local-* install.sh tests/test-*.sh packaging/debian/*.sh packaging/homebrew/*.sh packaging/release/*.sh
+shellcheck bin/pantheon-local libexec/pantheon-local-* install.sh install-apt.sh tests/test-*.sh packaging/debian/*.sh packaging/homebrew/*.sh packaging/release/*.sh
 ```
 
 CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu and macOS. The project intentionally avoids Bash 4-only features so the shipped shell code remains compatible with the older Bash supplied by macOS as well as modern Bash on Linux and WSL.
@@ -245,7 +244,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 - [`docs/status.md`](docs/status.md) — read-only checkout inspection contract
 - [`docs/local-provider-architecture.md`](docs/local-provider-architecture.md) — DDEV/Lando boundary and provider architecture
 - [`docs/compatibility.md`](docs/compatibility.md) — supported `0.1.x` public contract
-- [`docs/apt-repository.md`](docs/apt-repository.md) — signed APT client trust, rotation, and recovery
+- [`docs/apt-repository.md`](docs/apt-repository.md) — signed APT client trust, one-command install, rotation, and recovery
 - [`docs/real-integration-validation.md`](docs/real-integration-validation.md) — real-host/provider validation runbook
 - [`docs/releasing.md`](docs/releasing.md) — maintainer release procedure
 

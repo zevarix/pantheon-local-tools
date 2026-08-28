@@ -197,17 +197,17 @@
             </article>
             <article class="install-row">
               <div><strong>APT</strong><span>Debian · Ubuntu · WSL</span></div>
-              <code>sudo apt-get install pantheon-local-tools</code>
-              <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/apt-repository.md">Trust setup →</a>
+              <code>curl -fsSL https://raw.githubusercontent.com/zevarix/pantheon-local-tools/main/install-apt.sh | bash</code>
+              <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/apt-repository.md">Manual setup →</a>
             </article>
             <article class="install-row">
               <div><strong>Portable</strong><span>macOS · Linux · WSL</span></div>
               <code>./install.sh</code>
-              <a href="https://github.com/zevarix/pantheon-local-tools#install-from-a-clone">Clone install →</a>
+              <a href="https://github.com/zevarix/pantheon-local-tools#portable-clone-install">Clone install →</a>
             </article>
           </div>
 
-          <p class="security-note"><strong>APT requires a one-time trust setup.</strong> Verify the published archive fingerprint and install the keyring with <code>Signed-By</code> before running the APT install command above.</p>
+          <p class="security-note"><strong>APT stays fingerprint-verified.</strong> The bootstrap verifies the canonical public archive fingerprint before installing the dedicated <code>Signed-By</code> keyring/source, then runs normal APT installation. The full manual procedure remains available for users who want to inspect every trust step.</p>
         </div>
       </div>
     </section>

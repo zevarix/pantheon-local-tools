@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#02060b">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Signed APT repository for Pantheon Local Tools.">
+  <title>Pantheon Local Tools — Signed APT Repository</title>
+  <link rel="stylesheet" href="apt-index.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="wordmark" href="https://github.com/zevarix/pantheon-local-tools">pantheon-local<span>/tools</span></a>
+      <a class="header-link" href="https://github.com/zevarix/pantheon-local-tools">GitHub repository →</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="shell hero">
+      <div class="hero-copy">
+        <h1>Pantheon Local <span>Tools.</span></h1>
+        <p class="lede">A signed APT repository for the provider-neutral Pantheon local-development CLI, with DDEV and Lando support and a trust path designed for Ubuntu, Debian, and WSL.</p>
+        <div class="actions">
+          <a class="button" href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/apt-repository.md">Installation guide</a>
+          <a class="button button--quiet" href="https://github.com/zevarix/pantheon-local-tools/releases/latest">Latest release</a>
+        </div>
+      </div>
+
+      <aside class="repo-panel" aria-labelledby="repository-status">
+        <h2 id="repository-status">Repository status</h2>
+        <dl class="repo-facts">
+          <div><dt>Channel</dt><dd>stable</dd></div>
+          <div><dt>Packages</dt><dd>architecture-independent</dd></div>
+          <div><dt>Metadata</dt><dd>OpenPGP signed</dd></div>
+          <div><dt>Endpoint</dt><dd class="status">live</dd></div>
+        </dl>
+      </aside>
+    </section>
+
+    <section class="section" id="install">
+      <div class="shell section-grid">
+        <div class="section-title">Install</div>
+        <div class="section-copy">
+          <h2>Use APT after verifying trust.</h2>
+          <p>The archive key is a trust anchor. Verify its published primary fingerprint against the project documentation before installing the keyring and adding this repository to your APT sources.</p>
+          <div class="terminal" aria-label="APT installation commands">
+            <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <pre><code>sudo apt-get update
+sudo apt-get install pantheon-local-tools</code></pre>
+          </div>
+          <p class="security-note"><strong>Do not skip fingerprint verification.</strong> The complete <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/apt-repository.md">APT setup guide</a> owns the current keyring, <code>Signed-By</code>, rotation, and recovery procedure.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="repository-files">
+      <div class="shell section-grid">
+        <div class="section-title">Repository</div>
+        <div class="section-copy">
+          <h2>Signed metadata, directly inspectable.</h2>
+          <p>The human landing page lives beside the same files APT consumes. These links expose the public trust material and package metadata without adding another distribution service or hidden backend.</p>
+          <ul class="file-list">
+            <li><a href="dists/stable/InRelease">InRelease</a><span>Clear-signed stable repository metadata consumed by APT.</span></li>
+            <li><a href="pantheon-local-tools-archive-keyring.gpg">Archive keyring</a><span>Public OpenPGP keyring. Verify its fingerprint before trusting it.</span></li>
+            <li><a href="dists/stable/main/binary-all/Packages">Packages</a><span>Package index for the architecture-independent Debian artifacts.</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <span>Pantheon Local Tools is an independent open-source project.</span>
+      <a href="https://github.com/zevarix/pantheon-local-tools">Source and documentation</a>
+    </div>
+  </footer>
+</body>
+</html>

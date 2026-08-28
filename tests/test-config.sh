@@ -15,13 +15,15 @@ assert_contains() { case "$1" in *"$2"*) ;; *) fail "expected output to contain 
 
 run_guided_init() {
   input=$1
+  input_file="$TMP_ROOT/guided-input"
   command -v script >/dev/null 2>&1 || fail 'script command is required for guided config tests'
+  printf '%b' "$input" > "$input_file"
   case "$(uname -s)" in
     Darwin)
-      printf '%b' "$input" | script -q /dev/null bash "$CLI" config init
+      script -q /dev/null bash "$CLI" config init < "$input_file"
       ;;
     *)
-      printf '%b' "$input" | script -q -c "bash \"$CLI\" config init" /dev/null
+      script -q -c "bash \"$CLI\" config init" /dev/null < "$input_file"
       ;;
   esac
 }

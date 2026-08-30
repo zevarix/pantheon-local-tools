@@ -22,9 +22,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Published package version to validate
-        required: true
-        default: '0.1.0'
+        description: Optional published package version to assert; defaults to the live candidate
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -51,13 +51,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          version=${DISPATCH_VERSION:-0.1.0}
-          [ -n "$version" ] || {
-            echo 'package version cannot be empty' >&2
-            exit 1
-          }
-          dpkg --validate-version "$version"
-          printf 'PACKAGE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+          version=${DISPATCH_VERSION:-}
+          if [ -n "$version" ]; then
+            dpkg --validate-version "$version"
+          fi
+          printf 'EXPECTED_PACKAGE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
 
       - name: Download and verify archive key
         shell: bash
@@ -117,11 +115,20 @@ jobs:
               awk '/Candidate:/ && !found { print $2; found = 1 }'
           )
 
-          [ "$candidate" = "$PACKAGE_VERSION" ] || {
-            printf 'expected candidate %s, got %s\n' \
-              "$PACKAGE_VERSION" "$candidate" >&2
+          [ -n "$candidate" ] && [ "$candidate" != '(none)' ] || {
+            echo 'published repository did not expose a package candidate' >&2
             exit 1
           }
+          dpkg --validate-version "$candidate"
+
+          if [ -n "${EXPECTED_PACKAGE_VERSION:-}" ] && \
+             [ "$candidate" != "$EXPECTED_PACKAGE_VERSION" ]; then
+            printf 'expected candidate %s, got %s\n' \
+              "$EXPECTED_PACKAGE_VERSION" "$candidate" >&2
+            exit 1
+          fi
+
+          printf 'PACKAGE_VERSION=%s\n' "$candidate" >> "$GITHUB_ENV"
 
       - name: Install and verify published package
         shell: bash

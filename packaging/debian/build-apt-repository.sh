@@ -16,6 +16,8 @@ require_command() {
 
 REPO_ROOT=$(unset CDPATH; cd -- "$(dirname -- "$0")/../.." && pwd)
 VERSION_FILE="$REPO_ROOT/VERSION"
+INDEXNOW_KEY='9afcbbbd3f35a9d0829a54311c12ba52'
+INDEXNOW_KEY_FILE="$REPO_ROOT/packaging/debian/${INDEXNOW_KEY}.txt"
 OUTPUT_DIR=$1
 shift
 
@@ -42,6 +44,11 @@ case "$CURRENT_VERSION" in
   *$'\n'*|*$'\r'*) die 'current repository version must be a single line' ;;
 esac
 
+[ -f "$INDEXNOW_KEY_FILE" ] ||
+  die "IndexNow key file not found: $INDEXNOW_KEY_FILE"
+[ "$(cat "$INDEXNOW_KEY_FILE")" = "$INDEXNOW_KEY" ] ||
+  die 'IndexNow key file content does not match the configured key'
+
 case "$OUTPUT_DIR" in
   /*) ;;
   *) OUTPUT_DIR="$PWD/$OUTPUT_DIR" ;;
@@ -62,6 +69,7 @@ trap 'rm -rf "$STAGE"' EXIT HUP INT TERM
 POOL_REL='pool/main/p/pantheon-local-tools'
 INDEX_REL='dists/stable/main/binary-all'
 install -d "$STAGE/$POOL_REL" "$STAGE/$INDEX_REL"
+install -m 0644 "$INDEXNOW_KEY_FILE" "$STAGE/$INDEXNOW_KEY.txt"
 
 CURRENT_VERSION_PRESENT=0
 

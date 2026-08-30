@@ -1,0 +1,99 @@
+name: Notify IndexNow
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/indexnow.yml'
+      - 'packaging/debian/9afcbbbd3f35a9d0829a54311c12ba52.txt'
+      - 'packaging/debian/build-apt-repository.sh'
+      - 'packaging/debian/apt-index.html'
+  workflow_run:
+    workflows:
+      - Publish APT Repository
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+env:
+  INDEXNOW_KEY: 9afcbbbd3f35a9d0829a54311c12ba52
+  INDEXNOW_KEY_LOCATION: https://zevarix.github.io/pantheon-local-tools/9afcbbbd3f35a9d0829a54311c12ba52.txt
+  INDEXNOW_URL: https://zevarix.github.io/pantheon-local-tools/
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate IndexNow source key
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          key_file="packaging/debian/${INDEXNOW_KEY}.txt"
+          [ -f "$key_file" ] || {
+            printf 'IndexNow source key file is missing: %s\n' "$key_file" >&2
+            exit 1
+          }
+
+          [ "$(cat "$key_file")" = "$INDEXNOW_KEY" ] || {
+            echo 'IndexNow source key file does not match the configured key' >&2
+            exit 1
+          }
+
+          bash -n packaging/debian/build-apt-repository.sh
+
+  notify:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify published IndexNow key
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          served_key=$(
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-delay 2 \
+              "$INDEXNOW_KEY_LOCATION"
+          )
+
+          [ "$served_key" = "$INDEXNOW_KEY" ] || {
+            echo 'published IndexNow key does not match the configured key' >&2
+            exit 1
+          }
+
+      - name: Notify IndexNow
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          response_file="$RUNNER_TEMP/indexnow-response.txt"
+          http_code=$(
+            curl --silent --show-error --location \
+              --retry 3 --retry-delay 2 --retry-all-errors \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              --get 'https://api.indexnow.org/indexnow' \
+              --data-urlencode "url=$INDEXNOW_URL" \
+              --data-urlencode "key=$INDEXNOW_KEY" \
+              --data-urlencode "keyLocation=$INDEXNOW_KEY_LOCATION"
+          )
+
+          case "$http_code" in
+            200|202)
+              printf 'IndexNow accepted %s with HTTP %s\n' "$INDEXNOW_URL" "$http_code"
+              ;;
+            *)
+              printf 'IndexNow returned HTTP %s\n' "$http_code" >&2
+              cat "$response_file" >&2 || true
+              exit 1
+              ;;
+          esac

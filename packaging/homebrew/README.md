@@ -42,6 +42,8 @@ libexec/
   libexec/pantheon-local-config-profile
   libexec/pantheon-local-provider-url
   libexec/pantheon-local-pull
+  libexec/pantheon-local-readiness
+  libexec/pantheon-local-setup
   libexec/pantheon-local-status
   VERSION
 ```
@@ -80,7 +82,8 @@ The repository test suite performs a local Homebrew installation on macOS CI fro
 - formula Ruby syntax;
 - source checksum enforcement;
 - the Homebrew `libexec` layout;
-- command/module executability, including the Tag-profile config module;
+- command/module executability, including Tag-profile, Drupal setup, and readiness modules;
+- installed `setup --help` and `readiness --help` discovery surfaces;
 - `pantheon-local version` and `--version` consistency;
 - the formula `test do` block; and
 - user configuration remaining outside Homebrew-owned paths.

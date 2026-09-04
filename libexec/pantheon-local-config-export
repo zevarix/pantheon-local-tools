@@ -242,7 +242,7 @@ export_command() {
         esac
         shift 2
         ;;
-      --yes|-y)
+      --yes)
         assume_yes=true
         shift
         ;;

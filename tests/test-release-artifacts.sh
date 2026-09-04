@@ -44,6 +44,7 @@ PREFIX="pantheon-local-tools-$VERSION"
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/VERSION" >/dev/null 2>&1 || fail 'VERSION missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/bin/pantheon-local" >/dev/null 2>&1 || fail 'CLI missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-core" >/dev/null 2>&1 || fail 'core module missing from source archive'
+tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-config-profile" >/dev/null 2>&1 || fail 'tag-profile module missing from source archive'
 if tar -tzf "$SOURCE_ONE" | grep -E '/\.git(/|$)|/dist(/|$)|/\.agents(/|$)' >/dev/null 2>&1; then
   fail 'source archive contains repository-local/private build state'
 fi

@@ -6,6 +6,17 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+### Added
+
+- Added optional Pantheon Tag profile properties in the existing Git-compatible configuration file: `config-strategy` (`full-export` or `overlay-delta`) and a validated project-relative `config-path`.
+- Added `pantheon-local config tag profile get/set/unset/list` with focused help, regression coverage, generic examples, and no organization-specific built-ins.
+
+### Changed
+
+- `pantheon-local config list` now reports configured Tag profile properties in addition to the established root/provider and Tag-directory lines.
+- `pantheon-local config tag unset TAG` now removes that Tag's optional profile properties so stale strategy/path state is not orphaned after route deletion.
+- Debian/Homebrew/release packaging coverage now includes the Tag-profile command module.
+
 ## 0.1.1 — 2026-08-28
 
 First patch release after v0.1.0, focused on lower-friction onboarding, self-documenting CLI help, and completing the signed APT distribution path.

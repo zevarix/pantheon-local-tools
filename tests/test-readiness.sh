@@ -11,6 +11,7 @@ mkdir -p "$MOCK_BIN"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 assert_contains() { case "$1" in *"$2"*) ;; *) fail "expected output to contain [$2], got [$1]" ;; esac; }
+assert_not_contains() { case "$1" in *"$2"*) fail "expected output not to contain [$2], got [$1]" ;; *) ;; esac; }
 assert_file_contains() { grep -F "$2" "$1" >/dev/null 2>&1 || fail "expected $1 to contain [$2]"; }
 assert_file_not_contains() { if [ -f "$1" ] && grep -F "$2" "$1" >/dev/null 2>&1; then fail "expected $1 not to contain [$2]"; fi; }
 assert_line() {
@@ -108,13 +109,28 @@ create_repo() {
   bash "$CLI" config tag profile set "$tag" config-path "$config_path"
 }
 
+capture_readiness_failure() {
+  local repo=$1
+  shift
+  local output status
+  set +e
+  output=$(cd "$repo" && bash "$CLI" readiness "$@" 2>&1)
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || fail "expected readiness to fail for $repo"
+  printf '%s\n' "$output"
+}
+
 assert_contains "$(bash "$CLI" --help)" 'pantheon-local readiness [--provider ddev|lando]'
 readiness_help=$(bash "$CLI" readiness --help)
 assert_contains "$readiness_help" 'full-export'
 assert_contains "$readiness_help" 'overlay-delta'
+assert_contains "$readiness_help" 'protected partial override set'
+assert_contains "$readiness_help" 'No provider-owned Drush command is invoked'
 assert_contains "$readiness_help" 'No drush config:export / cex is run.'
 assert_contains "$readiness_help" 'still exit 0 when inspection succeeds'
-assert_contains "$readiness_help" 'Config Ignore detection is advisory.'
+assert_contains "$readiness_help" 'Owning validation remains fail-closed'
+assert_contains "$readiness_help" 'Config Ignore detection is advisory for full-export.'
 
 # Synchronized full-export config with a nonstandard configured path is ready.
 SYNCED="$TMP_ROOT/synced"
@@ -188,16 +204,102 @@ assert_line "$MOCK_LOG" 1 'ddev|drush|core:status|--field=config-sync'
 assert_line "$MOCK_LOG" 2 'ddev|drush|config:status|--format=list'
 assert_line "$MOCK_LOG" 3 'ddev|drush|pm:list|--type=module|--status=enabled|--field=name'
 
-# Overlay profiles fail closed before invoking provider commands.
+# Overlay profiles report the protected boundary but fail closed without provider/Drush calls.
 OVERLAY="$TMP_ROOT/overlay"
-create_repo "$OVERLAY" lando 'Overlay Example' overlay-delta config/overrides
+create_repo "$OVERLAY" lando 'Shared Platform Example' overlay-delta config/site-overrides
 reset_mocks
-if (cd "$OVERLAY" && bash "$CLI" readiness >/dev/null 2>&1); then
-  fail 'readiness applied full-export behavior to overlay-delta'
-fi
-[ ! -s "$MOCK_LOG" ] || fail 'overlay-delta refusal invoked provider commands'
+overlay_output=$(capture_readiness_failure "$OVERLAY")
+assert_contains "$overlay_output" 'Pantheon Tag:          Shared Platform Example'
+assert_contains "$overlay_output" 'Config strategy:       overlay-delta'
+assert_contains "$overlay_output" 'Configured config path: config/site-overrides'
+assert_contains "$overlay_output" 'Provider:              not invoked'
+assert_contains "$overlay_output" 'Delta interpretation:  protected partial override set'
+assert_contains "$overlay_output" 'Drupal configuration:  not interpreted as full export'
+assert_contains "$overlay_output" 'Owning validation:     unavailable'
+assert_contains "$overlay_output" 'Config Ignore:         not inspected'
+assert_contains "$overlay_output" 'Config export:         not performed'
+assert_contains "$overlay_output" 'Git working tree:      clean'
+assert_contains "$overlay_output" 'Readiness:             unavailable'
+assert_contains "$overlay_output" 'Missing YAML, directory size, and file count are not interpreted as overlay drift.'
+assert_contains "$overlay_output" 'No provider or Drush command was invoked.'
+assert_not_contains "$overlay_output" 'differences detected'
+assert_not_contains "$overlay_output" 'synchronized'
+[ ! -s "$MOCK_LOG" ] || fail 'overlay-delta inspection invoked provider commands'
 
-# Missing configured directory fails before provider-owned Drush.
+# A valid explicit provider flag is syntax only while overlay validation is unavailable.
+reset_mocks
+overlay_provider_output=$(capture_readiness_failure "$OVERLAY" --provider ddev)
+assert_contains "$overlay_provider_output" 'Provider:              not invoked'
+[ ! -s "$MOCK_LOG" ] || fail 'overlay-delta --provider invoked provider commands'
+
+# Invalid provider values still fail at the public CLI boundary.
+reset_mocks
+invalid_provider_output=$(capture_readiness_failure "$OVERLAY" --provider other)
+assert_contains "$invalid_provider_output" '--provider must be ddev or lando'
+[ ! -s "$MOCK_LOG" ] || fail 'invalid provider value invoked provider commands'
+
+# Empty overlay directories do not become missing-drift findings.
+OVERLAY_EMPTY="$TMP_ROOT/overlay-empty"
+create_repo "$OVERLAY_EMPTY" lando 'Empty Overlay Example' overlay-delta config/empty-overrides
+git -C "$OVERLAY_EMPTY" rm -q config/empty-overrides/system.site.yml
+git -C "$OVERLAY_EMPTY" commit -qm 'Make overlay directory empty'
+mkdir -p "$OVERLAY_EMPTY/config/empty-overrides"
+reset_mocks
+empty_output=$(capture_readiness_failure "$OVERLAY_EMPTY")
+assert_contains "$empty_output" 'Delta interpretation:  protected partial override set'
+assert_contains "$empty_output" 'Owning validation:     unavailable'
+assert_not_contains "$empty_output" 'differences detected'
+[ ! -s "$MOCK_LOG" ] || fail 'empty overlay inspection invoked provider commands'
+
+# Large overlay directories have no special readiness meaning either.
+OVERLAY_LARGE="$TMP_ROOT/overlay-large"
+create_repo "$OVERLAY_LARGE" lando 'Large Overlay Example' overlay-delta config/many-overrides
+index=1
+while [ "$index" -le 40 ]; do
+  printf 'id: %s\n' "$index" > "$OVERLAY_LARGE/config/many-overrides/example.$index.yml"
+  index=$((index + 1))
+done
+git -C "$OVERLAY_LARGE" add config/many-overrides
+git -C "$OVERLAY_LARGE" commit -qm 'Add many overlay fixtures'
+reset_mocks
+large_output=$(capture_readiness_failure "$OVERLAY_LARGE")
+assert_contains "$large_output" 'Owning validation:     unavailable'
+assert_contains "$large_output" 'Missing YAML, directory size, and file count are not interpreted as overlay drift.'
+assert_not_contains "$large_output" 'differences detected'
+[ ! -s "$MOCK_LOG" ] || fail 'large overlay inspection invoked provider commands'
+
+# A pre-existing dirty overlay tree is reported and preserved.
+OVERLAY_DIRTY="$TMP_ROOT/overlay-dirty"
+create_repo "$OVERLAY_DIRTY" lando 'Dirty Overlay Example' overlay-delta config/dirty-overrides
+printf 'local overlay notes\n' > "$OVERLAY_DIRTY/local-notes.txt"
+reset_mocks
+overlay_dirty_output=$(capture_readiness_failure "$OVERLAY_DIRTY")
+assert_contains "$overlay_dirty_output" 'Git working tree:      modified'
+assert_contains "$overlay_dirty_output" 'Readiness:             unavailable'
+[ -f "$OVERLAY_DIRTY/local-notes.txt" ] || fail 'overlay readiness removed an existing untracked file'
+[ ! -s "$MOCK_LOG" ] || fail 'dirty overlay inspection invoked provider commands'
+
+# Missing overlay directory fails before provider commands.
+OVERLAY_MISSING="$TMP_ROOT/overlay-missing"
+create_repo "$OVERLAY_MISSING" lando 'Missing Overlay Example' overlay-delta config/missing-overrides
+rm -rf "$OVERLAY_MISSING/config/missing-overrides"
+reset_mocks
+overlay_missing_output=$(capture_readiness_failure "$OVERLAY_MISSING")
+assert_contains "$overlay_missing_output" 'configured overlay-delta config-path does not exist as a directory: config/missing-overrides'
+[ ! -s "$MOCK_LOG" ] || fail 'missing overlay path invoked provider commands'
+
+# A lexically safe path that escapes through a symlink is rejected.
+OVERLAY_SYMLINK="$TMP_ROOT/overlay-symlink"
+create_repo "$OVERLAY_SYMLINK" lando 'Symlink Overlay Example' overlay-delta config/external-overrides
+rm -rf "$OVERLAY_SYMLINK/config/external-overrides"
+mkdir -p "$TMP_ROOT/external-overrides"
+ln -s "$TMP_ROOT/external-overrides" "$OVERLAY_SYMLINK/config/external-overrides"
+reset_mocks
+symlink_output=$(capture_readiness_failure "$OVERLAY_SYMLINK")
+assert_contains "$symlink_output" 'config-path escapes the project root through filesystem links'
+[ ! -s "$MOCK_LOG" ] || fail 'escaping overlay path invoked provider commands'
+
+# Missing configured full-export directory fails before provider-owned Drush.
 MISSING_DIR="$TMP_ROOT/missing-dir"
 create_repo "$MISSING_DIR" lando 'Missing Directory' full-export config/will-disappear
 rm -rf "$MISSING_DIR/config/will-disappear"

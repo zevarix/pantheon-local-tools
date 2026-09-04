@@ -13,7 +13,7 @@ Usage:
 Commands:
   pantheon-local config init [--root PATH] [--provider auto|ddev|lando]
       Guided first-run setup. With flags, configure root and/or provider
-      non-interactively.
+      noninteractively.
 
   pantheon-local config path
       Print the active configuration file path.
@@ -55,6 +55,12 @@ Commands:
 
   pantheon-local config tag profile list [TAG]
       List profile properties for one Tag or all configured Tag routes.
+
+  pantheon-local config export [--provider ddev|lando] [--yes]
+      Explicitly export tracked Drupal configuration for a validated full-export
+      profile. This mutates project files, requires a clean configured export
+      path, runs readiness first, and confirms unless --yes is supplied.
+      overlay-delta export is unsupported and fails before provider invocation.
 
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
       Clone a Pantheon Multidev into an isolated local checkout. --dry-run
@@ -100,6 +106,7 @@ Examples:
   pantheon-local config tag set 'Example Group' example-group
   pantheon-local config tag profile set 'Example Group' config-strategy full-export
   pantheon-local config tag profile set 'Example Group' config-path config/sync
+  pantheon-local config export --yes
   pantheon-local multidev example.feature --dry-run
   pantheon-local setup --dry-run
   pantheon-local setup
@@ -112,6 +119,7 @@ Help:
   pantheon-local config help
   pantheon-local config init --help
   pantheon-local config tag profile --help
+  pantheon-local config export --help
   pantheon-local multidev --help
   pantheon-local setup --help
   pantheon-local readiness --help
@@ -159,6 +167,7 @@ VERSION_FILE="$PROJECT_ROOT/VERSION"
 LIBEXEC_DIR="$PROJECT_ROOT/libexec"
 CORE="$LIBEXEC_DIR/pantheon-local-core"
 PROFILE="$LIBEXEC_DIR/pantheon-local-config-profile"
+CONFIG_EXPORT="$LIBEXEC_DIR/pantheon-local-config-export"
 PULL="$LIBEXEC_DIR/pantheon-local-pull"
 READINESS="$LIBEXEC_DIR/pantheon-local-readiness"
 SETUP="$LIBEXEC_DIR/pantheon-local-setup"
@@ -196,6 +205,12 @@ case "$command" in
     ;;
   config)
     [ -x "$CORE" ] || die "core module is missing or not executable: $CORE"
+
+    if [ "${2:-}" = 'export' ]; then
+      [ -x "$CONFIG_EXPORT" ] || die "config-export module is missing or not executable: $CONFIG_EXPORT"
+      shift 2
+      exec "$CONFIG_EXPORT" "$@"
+    fi
 
     if [ "${2:-}" = 'tag' ] && [ "${3:-}" = 'profile' ]; then
       [ -x "$PROFILE" ] || die "tag-profile module is missing or not executable: $PROFILE"

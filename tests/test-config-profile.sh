@@ -49,7 +49,7 @@ assert_eq "$(bash "$CLI" config tag profile get 'Client Sites.v2' config-strateg
 # Config paths are project-relative and reject escape/portability hazards.
 bash "$CLI" config tag profile set 'Client Sites.v2' config-path config/site-overrides
 assert_eq "$(bash "$CLI" config tag profile get 'Client Sites.v2' config-path)" 'config/site-overrides'
-tilde_path='~/config'
+tilde_path=$(printf '\176/config')
 for invalid_path in \
   '/absolute/path' \
   '../escape' \

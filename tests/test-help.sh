@@ -31,6 +31,7 @@ for expected in \
   'config-path      Relative project configuration path such as config/sync' \
   'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]' \
   'pantheon-local setup [--provider ddev|lando] [--dry-run]' \
+  'pantheon-local readiness [--provider ddev|lando]' \
   'pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]' \
   'pantheon-local status' \
   'pantheon-local version' \
@@ -39,6 +40,7 @@ for expected in \
   "pantheon-local config tag profile set 'Example Group' config-strategy full-export" \
   'pantheon-local multidev example.feature --dry-run' \
   'pantheon-local setup --dry-run' \
+  'pantheon-local readiness' \
   'pantheon-local pull test --database-only'
 do
   assert_contains "$help_output" "$expected"
@@ -71,6 +73,16 @@ assert_contains "$setup_help" 'replaces local database data'
 assert_contains "$setup_help" 'checkout-local PLT state'
 assert_contains "$setup_help" 'Setup stops on the first failed step'
 assert_contains "$setup_help" 'Fix the reported failure and run pantheon-local setup again.'
+
+readiness_help=$(bash "$CLI" readiness --help)
+assert_contains "$readiness_help" 'pantheon-local readiness [--provider ddev|lando]'
+assert_contains "$readiness_help" 'full-export'
+assert_contains "$readiness_help" 'overlay-delta'
+assert_contains "$readiness_help" 'configured config-path'
+assert_contains "$readiness_help" 'No drush config:export / cex is run.'
+assert_contains "$readiness_help" 'still exit 0 when inspection succeeds'
+assert_contains "$readiness_help" 'Config Ignore detection is advisory.'
+assert_contains "$readiness_help" 'does not start or rebuild'
 
 pull_help=$(bash "$CLI" pull --help)
 assert_contains "$pull_help" 'pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]'

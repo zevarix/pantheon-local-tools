@@ -270,8 +270,9 @@ multidev_create_command() {
     esac
   done
 
-  [ -n "$source" ] && [ -n "$new_env" ] || \
+  if [ -z "$source" ] || [ -z "$new_env" ]; then
     die 'usage: pantheon-local multidev create SITE.SOURCE NEW_ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]'
+  fi
   [ "$dry_run" = false ] || [ "$start" = false ] || die '--start cannot be combined with --dry-run'
 
   require_command grep

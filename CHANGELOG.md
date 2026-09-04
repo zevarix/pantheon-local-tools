@@ -42,7 +42,7 @@ First patch release after v0.1.0, focused on lower-friction onboarding, self-doc
 - Added non-interactive `config init --root PATH` and `--provider auto|ddev|lando` options for experienced users and automation.
 - Added complete top-level `pantheon-local help` / `pantheon-local --help` output that enumerates the supported public command surface, important options, provider-detection semantics, and representative examples.
 - Published the current stable release through the public Homebrew tap at `zevarix/tap`.
-- Published a signed Debian/Ubuntu/WSL APT repository on GitHub Pages with dedicated `Signed-By` keyring trust, hosted-Ubuntu validation, and real WSL2 validation.
+- Published a signed Debian/Ubuntu/WSL APT repository on GitHub Pages with dedicated `Signed-By` trust.
 - Added the public Pantheon Local Tools product homepage at the same GitHub Pages origin used by the signed APT repository.
 - Added a one-command Debian/Ubuntu/WSL APT bootstrap that verifies the canonical archive fingerprint, configures the scoped keyring/source, refreshes APT, and installs the package.
 
@@ -93,13 +93,13 @@ First public release of Pantheon Local Tools.
 - Real temporary-tap Homebrew install/test/uninstall coverage on macOS CI.
 - Deterministic `git archive | gzip -n` release source-artifact builder.
 - `SHA256SUMS` generation for release artifacts.
-- Maintainer release procedure covering tag identity, artifacts, GitHub Release, Homebrew, Debian packaging, and recovery.
+- Maintainer release procedure covering tag identity, artifacts, GitHub Release, Homebrew tap publication, Debian packaging, and recovery.
 
 ### Validation completed
 
 - Required shell syntax, ShellCheck, and integration tests on Ubuntu and macOS.
 - Isolated-home clone-installer tests on Ubuntu and macOS.
-- Real macOS + Lando multidev clone, isolated runtime start validation, Pantheon authentication, explicit database/files pull, provider-derived status, and Git-integrity validation.
+- Real macOS + Lando multidev clone, isolated runtime start, Pantheon authentication, explicit database/files pull, provider-derived status, and Git-integrity validation.
 - Real WSL2 + DDEV Pantheon startup, provider-derived status, full database/files pull, database-only/files-only pulls, provenance, credential separation, and Git-integrity validation.
 - Real WSL2 fresh-clone/install/full-suite validation, including native Windows-path rejection, Debian package tests, ShellCheck, shell-startup-file integrity, and clean Git state.
 - Real clean-macOS fresh-clone/install/full-suite validation, including isolated Homebrew package smoke and host-state restoration.

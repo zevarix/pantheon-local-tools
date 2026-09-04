@@ -14,27 +14,41 @@ Inspect Drupal configuration readiness for the current Pantheon Local Tools-
 managed checkout without exporting configuration or starting the provider.
 
 Current strategy support:
-  full-export    Inspect the matched tag profile's configured config-path.
-  overlay-delta  Not yet supported by readiness; the command fails safely.
+  full-export    Inspect the matched tag profile's complete config export.
+  overlay-delta  Inspect the protected delta boundary without interpreting it
+                 as a complete export. Owning validation remains fail-closed
+                 until a reliable project/update mechanism is established.
 
 Inspection steps for full-export:
   1. Resolve the recorded Pantheon Tag and its config-strategy/config-path.
-  2. Verify the configured path exists and matches Drupal's runtime config-sync
-     path reported by provider-owned Drush.
+  2. Verify the configured path exists, stays within the project root, and
+     matches Drupal's runtime config-sync path reported by provider-owned Drush.
   3. Run provider-owned drush config:status --format=list.
   4. Detect whether the Config Ignore module is enabled when Drush can report it.
   5. Report the final Git working-tree state and readiness summary.
 
+Inspection steps for overlay-delta:
+  1. Resolve the recorded Pantheon Tag and its config-strategy/config-path.
+  2. Verify the configured path exists and stays within the project root.
+  3. Treat the path only as a protected partial override set. Missing YAML,
+     directory size, and file count are not interpreted as drift.
+  4. Report Git working-tree state and owning validation as unavailable.
+  5. Exit nonzero until a reliable non-destructive owning validation mechanism
+     is established. No provider-owned Drush command is invoked for this state.
+
 Safety and exit semantics:
   * No drush config:export / cex is run. Configuration files are not written.
-  * The provider is not started or rebuilt. If provider-owned Drush cannot run,
-    readiness fails instead of starting the environment implicitly.
-  * Drupal configuration differences and an already-modified Git working tree
-    are reportable review states and still exit 0 when inspection succeeds.
-  * Missing/unsupported profile data, provider/Drush failures, runtime path
-    mismatch, or Git changes caused during inspection exit nonzero.
-  * Config Ignore detection is advisory. If module-state inspection is
-    unavailable, readiness reports "unavailable" rather than guessing.
+  * The provider is not started or rebuilt.
+  * Full-export configuration differences and an already-modified Git working
+    tree are reportable review states and still exit 0 when inspection succeeds.
+  * Overlay-delta with unknown owning validation reports what is known but exits
+    nonzero rather than claiming readiness or applying full-export semantics.
+  * Missing/unsupported profile data, unsafe/missing configured paths,
+    provider/Drush failures, runtime path mismatch, or Git changes caused during
+    full-export inspection exit nonzero.
+  * Config Ignore detection is advisory for full-export. If module-state
+    inspection is unavailable, readiness reports "unavailable" rather than
+    guessing.
 
 Examples:
   pantheon-local readiness
@@ -96,10 +110,6 @@ resolve_provider() {
   local root=$1 state=$2 override=$3 recorded=''
 
   if [ -n "$override" ]; then
-    case "$override" in
-      ddev|lando) ;;
-      *) die '--provider must be ddev or lando' ;;
-    esac
     provider_config_present "$root" "$override" || \
       die "$override provider selected but its project configuration is missing"
     printf '%s\n' "$override"
@@ -126,6 +136,20 @@ profile_get() {
   local tag=$1 property=$2
   [ -x "$PROFILE" ] || die "tag-profile module is missing or not executable: $PROFILE"
   "$PROFILE" get "$tag" "$property"
+}
+
+require_config_directory() {
+  local root=$1 config_path=$2 strategy=$3 root_physical config_physical
+
+  [ -d "$root/$config_path" ] || \
+    die "configured $strategy config-path does not exist as a directory: $config_path"
+
+  root_physical=$(cd "$root" && pwd -P)
+  config_physical=$(cd "$root/$config_path" && pwd -P)
+  case "$config_physical" in
+    "$root_physical"/*) ;;
+    *) die "configured $strategy config-path escapes the project root through filesystem links: $config_path" ;;
+  esac
 }
 
 run_drush_capture() {
@@ -170,6 +194,46 @@ detect_config_ignore() {
   fi
 }
 
+report_overlay_delta() {
+  local root=$1 tag=$2 strategy=$3 config_path=$4
+  local head_before head_after git_before git_after git_state
+
+  head_before=$(git -C "$root" rev-parse HEAD)
+  git_before=$(git -C "$root" status --porcelain --untracked-files=normal)
+  head_after=$(git -C "$root" rev-parse HEAD)
+  git_after=$(git -C "$root" status --porcelain --untracked-files=normal)
+
+  [ "$head_after" = "$head_before" ] || \
+    die 'overlay-delta readiness inspection changed Git HEAD; refusing to report readiness'
+  [ "$git_after" = "$git_before" ] || \
+    die 'overlay-delta readiness inspection changed the Git working tree; refusing to report readiness'
+
+  if [ -n "$git_after" ]; then
+    git_state=modified
+  else
+    git_state=clean
+  fi
+
+  printf 'Pantheon Local Tools readiness\n\n'
+  printf 'Directory:             %s\n' "$root"
+  printf 'Pantheon Tag:          %s\n' "$tag"
+  printf 'Config strategy:       %s\n' "$strategy"
+  printf 'Configured config path:%s%s\n' ' ' "$config_path"
+  printf 'Provider:              not invoked\n'
+  printf 'Delta interpretation:  protected partial override set\n'
+  printf 'Drupal configuration:  not interpreted as full export\n'
+  printf 'Owning validation:     unavailable\n'
+  printf 'Config Ignore:         not inspected\n'
+  printf 'Config export:         not performed\n'
+  printf 'Git working tree:      %s\n' "$git_state"
+  printf 'Readiness:             unavailable\n'
+  printf '\nMissing YAML, directory size, and file count are not interpreted as overlay drift.\n'
+  printf 'No provider or Drush command was invoked.\n'
+  printf 'A reliable non-destructive owning validation mechanism has not been established, so readiness fails closed.\n'
+
+  return 1
+}
+
 readiness_command() {
   local provider_override='' root git_dir state tag strategy config_path provider
   local runtime_config_path config_output config_entries config_state config_ignore
@@ -180,6 +244,10 @@ readiness_command() {
       --provider)
         [ "$#" -ge 2 ] || die '--provider requires ddev or lando'
         provider_override=$2
+        case "$provider_override" in
+          ddev|lando) ;;
+          *) die '--provider must be ddev or lando' ;;
+        esac
         shift 2
         ;;
       -h|--help|help)
@@ -206,13 +274,16 @@ readiness_command() {
   strategy=$(profile_get "$tag" config-strategy)
   config_path=$(profile_get "$tag" config-path)
   case "$strategy" in
-    full-export) ;;
-    overlay-delta) die 'overlay-delta readiness is not implemented yet; refusing to apply full-export semantics' ;;
+    full-export|overlay-delta) ;;
     *) die "unsupported config strategy for readiness: $strategy" ;;
   esac
 
-  [ -d "$root/$config_path" ] || \
-    die "configured full-export config-path does not exist as a directory: $config_path"
+  require_config_directory "$root" "$config_path" "$strategy"
+
+  if [ "$strategy" = overlay-delta ]; then
+    report_overlay_delta "$root" "$tag" "$strategy" "$config_path" || return 1
+    return
+  fi
 
   provider=$(resolve_provider "$root" "$state" "$provider_override")
   require_command "$provider"

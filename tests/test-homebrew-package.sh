@@ -87,6 +87,7 @@ FORMULA_CLI="$PREFIX/bin/pantheon-local"
 [ -x "$FORMULA_CLI" ] || fail 'Homebrew public command is missing'
 [ -x "$PREFIX/libexec/bin/pantheon-local" ] || fail 'Homebrew command payload is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-core" ] || fail 'Homebrew core module is missing'
+[ -x "$PREFIX/libexec/libexec/pantheon-local-config-profile" ] || fail 'Homebrew tag-profile module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-provider-url" ] || fail 'Homebrew provider URL module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-pull" ] || fail 'Homebrew pull module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-status" ] || fail 'Homebrew status module is missing'

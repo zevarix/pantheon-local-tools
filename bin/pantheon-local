@@ -28,7 +28,8 @@ Commands:
       Remove one stored configuration value so its default applies again.
 
   pantheon-local config list
-      Print effective root/provider values and configured Pantheon Tag routes.
+      Print effective root/provider values, Pantheon Tag routes, and configured
+      tag-profile properties.
 
   pantheon-local config tag get TAG
       Print the local directory mapped to a Pantheon Tag.
@@ -37,10 +38,23 @@ Commands:
       Map a Pantheon Tag to a directory relative to the configured root.
 
   pantheon-local config tag unset TAG
-      Remove a Pantheon Tag directory mapping.
+      Remove a Pantheon Tag directory mapping and its optional profile
+      properties.
 
   pantheon-local config tag list
       List all configured Pantheon Tag directory mappings.
+
+  pantheon-local config tag profile get TAG PROPERTY
+      Print a configured tag-profile property.
+
+  pantheon-local config tag profile set TAG PROPERTY VALUE
+      Set config-strategy or config-path for an existing Pantheon Tag route.
+
+  pantheon-local config tag profile unset TAG PROPERTY
+      Remove one optional tag-profile property.
+
+  pantheon-local config tag profile list [TAG]
+      List profile properties for one Tag or all configured Tag routes.
 
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
       Clone a Pantheon Multidev into an isolated local checkout. --dry-run
@@ -58,6 +72,10 @@ Commands:
   pantheon-local --version
       Print the installed Pantheon Local Tools version.
 
+Tag-profile properties:
+  config-strategy  full-export or overlay-delta
+  config-path      Relative project configuration path such as config/sync
+
 Provider selection:
   auto   Detect from project configuration after checkout: .ddev/config.yaml
          selects DDEV and .lando.yml selects Lando. If both or neither are
@@ -68,6 +86,9 @@ Provider selection:
 Examples:
   pantheon-local config init
   pantheon-local config init --provider ddev
+  pantheon-local config tag set 'Example Group' example-group
+  pantheon-local config tag profile set 'Example Group' config-strategy full-export
+  pantheon-local config tag profile set 'Example Group' config-path config/sync
   pantheon-local multidev example.feature --dry-run
   pantheon-local pull test --database-only
   pantheon-local status
@@ -76,6 +97,7 @@ Help:
   pantheon-local help
   pantheon-local config help
   pantheon-local config init --help
+  pantheon-local config tag profile --help
   pantheon-local multidev --help
   pantheon-local pull --help
   pantheon-local status --help
@@ -120,6 +142,7 @@ PROJECT_ROOT="$SCRIPT_DIR/.."
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 LIBEXEC_DIR="$PROJECT_ROOT/libexec"
 CORE="$LIBEXEC_DIR/pantheon-local-core"
+PROFILE="$LIBEXEC_DIR/pantheon-local-config-profile"
 PULL="$LIBEXEC_DIR/pantheon-local-pull"
 STATUS="$LIBEXEC_DIR/pantheon-local-status"
 
@@ -143,7 +166,55 @@ case "$command" in
     shift
     exec "$STATUS" "$@"
     ;;
-  config|multidev)
+  config)
+    [ -x "$CORE" ] || die "core module is missing or not executable: $CORE"
+
+    if [ "${2:-}" = 'tag' ] && [ "${3:-}" = 'profile' ]; then
+      [ -x "$PROFILE" ] || die "tag-profile module is missing or not executable: $PROFILE"
+      shift 3
+      exec "$PROFILE" "$@"
+    fi
+
+    case "${2:-}" in
+      -h|--help|help)
+        usage
+        exit 0
+        ;;
+    esac
+    if [ "${2:-}" = 'tag' ]; then
+      case "${3:-}" in
+        -h|--help|help)
+          usage
+          exit 0
+          ;;
+        unset)
+          if [ "$#" -eq 4 ]; then
+            [ -x "$PROFILE" ] || die "tag-profile module is missing or not executable: $PROFILE"
+            "$CORE" "$@"
+            "$PROFILE" __purge "$4"
+            exit 0
+          fi
+          ;;
+      esac
+    fi
+
+    if [ "${2:-}" = 'list' ] && [ "$#" -eq 2 ]; then
+      [ -x "$PROFILE" ] || die "tag-profile module is missing or not executable: $PROFILE"
+      core_output=$("$CORE" "$@")
+      profile_output=$("$PROFILE" list)
+      printf '%s\n' "$core_output"
+      if [ -n "$profile_output" ]; then
+        printf '%s\n' "$profile_output" | while IFS= read -r line; do
+          [ -n "$line" ] || continue
+          printf 'tag.%s\n' "$line"
+        done
+      fi
+      exit 0
+    fi
+
+    exec "$CORE" "$@"
+    ;;
+  multidev)
     [ -x "$CORE" ] || die "core module is missing or not executable: $CORE"
     exec "$CORE" "$@"
     ;;

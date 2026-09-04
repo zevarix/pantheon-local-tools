@@ -41,6 +41,10 @@ pantheon-local config tag get TAG
 pantheon-local config tag set TAG DIRECTORY
 pantheon-local config tag unset TAG
 pantheon-local config tag list
+pantheon-local config tag profile get TAG PROPERTY
+pantheon-local config tag profile set TAG PROPERTY VALUE
+pantheon-local config tag profile unset TAG PROPERTY
+pantheon-local config tag profile list [TAG]
 
 pantheon-local multidev SITE.ENV
   --provider ddev|lando
@@ -58,7 +62,7 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local multidev --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
+Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
 
 New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning.
 
@@ -68,13 +72,20 @@ The following user configuration concepts are public:
 
 - `root` — absolute local root for Pantheon checkouts;
 - `provider` — `auto`, `ddev`, or `lando`;
-- Pantheon Tag-to-directory mappings managed through `config tag`.
+- Pantheon Tag-to-directory mappings managed through `config tag`;
+- optional Pantheon Tag profile properties managed through `config tag profile`:
+  - `config-strategy` — `full-export` or `overlay-delta`;
+  - `config-path` — a validated project-relative configuration path.
 
 `pantheon-local config init` is a convenience layer over the same configuration model. With no flags in a terminal, it guides root/provider selection, validates all proposed values, summarizes them, confirms before writing, and uses the normal configuration setters. With `--root` and/or `--provider`, it is non-interactive and changes only values explicitly supplied by the caller. Existing `config get/set/unset/list/path` and `config tag` commands remain first-class granular controls.
 
+Tag profile properties extend an existing Tag route and use the same Git-compatible `[tag "..."]` subsection. A profile setter does not implicitly create a Tag route. Existing directory-only Tag configuration remains valid, and a Tag route does not need a strategy/path unless a later workflow explicitly requires one. Removing a Tag route through `config tag unset TAG` also removes its optional profile properties so stale strategy/path state is not left behind.
+
+The initial strategy vocabulary is deliberately bounded to `full-export` and `overlay-delta`. The configured `config-path` is data, not a built-in path assumption: `config/sync`, `config/site-overrides`, and organization-specific directories are examples only. The `overlay-delta` label does not make a directory a complete export and does not authorize a blanket Drupal config export.
+
 The default configuration location follows XDG conventions as documented by the CLI/README. `PANTHEON_LOCAL_CONFIG` remains the supported complete-path override for automation/testing.
 
-The Git-compatible on-disk representation is intentionally simple, but users should prefer the CLI rather than depending on undocumented internal key names.
+The Git-compatible on-disk representation is intentionally simple, but users should prefer the CLI rather than depending on undocumented internal key names. `docs/configuration.md` documents the public profile concepts and safety boundaries without making internal Git key spelling a machine API.
 
 ## Provider contract
 
@@ -99,8 +110,12 @@ A compatible `0.1.x` release must preserve these properties:
 - never start/rebuild a provider unless the user requested an operation that explicitly permits it;
 - never mutate provider configuration merely to discover a runtime URL;
 - fail rather than guess on ambiguous provider or configured Tag routing;
-- keep help/read-only discovery surfaces free of provider startup, authentication, or filesystem/project mutation; and
-- validate all guided `config init` selections before writing so an invalid later value cannot leave a partial configuration update.
+- keep help/read-only discovery surfaces free of provider startup, authentication, or filesystem/project mutation;
+- validate all guided `config init` selections before writing so an invalid later value cannot leave a partial configuration update;
+- reject unsupported Tag `config-strategy` values instead of guessing future semantics;
+- reject unsafe/escaping Tag `config-path` values rather than treating them as project-relative paths;
+- never make setting a Tag profile property implicitly create a Pantheon Tag route; and
+- never interpret `overlay-delta` as permission to flatten or fully export Drupal configuration into the configured delta path.
 
 Safety tightening that converts a previously ambiguous/unsafe case into an explicit failure is considered compatible when documented in release notes.
 

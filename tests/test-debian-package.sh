@@ -28,6 +28,7 @@ dpkg-deb -x "$PACKAGE" "$EXTRACT"
 
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/bin/pantheon-local" ] || fail 'packaged command is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-core" ] || fail 'packaged core module is missing or not executable'
+[ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-config-profile" ] || fail 'packaged tag-profile module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-provider-url" ] || fail 'packaged URL module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-pull" ] || fail 'packaged pull module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-status" ] || fail 'packaged status module is missing or not executable'
@@ -45,6 +46,11 @@ mkdir -p "$HOME"
 assert_eq "$("$EXTRACT/usr/bin/pantheon-local" config path)" "$HOME/.config/pantheon-local-tools/config"
 "$EXTRACT/usr/bin/pantheon-local" config set provider ddev
 assert_eq "$("$EXTRACT/usr/bin/pantheon-local" config get provider)" 'ddev'
+"$EXTRACT/usr/bin/pantheon-local" config tag set 'Package Example' package-example
+"$EXTRACT/usr/bin/pantheon-local" config tag profile set 'Package Example' config-strategy full-export
+"$EXTRACT/usr/bin/pantheon-local" config tag profile set 'Package Example' config-path config/sync
+assert_eq "$("$EXTRACT/usr/bin/pantheon-local" config tag profile get 'Package Example' config-strategy)" 'full-export'
+assert_eq "$("$EXTRACT/usr/bin/pantheon-local" config tag profile get 'Package Example' config-path)" 'config/sync'
 
 # Packaging must not ship user state, provider project configuration, or credentials.
 if find "$EXTRACT" -type f -o -type l | grep -E '/\.config/|/\.lando|/\.ddev|pantheon-local-tools/state|machine-token' >/dev/null 2>&1; then

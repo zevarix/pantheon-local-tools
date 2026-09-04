@@ -111,7 +111,7 @@ DRY_STATE=$(state_path "$DRY")
 rm -f "$MOCK_LOG"
 dry_output=$(cd "$DRY" && bash "$CLI" setup --dry-run)
 assert_contains "$dry_output" 'Pantheon:    example-site.phase1'
-assert_contains "$dry_output" 'lando pull phase1 --database-only --provider lando'
+assert_contains "$dry_output" 'pantheon-local pull phase1 --database-only --provider lando'
 assert_contains "$dry_output" 'Dry-run only:'
 [ ! -e "$MOCK_LOG" ] || fail 'dry-run executed a provider command'
 assert_config_missing "$DRY_STATE" bootstrap.status

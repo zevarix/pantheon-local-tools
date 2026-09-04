@@ -30,6 +30,7 @@ for expected in \
   'config-strategy  full-export or overlay-delta' \
   'config-path      Relative project configuration path such as config/sync' \
   'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]' \
+  'pantheon-local setup [--provider ddev|lando] [--dry-run]' \
   'pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]' \
   'pantheon-local status' \
   'pantheon-local version' \
@@ -37,6 +38,7 @@ for expected in \
   'auto   Detect from project configuration after checkout' \
   "pantheon-local config tag profile set 'Example Group' config-strategy full-export" \
   'pantheon-local multidev example.feature --dry-run' \
+  'pantheon-local setup --dry-run' \
   'pantheon-local pull test --database-only'
 do
   assert_contains "$help_output" "$expected"
@@ -62,6 +64,14 @@ assert_contains "$profile_help" 'Setting a profile property never creates a tag 
 multidev_help=$(bash "$CLI" multidev --help)
 assert_contains "$multidev_help" 'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]'
 
+setup_help=$(bash "$CLI" setup --help)
+assert_contains "$setup_help" 'pantheon-local setup [--provider ddev|lando] [--dry-run]'
+assert_contains "$setup_help" 'provider-owned composer install'
+assert_contains "$setup_help" 'replaces local database data'
+assert_contains "$setup_help" 'checkout-local PLT state'
+assert_contains "$setup_help" 'Setup stops on the first failed step'
+assert_contains "$setup_help" 'Fix the reported failure and run pantheon-local setup again.'
+
 pull_help=$(bash "$CLI" pull --help)
 assert_contains "$pull_help" 'pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]'
 assert_contains "$pull_help" 'without changing checked-out Git code'
@@ -69,5 +79,6 @@ assert_contains "$pull_help" 'without changing checked-out Git code'
 status_help=$(bash "$CLI" status --help)
 assert_contains "$status_help" 'pantheon-local status'
 assert_contains "$status_help" 'without contacting Pantheon or starting a provider'
+assert_contains "$status_help" 'Drupal bootstrap status/step'
 
 printf 'help tests passed\n'

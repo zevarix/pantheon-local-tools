@@ -60,13 +60,18 @@ Commands:
       Clone a Pantheon Multidev into an isolated local checkout. --dry-run
       prints the plan without writing; --start explicitly starts the provider.
 
+  pantheon-local setup [--provider ddev|lando] [--dry-run]
+      Bootstrap an existing PLT-managed Drupal checkout using its recorded
+      Pantheon environment: start provider, Composer install, guarded local
+      database pull, drush updb, then drush cr. --dry-run prints the plan only.
+
   pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]
       Refresh local Pantheon database/files without changing checked-out Git
       code. By default both database and files are pulled.
 
   pantheon-local status
-      Show local checkout/provider/data-source status without contacting
-      Pantheon or starting a provider.
+      Show local checkout/provider/data-source/bootstrap status without
+      contacting Pantheon or starting a provider.
 
   pantheon-local version
   pantheon-local --version
@@ -90,6 +95,8 @@ Examples:
   pantheon-local config tag profile set 'Example Group' config-strategy full-export
   pantheon-local config tag profile set 'Example Group' config-path config/sync
   pantheon-local multidev example.feature --dry-run
+  pantheon-local setup --dry-run
+  pantheon-local setup
   pantheon-local pull test --database-only
   pantheon-local status
 
@@ -99,6 +106,7 @@ Help:
   pantheon-local config init --help
   pantheon-local config tag profile --help
   pantheon-local multidev --help
+  pantheon-local setup --help
   pantheon-local pull --help
   pantheon-local status --help
 USAGE
@@ -144,6 +152,7 @@ LIBEXEC_DIR="$PROJECT_ROOT/libexec"
 CORE="$LIBEXEC_DIR/pantheon-local-core"
 PROFILE="$LIBEXEC_DIR/pantheon-local-config-profile"
 PULL="$LIBEXEC_DIR/pantheon-local-pull"
+SETUP="$LIBEXEC_DIR/pantheon-local-setup"
 STATUS="$LIBEXEC_DIR/pantheon-local-status"
 
 command=${1:-}
@@ -160,6 +169,11 @@ case "$command" in
     [ -x "$PULL" ] || die "pull module is missing or not executable: $PULL"
     shift
     exec "$PULL" "$@"
+    ;;
+  setup)
+    [ -x "$SETUP" ] || die "setup module is missing or not executable: $SETUP"
+    shift
+    exec "$SETUP" "$@"
     ;;
   status)
     [ -x "$STATUS" ] || die "status module is missing or not executable: $STATUS"

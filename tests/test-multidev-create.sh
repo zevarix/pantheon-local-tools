@@ -153,7 +153,9 @@ assert_contains "$help_output" 'Multidev is deliberately preserved.'
 
 # Dry-run validates remote/local inputs but performs neither remote creation nor local checkout.
 : > "$MOCK_TERMINUS_LOG"
-dry_output=$(bash "$CLI" multidev create example-site.live feature1 --provider lando --group migration --dry-run)
+if ! dry_output=$(bash "$CLI" multidev create example-site.live feature1 --provider lando --group migration --dry-run 2>&1); then
+  fail "Multidev create dry-run failed unexpectedly: $dry_output"
+fi
 assert_contains "$dry_output" 'Pantheon Local Tools Multidev creation plan'
 assert_contains "$dry_output" 'Source environment:    example-site.live'
 assert_contains "$dry_output" 'New environment:       example-site.feature1'
@@ -197,7 +199,9 @@ assert_file_not_contains "$MOCK_TERMINUS_LOG" 'multidev:create'
 
 # Successful creation is verified, then handed to the existing transactional checkout path.
 : > "$MOCK_TERMINUS_LOG"
-success_output=$(bash "$CLI" multidev create example-site.live feature1 --provider lando --group migration --yes)
+if ! success_output=$(bash "$CLI" multidev create example-site.live feature1 --provider lando --group migration --yes 2>&1); then
+  fail "successful Multidev creation/handoff failed unexpectedly: $success_output"
+fi
 assert_contains "$success_output" 'Confirmation:          acknowledged by --yes'
 assert_contains "$success_output" 'Remote Multidev verified: example-site.feature1'
 assert_contains "$success_output" 'Handing off to existing local Multidev checkout path...'
@@ -213,14 +217,18 @@ SUCCESS_DEST="$LOCAL_ROOT/multidev/migration/example-site-feature1"
 
 # Existing --start semantics are passed through only after successful checkout finalization.
 : > "$MOCK_START_LOG"
-start_output=$(bash "$CLI" multidev create example-site.live feature2 --provider lando --start --yes)
+if ! start_output=$(bash "$CLI" multidev create example-site.live feature2 --provider lando --start --yes 2>&1); then
+  fail "Multidev creation with provider start failed unexpectedly: $start_output"
+fi
 assert_contains "$start_output" 'Remote Multidev verified: example-site.feature2'
 START_DEST="$LOCAL_ROOT/multidev/example-site-feature2"
 assert_file_contains "$MOCK_START_LOG" "$START_DEST"
 assert_env_present feature2
 
 # DDEV provider choice is passed through to the existing checkout path.
-ddev_output=$(bash "$CLI" multidev create example-site.live feature3 --provider ddev --yes)
+if ! ddev_output=$(bash "$CLI" multidev create example-site.live feature3 --provider ddev --yes 2>&1); then
+  fail "DDEV Multidev creation/handoff failed unexpectedly: $ddev_output"
+fi
 assert_contains "$ddev_output" 'Provider:    ddev'
 DDEV_DEST="$LOCAL_ROOT/multidev/example-site-feature3"
 [ -f "$DDEV_DEST/.ddev/config.local.yaml" ] || fail 'DDEV local handoff did not use existing provider path'

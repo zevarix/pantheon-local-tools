@@ -27,6 +27,7 @@ for expected in \
   'pantheon-local config tag profile set TAG PROPERTY VALUE' \
   'pantheon-local config tag profile unset TAG PROPERTY' \
   'pantheon-local config tag profile list [TAG]' \
+  'pantheon-local config export [--provider ddev|lando] [--yes]' \
   'config-strategy  full-export or overlay-delta' \
   'config-path      Relative project configuration path such as config/sync' \
   'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]' \
@@ -38,6 +39,7 @@ for expected in \
   'pantheon-local --version' \
   'auto   Detect from project configuration after checkout' \
   "pantheon-local config tag profile set 'Example Group' config-strategy full-export" \
+  'pantheon-local config export --yes' \
   'pantheon-local multidev example.feature --dry-run' \
   'pantheon-local setup --dry-run' \
   'pantheon-local readiness' \
@@ -45,13 +47,16 @@ for expected in \
 do
   assert_contains "$help_output" "$expected"
 done
-assert_contains "$help_output" 'overlay-delta reports its protected partial path'
+assert_contains "$help_output" 'Explicitly export tracked Drupal configuration'
+assert_contains "$help_output" 'mutates project files'
+assert_contains "$help_output" 'overlay-delta export is unsupported'
 assert_contains "$help_output" 'fails closed while owning validation is unavailable'
 
 config_help=$(bash "$CLI" config help)
 assert_contains "$config_help" 'pantheon-local config init [--root PATH] [--provider auto|ddev|lando]'
 assert_contains "$config_help" 'pantheon-local config tag set TAG DIRECTORY'
 assert_contains "$config_help" 'pantheon-local config tag profile set TAG PROPERTY VALUE'
+assert_contains "$config_help" 'pantheon-local config export [--provider ddev|lando] [--yes]'
 
 tag_help=$(bash "$CLI" config tag help)
 assert_contains "$tag_help" 'pantheon-local config tag profile list [TAG]'
@@ -64,6 +69,18 @@ profile_help=$(bash "$CLI" config tag profile --help)
 assert_contains "$profile_help" 'pantheon-local config tag profile get TAG PROPERTY'
 assert_contains "$profile_help" 'config-strategy  full-export or overlay-delta'
 assert_contains "$profile_help" 'Setting a profile property never creates a tag route.'
+
+export_help=$(bash "$CLI" config export --help)
+assert_contains "$export_help" 'pantheon-local config export [--provider ddev|lando] [--yes]'
+assert_contains "$export_help" 'THIS COMMAND MUTATES PROJECT CONFIGURATION FILES.'
+assert_contains "$export_help" 'configured export path to have no pre-existing Git changes'
+assert_contains "$export_help" 'Run the normal full-export readiness inspection'
+assert_contains "$export_help" 'Config Ignore'
+assert_contains "$export_help" 'overlay-delta  Unsupported.'
+assert_contains "$export_help" 'Required for non-interactive use.'
+assert_contains "$export_help" 'PLT does not pass Drush --add or --commit'
+assert_contains "$export_help" 'does not modify remote Pantheon environments'
+assert_contains "$export_help" 'reports the resulting Git state'
 
 multidev_help=$(bash "$CLI" multidev --help)
 assert_contains "$multidev_help" 'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]'

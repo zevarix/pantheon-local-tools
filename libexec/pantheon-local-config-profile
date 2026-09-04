@@ -57,7 +57,7 @@ validate_relative_path() {
   [ -n "$path" ] || die 'config-path cannot be empty'
   case "$path" in
     /*) die 'config-path must be relative to the project root' ;;
-    '~'|'~/'*) die 'config-path must be project-relative, not home-relative' ;;
+    [~]|[~]/*) die 'config-path must be project-relative, not home-relative' ;;
     */) die 'config-path must not end with a slash' ;;
     *\\*) die 'config-path must use forward slashes (including under WSL)' ;;
     *$'\n'*|*$'\r'*) die 'config-path cannot contain newlines' ;;

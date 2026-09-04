@@ -63,8 +63,14 @@ Commands:
       overlay-delta export is unsupported and fails before provider invocation.
 
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
-      Clone a Pantheon Multidev into an isolated local checkout. --dry-run
-      prints the plan without writing; --start explicitly starts the provider.
+      Clone an already-existing Pantheon Multidev into an isolated local
+      checkout. Missing remote environments are never created implicitly.
+
+  pantheon-local multidev create SITE.SOURCE NEW_ENV
+    [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]
+      Explicitly create a remote Pantheon Multidev, verify it, then hand off to
+      the existing local Multidev checkout path. --dry-run performs read-only
+      planning; real creation confirms unless --yes is supplied.
 
   pantheon-local setup [--provider ddev|lando] [--dry-run]
       Bootstrap an existing PLT-managed Drupal checkout using its recorded
@@ -108,6 +114,7 @@ Examples:
   pantheon-local config tag profile set 'Example Group' config-path config/sync
   pantheon-local config export --yes
   pantheon-local multidev example.feature --dry-run
+  pantheon-local multidev create example.live feature1 --dry-run
   pantheon-local setup --dry-run
   pantheon-local setup
   pantheon-local readiness
@@ -121,6 +128,7 @@ Help:
   pantheon-local config tag profile --help
   pantheon-local config export --help
   pantheon-local multidev --help
+  pantheon-local multidev create --help
   pantheon-local setup --help
   pantheon-local readiness --help
   pantheon-local pull --help
@@ -168,6 +176,7 @@ LIBEXEC_DIR="$PROJECT_ROOT/libexec"
 CORE="$LIBEXEC_DIR/pantheon-local-core"
 PROFILE="$LIBEXEC_DIR/pantheon-local-config-profile"
 CONFIG_EXPORT="$LIBEXEC_DIR/pantheon-local-config-export"
+MULTIDEV_CREATE="$LIBEXEC_DIR/pantheon-local-multidev-create"
 PULL="$LIBEXEC_DIR/pantheon-local-pull"
 READINESS="$LIBEXEC_DIR/pantheon-local-readiness"
 SETUP="$LIBEXEC_DIR/pantheon-local-setup"
@@ -258,6 +267,11 @@ case "$command" in
     exec "$CORE" "$@"
     ;;
   multidev)
+    if [ "${2:-}" = 'create' ]; then
+      [ -x "$MULTIDEV_CREATE" ] || die "multidev-create module is missing or not executable: $MULTIDEV_CREATE"
+      shift 2
+      exec "$MULTIDEV_CREATE" "$@"
+    fi
     [ -x "$CORE" ] || die "core module is missing or not executable: $CORE"
     exec "$CORE" "$@"
     ;;

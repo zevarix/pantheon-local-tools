@@ -103,6 +103,15 @@ When the plan is correct, create the isolated local checkout:
 pantheon-local multidev SITE.ENV --provider ddev --start
 ```
 
+To create a **new remote Pantheon Multidev** from an existing source environment, use the separate explicit remote-write command and inspect its plan first:
+
+```bash
+pantheon-local multidev create SITE.SOURCE NEW_ENV --provider ddev --dry-run
+pantheon-local multidev create SITE.SOURCE NEW_ENV --provider ddev --start
+```
+
+Interactive creation confirms before the remote write; automation must supply `--yes`. The existing `pantheon-local multidev SITE.ENV` command remains clone-only and never creates a missing remote environment. See [`docs/multidev.md`](docs/multidev.md).
+
 Use `lando` instead of `ddev` when that is the project/provider you want.
 
 For a PLT-managed Drupal checkout, inspect the bootstrap plan before replacing local database data:
@@ -168,6 +177,13 @@ pantheon-local multidev SITE.ENV
   --dry-run
   --start
 
+pantheon-local multidev create SITE.SOURCE NEW_ENV
+  --provider ddev|lando
+  --group NAME
+  --dry-run
+  --start
+  --yes
+
 pantheon-local setup
   --provider ddev|lando
   --dry-run
@@ -185,17 +201,21 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
+Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
 
 ## Core workflows
 
-### Multidev checkouts
+### Multidev checkouts and guarded remote creation
 
 `pantheon-local multidev SITE.ENV` clones an **existing** Pantheon Multidev into an isolated local checkout. It does not create, delete, or mutate the remote Pantheon environment.
 
-The command resolves the authoritative Git URL through Terminus, applies user-configured Pantheon Tag routing when present, refuses occupied destinations, configures the selected local provider additively, and finalizes the checkout only after local setup succeeds. `--dry-run` resolves and prints the plan without cloning; `--start` is explicit and continues to mean provider start only.
+The clone-only command resolves the authoritative Git URL through Terminus, applies user-configured Pantheon Tag routing when present, refuses occupied destinations, configures the selected local provider additively, and finalizes the checkout only after local setup succeeds. `--dry-run` resolves and prints the plan without cloning; `--start` is explicit and continues to mean provider start only.
 
-See [`docs/multidev.md`](docs/multidev.md) for the full workflow and safety contract.
+`pantheon-local multidev create SITE.SOURCE NEW_ENV` is a separate explicit remote-write boundary. It validates Terminus authentication, source existence, target absence, current Pantheon Multidev naming constraints, and local settings that can be established before mutation. A real run confirms interactively unless `--yes` was supplied, invokes documented Terminus Multidev creation, verifies the new environment is visible, and then hands off to the existing transactional clone-only path rather than duplicating checkout/provider logic.
+
+Pantheon's default Multidev creation clones the source environment's database and files. `multidev create --dry-run` performs only read-oriented validation/planning and never invokes remote creation or local checkout. If remote creation succeeds but local checkout/provider start fails, PLT deliberately preserves the remote environment and reports the clone-only retry command; it never automatically deletes or recreates the remote Multidev.
+
+See [`docs/multidev.md`](docs/multidev.md) for the full checkout, creation, naming, confirmation, failure/retry, and provider safety contract.
 
 ### Drupal checkout setup
 
@@ -326,7 +346,10 @@ See [`docs/local-provider-architecture.md`](docs/local-provider-architecture.md)
 Pantheon Local Tools is intentionally conservative around developer machines and remote environments:
 
 - existing checkout destinations are never silently overwritten;
-- local checkout creation never creates or deletes a remote Pantheon Multidev;
+- `pantheon-local multidev SITE.ENV` remains clone-only and never creates a missing remote Multidev;
+- only explicit `pantheon-local multidev create SITE.SOURCE NEW_ENV` may create a remote Multidev, after source/target validation and confirmation or `--yes` acknowledgement;
+- Multidev creation dry-run performs no remote or local mutation;
+- a successfully created remote Multidev is preserved if local checkout/provider start fails, and PLT never automatically deletes or recreates it;
 - `pantheon-local pull` never pulls Git code;
 - `pantheon-local setup` uses only the checkout's recorded Pantheon environment for its database refresh and never infers Live/current-branch semantics;
 - setup runs Composer inside the selected provider and stops immediately when provider start, Composer, database pull, `updb`, or cache rebuild fails;
@@ -386,7 +409,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 ## Documentation
 
 - [`docs/configuration.md`](docs/configuration.md) — Git-compatible user configuration and Pantheon Tag profile strategies
-- [`docs/multidev.md`](docs/multidev.md) — Multidev checkout behavior and safety
+- [`docs/multidev.md`](docs/multidev.md) — existing Multidev checkout plus guarded remote creation behavior and safety
 - [`docs/setup.md`](docs/setup.md) — provider-aware Drupal checkout bootstrap, failure/retry behavior, and local mutation boundaries
 - [`docs/readiness.md`](docs/readiness.md) — strategy-aware Drupal config readiness, overlay fail-closed reporting, Config Ignore, path containment, Git-integrity, and exit semantics
 - [`docs/config-export.md`](docs/config-export.md) — explicit full-export mutation, confirmation, Config Ignore authority, change reporting, and failure/retry behavior

@@ -46,6 +46,7 @@ tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/bin/pantheon-local" >/dev/null 2>&1 |
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-core" >/dev/null 2>&1 || fail 'core module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-config-profile" >/dev/null 2>&1 || fail 'tag-profile module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-config-export" >/dev/null 2>&1 || fail 'config-export module missing from source archive'
+tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-multidev-create" >/dev/null 2>&1 || fail 'multidev-create module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-readiness" >/dev/null 2>&1 || fail 'readiness module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-setup" >/dev/null 2>&1 || fail 'setup module missing from source archive'
 if tar -tzf "$SOURCE_ONE" | grep -E '/\.git(/|$)|/dist(/|$)|/\.agents(/|$)' >/dev/null 2>&1; then
@@ -58,6 +59,7 @@ tar -xzf "$SOURCE_ONE" -C "$EXTRACT"
 expected="pantheon-local $VERSION"
 assert_eq "$(bash "$EXTRACT/$PREFIX/bin/pantheon-local" --version)" "$expected"
 bash "$EXTRACT/$PREFIX/bin/pantheon-local" config export --help | grep -F 'MUTATES PROJECT CONFIGURATION FILES' >/dev/null 2>&1 || fail 'source archive config export help is unavailable'
+bash "$EXTRACT/$PREFIX/bin/pantheon-local" multidev create --help | grep -F 'EXPLICIT REMOTE PANTHEON WRITE' >/dev/null 2>&1 || fail 'source archive multidev create help is unavailable'
 bash "$EXTRACT/$PREFIX/bin/pantheon-local" setup --help | grep -F 'pantheon-local setup' >/dev/null 2>&1 || fail 'source archive setup help is unavailable'
 bash "$EXTRACT/$PREFIX/bin/pantheon-local" readiness --help | grep -F 'pantheon-local readiness' >/dev/null 2>&1 || fail 'source archive readiness help is unavailable'
 

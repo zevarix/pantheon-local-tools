@@ -53,6 +53,13 @@ pantheon-local multidev SITE.ENV
   --dry-run
   --start
 
+pantheon-local multidev create SITE.SOURCE NEW_ENV
+  --provider ddev|lando
+  --group NAME
+  --dry-run
+  --start
+  --yes
+
 pantheon-local setup
   --provider ddev|lando
   --dry-run
@@ -70,9 +77,9 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
+Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
 
-New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only. Adding `pantheon-local config export` does not make setup, readiness, status, Tag matching, or provider start export configuration implicitly.
+New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only. Adding `pantheon-local config export` does not make setup, readiness, status, Tag matching, or provider start export configuration implicitly. Adding `pantheon-local multidev create` does not make the existing `pantheon-local multidev SITE.ENV` command create a missing remote environment implicitly.
 
 ## Configuration contract
 
@@ -109,7 +116,43 @@ When stored configuration uses `provider=auto`, provider selection is based on p
 
 `pantheon-local config export` uses provider-owned Drush only after full-export preflight and explicit confirmation/acknowledgement. It does not start or rebuild the provider. A provider/runtime that cannot run the required readiness, module-state, or export command fails rather than falling back to host Drush.
 
+`pantheon-local multidev create` does not implement a second provider setup path. After remote creation has been verified, it passes provider/group/start intent into the existing transactional Multidev checkout implementation, which remains authoritative for provider project validation, local overrides, URL discovery, and optional provider start.
+
 A provider-specific implementation detail may change in a patch release when the user-visible command contract and safety properties remain the same.
+
+## Pantheon Multidev contract
+
+The two Multidev surfaces have deliberately different remote mutation authority.
+
+### Existing-environment checkout
+
+`pantheon-local multidev SITE.ENV` is clone-only. It requires an already-existing Pantheon environment and does not create or delete remote environments. Its established provider/group/dry-run/start semantics remain unchanged.
+
+### Explicit remote creation
+
+`pantheon-local multidev create SITE.SOURCE NEW_ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]` is the only PLT Multidev surface in this release line that may create a remote Pantheon environment.
+
+PLT validates current Pantheon Multidev naming rules before mutation. `NEW_ENV` must be lowercase, contain no more than 11 characters, start with a letter or number, contain only lowercase letters/numbers/dashes, and avoid Pantheon's reserved environment names.
+
+Before mutation, PLT must:
+
+- validate command options and the local root/provider configuration it can establish without a checkout;
+- verify Terminus authentication;
+- read authoritative site environment state through Terminus;
+- require `SITE.SOURCE` to exist;
+- require `SITE.NEW_ENV` not to exist;
+- print the remote-create/local-handoff plan;
+- require interactive confirmation or explicit `--yes` acknowledgement.
+
+`--dry-run` performs those read-only validations and plan reporting but must not call `terminus multidev:create`, clone Git, write provider overrides, create local checkout directories, or start a provider. `--dry-run` and `--start` are mutually exclusive.
+
+A real creation invokes Terminus's documented `multidev:create` operation after PLT confirmation. Pantheon's default behavior clones database and files from `SITE.SOURCE`; PLT does not change that default in the initial implementation.
+
+After Terminus reports success, PLT performs an independent environment-list read-back and requires `SITE.NEW_ENV` to appear before local checkout begins. A failed create or inconclusive post-create verification is not automatically retried or rolled back because remote state may be partial or uncertain.
+
+After successful verification, PLT hands off to the established clone-only Multidev path. Git URL resolution, Tag routing, destination safety, transactional clone/finalization, provider validation/configuration, checkout-local state, URL discovery, and optional `--start` remain owned by that existing implementation.
+
+If remote creation succeeds but local checkout/provider start fails, the remote Multidev is preserved. PLT reports a clone-only retry command and must not automatically delete the remote environment.
 
 ## Drupal setup contract
 
@@ -208,8 +251,13 @@ A future overlay mutation mechanism requires its own proven strategy-aware contr
 
 A compatible `0.1.x` release must preserve these properties:
 
-- never overwrite an existing multidev checkout;
-- never create/delete a Pantheon multidev as a side effect of local checkout creation;
+- never overwrite an existing Multidev checkout;
+- never create/delete a Pantheon Multidev as a side effect of clone-only local checkout creation;
+- never create a missing remote Multidev from `pantheon-local multidev SITE.ENV`; remote creation requires the distinct `multidev create` surface;
+- never run a real `multidev create` without source/target preflight and confirmation/`--yes` acknowledgement;
+- never normalize an invalid new Multidev name into a different remote name; reject values outside Pantheon's documented constraints;
+- never begin local handoff until the newly created remote environment is visible in a post-create Terminus read-back;
+- never auto-delete or blindly recreate a remote Multidev after failed/uncertain creation or local handoff failure;
 - never pull Git code as part of `pantheon-local pull`;
 - never infer a pull source from the current Git branch when the user supplied an environment;
 - never record successful pull provenance before provider success and Git-integrity verification;
@@ -254,13 +302,15 @@ Setup may add local troubleshooting keys for bootstrap status, failed/current st
 
 Readiness consumes the recorded Pantheon Tag and provider identity when applicable but does not add a persistent readiness-result cache. Config export consumes the same current profile/runtime state and does not add a persistent export-result cache; the resulting project-file state is represented by Git itself.
 
+A successful `multidev create` handoff records the same checkout-local target environment/provider/name metadata as an ordinary clone-only checkout because it reuses that implementation. PLT does not create a second persistent configuration/state model for remote creation.
+
 ## Human-readable output
 
 Normal command output is designed for developers and may gain additional labeled fields in patch releases. Existing labels should not be casually renamed or removed within `0.1.x`.
 
 The text output is **not** yet a stable machine-readable API. Scripts that require a formal structured output format should wait for an explicitly documented JSON/porcelain interface rather than parsing incidental spacing.
 
-Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success is exit `0`, failure is nonzero. A successful full-export readiness inspection may still report a review-required state, while overlay-delta currently exits nonzero when owning validation is unavailable. Config export exits nonzero for refused/cancelled/failed mutation paths, including partial provider-export failure after local files were written.
+Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success is exit `0`, failure is nonzero. A successful full-export readiness inspection may still report a review-required state, while overlay-delta currently exits nonzero when owning validation is unavailable. Config export exits nonzero for refused/cancelled/failed mutation paths, including partial provider-export failure after local files were written. Multidev creation exits nonzero for refused/cancelled/failed or uncertain remote creation and for local handoff failure after a verified remote create.
 
 ## Packaging contract
 

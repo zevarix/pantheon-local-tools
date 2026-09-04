@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+CORE="$SCRIPT_DIR/pantheon-local-core"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local multidev create SITE.SOURCE NEW_ENV
+    [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]
+
+Create a new Pantheon Multidev from an existing source environment, then hand
+off to Pantheon Local Tools' existing local Multidev checkout command.
+
+THIS COMMAND PERFORMS AN EXPLICIT REMOTE PANTHEON WRITE unless --dry-run is used.
+
+Arguments:
+  SITE.SOURCE
+      Existing Pantheon site and source environment. Pantheon's default
+      multidev:create behavior clones database and files from this environment.
+
+  NEW_ENV
+      New Pantheon Multidev environment name. It must be lowercase, start with
+      a letter or number, contain only lowercase letters/numbers/dashes, contain
+      at most 11 characters, and not use a Pantheon-reserved environment name.
+
+Options:
+  --provider ddev|lando
+      Pass the explicit provider choice to the existing local checkout path.
+      Otherwise the normal PLT provider configuration/detection contract applies.
+
+  --group NAME
+      Pass the existing optional local checkout grouping to the checkout path.
+
+  --dry-run
+      Authenticate and perform read-only source/target/config validation, then
+      print the remote-create and local-handoff plan. No remote Multidev, Git
+      checkout, provider override, or provider runtime is created/started.
+
+  --start
+      After successful remote creation and local checkout finalization, pass the
+      existing opt-in provider-start behavior to the checkout path. Cannot be
+      combined with --dry-run.
+
+  --yes
+      Acknowledge the remote Pantheon mutation without an interactive PLT prompt.
+      Required for non-interactive creation. It does not weaken any preflight.
+
+Safety and failure behavior:
+  * Missing existing Multidevs are never interpreted as permission to create one;
+    only this explicit `multidev create` command can perform the remote write.
+  * Source/target existence is read through Terminus; PLT does not construct
+    Pantheon UUIDs, Git endpoints, or environment existence assumptions.
+  * PLT validates the local provider/group/root settings it can establish before
+    the remote write, but local checkout still performs its own authoritative
+    Tag routing, destination, Git URL, provider, and transactional clone checks.
+  * If Terminus creation fails, remote state may be uncertain. PLT does not run
+    an automatic delete or retry; verify Pantheon state before retrying.
+  * If remote creation succeeds but local checkout/start fails, the remote
+    Multidev is deliberately preserved. Retry with `pantheon-local multidev
+    SITE.NEW_ENV` plus any desired local provider/group/start options.
+  * This command never deletes a Pantheon environment.
+
+Examples:
+  pantheon-local multidev create example-site.live feature1 --dry-run
+  pantheon-local multidev create example-site.live feature1 --provider lando
+  pantheon-local multidev create example-site.live feature1 --provider ddev --start --yes
+USAGE
+}
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+validate_component() {
+  local label=$1 value=$2
+  [ -n "$value" ] || die "$label cannot be empty"
+  printf '%s\n' "$value" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]*$' || \
+    die "$label contains unsupported characters: $value"
+}
+
+parse_source() {
+  local source=$1 site env remainder
+  case "$source" in
+    *.*) ;;
+    *) die 'source must use Pantheon site.environment syntax' ;;
+  esac
+  site=${source%%.*}
+  remainder=${source#*.}
+  case "$remainder" in
+    *.*) die 'source must contain exactly one dot between site and environment' ;;
+  esac
+  env=$remainder
+  validate_component site "$site"
+  validate_component source-environment "$env"
+  printf '%s\n%s\n' "$site" "$env"
+}
+
+validate_new_environment() {
+  local env=$1
+  [ -n "$env" ] || die 'new Multidev environment cannot be empty'
+  [ "${#env}" -le 11 ] || die 'new Multidev environment must contain at most 11 characters'
+  printf '%s\n' "$env" | LC_ALL=C grep -Eq '^[a-z0-9][a-z0-9-]*$' || \
+    die 'new Multidev environment must use lowercase letters, numbers, and dashes, starting with a letter or number'
+  case "$env" in
+    master|settings|team|support|multidev|debug|files|tags|billing)
+      die "new Multidev environment uses a Pantheon-reserved name: $env"
+      ;;
+  esac
+}
+
+validate_group() {
+  local group=$1
+  [ -n "$group" ] || die 'group cannot be empty'
+  printf '%s\n' "$group" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$' || \
+    die 'group may contain letters, numbers, dot, underscore, and hyphen'
+}
+
+terminus_preflight() {
+  require_command terminus
+  if ! terminus auth:whoami >/dev/null 2>&1; then
+    die 'Terminus is not authenticated. See https://docs.pantheon.io/machine-tokens and run terminus auth:login first.'
+  fi
+}
+
+environment_list() {
+  local site=$1 output
+  if ! output=$(terminus env:list "$site" --format=list --field=id); then
+    die "Terminus failed while listing environments for site: $site"
+  fi
+  printf '%s\n' "$output"
+}
+
+environment_in_list() {
+  local wanted=$1 environments=$2 line
+  while IFS= read -r line; do
+    [ "$line" = "$wanted" ] && return 0
+  done <<EOF
+$environments
+EOF
+  return 1
+}
+
+validate_local_preflight() {
+  local provider_override=$1
+  [ -x "$CORE" ] || die "core module is missing or not executable: $CORE"
+  "$CORE" config get root >/dev/null
+  if [ -n "$provider_override" ]; then
+    case "$provider_override" in
+      ddev|lando) ;;
+      *) die '--provider must be ddev or lando' ;;
+    esac
+  else
+    "$CORE" config get provider >/dev/null
+  fi
+}
+
+print_plan() {
+  local source=$1 target=$2 provider=$3 group=$4 start=$5 dry_run=$6
+  printf 'Pantheon Local Tools Multidev creation plan\n\n'
+  printf 'Source environment:    %s\n' "$source"
+  printf 'New environment:       %s\n' "$target"
+  printf 'Remote content clone:  database and files (Terminus default)\n'
+  if [ -n "$provider" ]; then
+    printf 'Local provider:        %s\n' "$provider"
+  else
+    printf 'Local provider:        existing PLT configuration/detection\n'
+  fi
+  if [ -n "$group" ]; then
+    printf 'Local group:           %s\n' "$group"
+  else
+    printf 'Local group:           (none)\n'
+  fi
+  printf 'Start provider:        %s\n' "$start"
+  if [ "$dry_run" = true ]; then
+    printf 'Remote mutation:       not performed (--dry-run)\n'
+    printf 'Local checkout:        not performed (--dry-run)\n'
+  else
+    printf 'Remote mutation:       terminus multidev:create after confirmation\n'
+    printf 'Local checkout:        existing pantheon-local multidev path after verification\n'
+  fi
+}
+
+confirm_creation() {
+  local assume_yes=$1 source=$2 target=$3 answer=''
+  if [ "$assume_yes" = true ]; then
+    printf 'Confirmation:          acknowledged by --yes\n'
+    return
+  fi
+
+  [ -t 0 ] || die 'non-interactive Multidev creation requires --yes acknowledgement'
+  printf 'Create remote Pantheon Multidev %s from %s? [y/N] ' "$target" "$source" >&2
+  IFS= read -r answer || answer=''
+  case "$answer" in
+    y|Y|yes|YES|Yes) ;;
+    *) die 'Pantheon Multidev creation cancelled; no remote write was performed' ;;
+  esac
+}
+
+run_local_handoff() {
+  local target=$1 provider=$2 group=$3 start=$4
+  set -- "$target"
+  [ -z "$provider" ] || set -- "$@" --provider "$provider"
+  [ -z "$group" ] || set -- "$@" --group "$group"
+  [ "$start" = false ] || set -- "$@" --start
+  "$CORE" multidev "$@"
+}
+
+print_retry() {
+  local target=$1 provider=$2 group=$3 start=$4
+  printf 'Retry local checkout without recreating the remote environment:\n  pantheon-local multidev %s' "$target" >&2
+  [ -z "$provider" ] || printf ' --provider %s' "$provider" >&2
+  [ -z "$group" ] || printf ' --group %s' "$group" >&2
+  [ "$start" = false ] || printf ' --start' >&2
+  printf '\n' >&2
+}
+
+multidev_create_command() {
+  local source='' new_env='' provider='' group='' dry_run=false start=false assume_yes=false
+  local parsed site source_env target environments after_create
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --provider)
+        [ "$#" -ge 2 ] || die '--provider requires ddev or lando'
+        provider=$2
+        case "$provider" in ddev|lando) ;; *) die '--provider must be ddev or lando' ;; esac
+        shift 2
+        ;;
+      --group)
+        [ "$#" -ge 2 ] || die '--group requires a name'
+        group=$2
+        validate_group "$group"
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      --start)
+        start=true
+        shift
+        ;;
+      --yes)
+        assume_yes=true
+        shift
+        ;;
+      -h|--help|help)
+        usage
+        return
+        ;;
+      --*) die "unknown multidev create option: $1" ;;
+      *)
+        if [ -z "$source" ]; then
+          source=$1
+        elif [ -z "$new_env" ]; then
+          new_env=$1
+        else
+          die 'multidev create accepts exactly SITE.SOURCE and NEW_ENV positional arguments'
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [ -z "$source" ] || [ -z "$new_env" ]; then
+    die 'usage: pantheon-local multidev create SITE.SOURCE NEW_ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]'
+  fi
+  [ "$dry_run" = false ] || [ "$start" = false ] || die '--start cannot be combined with --dry-run'
+
+  require_command grep
+  parsed=$(parse_source "$source")
+  site=$(printf '%s\n' "$parsed" | sed -n '1p')
+  source_env=$(printf '%s\n' "$parsed" | sed -n '2p')
+  validate_new_environment "$new_env"
+  target="$site.$new_env"
+
+  validate_local_preflight "$provider"
+  terminus_preflight
+  environments=$(environment_list "$site")
+  environment_in_list "$source_env" "$environments" || \
+    die "source Pantheon environment does not exist on $site: $source_env"
+  if environment_in_list "$new_env" "$environments"; then
+    die "target Pantheon environment already exists: $target"
+  fi
+
+  print_plan "$source" "$target" "$provider" "$group" "$start" "$dry_run"
+  if [ "$dry_run" = true ]; then
+    return 0
+  fi
+
+  confirm_creation "$assume_yes" "$source" "$target"
+
+  printf '\nCreating remote Pantheon Multidev...\n'
+  if ! terminus multidev:create "$source" "$new_env" --yes; then
+    printf '%s: Terminus multidev:create failed; remote state may be partial or uncertain. Verify %s in Pantheon before retrying. No automatic delete or retry was attempted.\n' "$PROGRAM_NAME" "$target" >&2
+    return 1
+  fi
+
+  if ! after_create=$(terminus env:list "$site" --format=list --field=id); then
+    printf '%s: remote creation returned success, but verification failed while listing %s environments. Remote %s is preserved; verify it before retrying local checkout.\n' "$PROGRAM_NAME" "$site" "$target" >&2
+    return 1
+  fi
+  if ! environment_in_list "$new_env" "$after_create"; then
+    printf '%s: remote creation returned success, but %s was not present in the verification list. Remote state is uncertain; do not recreate blindly.\n' "$PROGRAM_NAME" "$target" >&2
+    return 1
+  fi
+
+  printf 'Remote Multidev verified: %s\n\n' "$target"
+  printf 'Handing off to existing local Multidev checkout path...\n'
+  if ! (run_local_handoff "$target" "$provider" "$group" "$start"); then
+    printf '%s: remote Multidev %s was created successfully, but local checkout/start failed. The remote environment was preserved.\n' "$PROGRAM_NAME" "$target" >&2
+    print_retry "$target" "$provider" "$group" "$start"
+    return 1
+  fi
+
+  printf '\nRemote creation and local Multidev handoff completed for %s.\n' "$target"
+}
+
+multidev_create_command "$@"

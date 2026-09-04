@@ -31,6 +31,8 @@ for expected in \
   'config-strategy  full-export or overlay-delta' \
   'config-path      Relative project configuration path such as config/sync' \
   'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]' \
+  'pantheon-local multidev create SITE.SOURCE NEW_ENV' \
+  '[--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]' \
   'pantheon-local setup [--provider ddev|lando] [--dry-run]' \
   'pantheon-local readiness [--provider ddev|lando]' \
   'pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]' \
@@ -41,6 +43,7 @@ for expected in \
   "pantheon-local config tag profile set 'Example Group' config-strategy full-export" \
   'pantheon-local config export --yes' \
   'pantheon-local multidev example.feature --dry-run' \
+  'pantheon-local multidev create example.live feature1 --dry-run' \
   'pantheon-local setup --dry-run' \
   'pantheon-local readiness' \
   'pantheon-local pull test --database-only'
@@ -50,6 +53,9 @@ done
 assert_contains "$help_output" 'Explicitly export tracked Drupal configuration'
 assert_contains "$help_output" 'mutates project files'
 assert_contains "$help_output" 'overlay-delta export is unsupported'
+assert_contains "$help_output" 'Clone an already-existing Pantheon Multidev'
+assert_contains "$help_output" 'Missing remote environments are never created implicitly.'
+assert_contains "$help_output" 'Explicitly create a remote Pantheon Multidev'
 assert_contains "$help_output" 'fails closed while owning validation is unavailable'
 
 config_help=$(bash "$CLI" config help)
@@ -84,6 +90,19 @@ assert_contains "$export_help" 'reports the resulting Git state'
 
 multidev_help=$(bash "$CLI" multidev --help)
 assert_contains "$multidev_help" 'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]'
+
+multidev_create_help=$(bash "$CLI" multidev create --help)
+assert_contains "$multidev_create_help" 'THIS COMMAND PERFORMS AN EXPLICIT REMOTE PANTHEON WRITE'
+assert_contains "$multidev_create_help" 'database and files from this environment'
+assert_contains "$multidev_create_help" 'at most 11 characters'
+assert_contains "$multidev_create_help" 'Pantheon-reserved environment name'
+assert_contains "$multidev_create_help" '--dry-run'
+assert_contains "$multidev_create_help" '--start'
+assert_contains "$multidev_create_help" '--yes'
+assert_contains "$multidev_create_help" 'Required for non-interactive creation.'
+assert_contains "$multidev_create_help" 'If remote creation succeeds but local checkout/start fails'
+assert_contains "$multidev_create_help" 'Multidev is deliberately preserved.'
+assert_contains "$multidev_create_help" 'never deletes a Pantheon environment'
 
 setup_help=$(bash "$CLI" setup --help)
 assert_contains "$setup_help" 'pantheon-local setup [--provider ddev|lando] [--dry-run]'

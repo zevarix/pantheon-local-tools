@@ -45,6 +45,8 @@ for expected in \
 do
   assert_contains "$help_output" "$expected"
 done
+assert_contains "$help_output" 'overlay-delta reports its protected partial path'
+assert_contains "$help_output" 'fails closed while owning validation is unavailable'
 
 config_help=$(bash "$CLI" config help)
 assert_contains "$config_help" 'pantheon-local config init [--root PATH] [--provider auto|ddev|lando]'
@@ -78,10 +80,13 @@ readiness_help=$(bash "$CLI" readiness --help)
 assert_contains "$readiness_help" 'pantheon-local readiness [--provider ddev|lando]'
 assert_contains "$readiness_help" 'full-export'
 assert_contains "$readiness_help" 'overlay-delta'
-assert_contains "$readiness_help" 'configured config-path'
+assert_contains "$readiness_help" 'protected partial override set'
+assert_contains "$readiness_help" 'Missing YAML'
+assert_contains "$readiness_help" 'No provider-owned Drush command is invoked'
 assert_contains "$readiness_help" 'No drush config:export / cex is run.'
 assert_contains "$readiness_help" 'still exit 0 when inspection succeeds'
-assert_contains "$readiness_help" 'Config Ignore detection is advisory.'
+assert_contains "$readiness_help" 'Owning validation remains fail-closed'
+assert_contains "$readiness_help" 'Config Ignore detection is advisory for full-export.'
 assert_contains "$readiness_help" 'provider is not started or rebuilt'
 
 pull_help=$(bash "$CLI" pull --help)

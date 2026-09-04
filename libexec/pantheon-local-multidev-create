@@ -292,7 +292,9 @@ multidev_create_command() {
   fi
 
   print_plan "$source" "$target" "$provider" "$group" "$start" "$dry_run"
-  [ "$dry_run" = false ] || return
+  if [ "$dry_run" = true ]; then
+    return 0
+  fi
 
   confirm_creation "$assume_yes" "$source" "$target"
 

@@ -100,7 +100,8 @@ assert_contains "$multidev_create_help" '--dry-run'
 assert_contains "$multidev_create_help" '--start'
 assert_contains "$multidev_create_help" '--yes'
 assert_contains "$multidev_create_help" 'Required for non-interactive creation.'
-assert_contains "$multidev_create_help" 'remote Multidev is deliberately preserved'
+assert_contains "$multidev_create_help" 'If remote creation succeeds but local checkout/start fails'
+assert_contains "$multidev_create_help" 'Multidev is deliberately preserved.'
 assert_contains "$multidev_create_help" 'never deletes a Pantheon environment'
 
 setup_help=$(bash "$CLI" setup --help)

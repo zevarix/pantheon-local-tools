@@ -104,7 +104,7 @@ When stored configuration uses `provider=auto`, provider selection is based on p
 
 `pantheon-local setup` uses provider-owned command surfaces for provider start, Composer, and Drush. Composer is never silently replaced with host Composer when a supported provider owns the checkout runtime. The database refresh remains delegated through the existing provider-specific `pantheon-local pull --database-only` path.
 
-`pantheon-local readiness` also uses provider-owned Drush. Unlike setup, readiness does not start or rebuild the provider; a runtime that cannot execute the required read-oriented Drush commands is an inspection failure rather than an implicit start request.
+`pantheon-local readiness` uses provider-owned Drush only for strategy states whose readiness contract calls for it. Full-export readiness does not start or rebuild the provider; a runtime that cannot execute its required read-oriented Drush commands is an inspection failure rather than an implicit start request. Overlay-delta readiness does not invoke provider-owned commands while owning validation is unavailable.
 
 A provider-specific implementation detail may change in a patch release when the user-visible command contract and safety properties remain the same.
 
@@ -132,25 +132,42 @@ Setup is a local mutation workflow. It may start/build provider runtime services
 
 `pantheon-local readiness` is a separate read-oriented inspection boundary. It requires a PLT-managed checkout with a recorded `pantheon.tag` that resolves through the existing Git-compatible profile configuration.
 
-For the current `full-export` implementation, both profile values are required:
+Both supported strategy labels require a valid project-relative `config-path`. Readiness requires the configured directory to exist and rejects a lexically valid relative path if the physical directory resolves outside the Git project root through a symlink or another filesystem link.
 
-- `config-strategy=full-export`;
-- a valid project-relative `config-path`.
+### Full-export
 
-The configured path must exist and must correspond to the Drupal runtime `config-sync` path reported by provider-owned `drush core:status --field=config-sync`. PLT must not silently substitute or assume `config/sync`.
+For `config-strategy=full-export`, the configured path must correspond to the Drupal runtime `config-sync` path reported by provider-owned `drush core:status --field=config-sync`. PLT must not silently substitute or assume `config/sync`.
 
-After the path check, readiness uses provider-owned `drush config:status --format=list` to distinguish synchronized configuration from reported active-versus-sync differences. It also attempts enabled-module inspection through Drush to report Config Ignore as `enabled`, `disabled`, or `unavailable`.
+After the path check, full-export readiness uses provider-owned `drush config:status --format=list` to distinguish synchronized configuration from reported active-versus-sync differences. It also attempts enabled-module inspection through Drush to report Config Ignore as `enabled`, `disabled`, or `unavailable`.
 
 Config Ignore detection is advisory. PLT does not duplicate Config Ignore matching semantics, hide reported configuration differences because Config Ignore is enabled, or treat an unavailable module-state query as permission to guess.
 
-Readiness distinguishes an inspection result from an inspection failure:
+Full-export readiness distinguishes an inspection result from an inspection failure:
 
 - synchronized configuration, reported differences, Config Ignore enabled/disabled/unavailable, and a pre-existing modified Git working tree are successful report states and exit `0` when the inspection itself completed reliably;
-- incomplete/unsupported profile data, provider/required-Drush failure, runtime path mismatch, or Git-visible changes caused during inspection fail nonzero.
+- incomplete/unsupported profile data, unsafe/missing configured paths, provider/required-Drush failure, runtime path mismatch, or Git-visible changes caused during inspection fail nonzero.
+
+### Overlay-delta
+
+For `config-strategy=overlay-delta`, the configured path represents a protected partial override set, not a complete Drupal synchronization directory.
+
+Current readiness support validates and reports only facts PLT can establish generically without inventing owning-project semantics:
+
+- the recorded Tag/profile resolves;
+- the configured path is valid, exists, and stays physically inside the checkout;
+- the path is labeled as a protected partial override set;
+- the Git working-tree state is reported and preserved;
+- configuration export is not performed.
+
+While a reliable non-destructive owning validation mechanism is unavailable, overlay readiness must not infer drift from missing YAML, directory size, or file count; must not interpret the directory using full-export `config:status` semantics; and must not invoke DDEV, Lando, or Drush merely to manufacture a readiness result.
+
+The human-readable report includes `Owning validation: unavailable` and `Readiness: unavailable`, then exits nonzero. This is a fail-closed unsupported-readiness state, not evidence that the delta is incorrect.
+
+A later compatible implementation may add a reliable generic or explicitly configured non-destructive owning-validation mechanism while preserving the partial-overlay interpretation and no-export boundary.
+
+### Shared readiness safety
 
 Readiness records no successful-state metadata and performs no configuration export. It must not run `drush config:export`, `drush cex`, or an equivalent write merely because differences are reported.
-
-`overlay-delta` is intentionally unsupported by this initial readiness implementation. Until its separate contract is implemented, the command must fail rather than apply full-export interpretation to a protected partial/delta directory.
 
 ## Safety contract
 
@@ -169,15 +186,19 @@ A compatible `0.1.x` release must preserve these properties:
 - validate all guided `config init` selections before writing so an invalid later value cannot leave a partial configuration update;
 - reject unsupported Tag `config-strategy` values instead of guessing future semantics;
 - reject unsafe/escaping Tag `config-path` values rather than treating them as project-relative paths;
+- reject readiness config directories that escape the Git project root through filesystem links;
 - never make setting a Tag profile property implicitly create a Pantheon Tag route;
 - never interpret `overlay-delta` as permission to flatten or fully export Drupal configuration into the configured delta path;
+- never infer overlay drift from missing YAML, directory size, or file count;
+- never invoke provider/Drush commands for overlay readiness while the owning validation mechanism is unavailable;
+- never report overlay readiness success while owning validation is unavailable;
 - never let `pantheon-local setup` infer its Pantheon database source from Git branch naming or an implicit Live default;
 - never run setup `updb`/`cr` after an earlier required step fails;
 - never make `multidev --start` silently perform the full Drupal setup pipeline;
 - never let `pantheon-local readiness` start/rebuild a provider or automatically export Drupal configuration;
 - never let full-export readiness silently substitute a different config path for the configured Tag profile;
 - never apply full-export readiness semantics to an `overlay-delta` profile; and
-- never report readiness success if the inspection itself changed Git `HEAD` or Git-visible working-tree state.
+- never report readiness success if a delegated full-export inspection changed Git `HEAD` or Git-visible working-tree state.
 
 Safety tightening that converts a previously ambiguous/unsafe case into an explicit failure is considered compatible when documented in release notes.
 
@@ -191,7 +212,7 @@ In particular, the legacy `data.source` migration to independent database/files 
 
 Setup may add local troubleshooting keys for bootstrap status, failed/current step, recorded environment/provider, and update timestamp. `pantheon-local status` may display those fields. Their presence does not make checkout-local state a stable machine API or application configuration.
 
-Readiness consumes the recorded Pantheon Tag and provider identity when available but does not add a persistent readiness-result cache. The current Drupal/Git state is inspected fresh on each run.
+Readiness consumes the recorded Pantheon Tag and provider identity when applicable but does not add a persistent readiness-result cache. The current Drupal/Git state is inspected fresh on each run.
 
 ## Human-readable output
 
@@ -199,7 +220,7 @@ Normal command output is designed for developers and may gain additional labeled
 
 The text output is **not** yet a stable machine-readable API. Scripts that require a formal structured output format should wait for an explicitly documented JSON/porcelain interface rather than parsing incidental spacing.
 
-Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success is exit `0`, failure is nonzero. A successful readiness inspection may still report a review-required state, as described above.
+Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success is exit `0`, failure is nonzero. A successful full-export readiness inspection may still report a review-required state, while overlay-delta currently exits nonzero when owning validation is unavailable.
 
 ## Packaging contract
 

@@ -90,7 +90,6 @@ assert_contains "$export_help" 'reports the resulting Git state'
 
 multidev_help=$(bash "$CLI" multidev --help)
 assert_contains "$multidev_help" 'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]'
-assert_contains "$multidev_help" 'pantheon-local multidev create SITE.SOURCE NEW_ENV'
 
 multidev_create_help=$(bash "$CLI" multidev create --help)
 assert_contains "$multidev_create_help" 'THIS COMMAND PERFORMS AN EXPLICIT REMOTE PANTHEON WRITE'

@@ -1,0 +1,285 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+PULL="$SCRIPT_DIR/pantheon-local-pull"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local setup [--provider ddev|lando] [--dry-run]
+
+Prepare an existing Pantheon Local Tools-managed Drupal checkout for local
+work using its recorded Pantheon environment. The setup pipeline is:
+
+  provider start
+  -> provider-owned composer install
+  -> guarded database-only pull from the recorded Pantheon environment
+  -> provider-owned drush updb -y
+  -> provider-owned drush cr
+
+Provider behavior:
+  lando  Uses lando start/composer/drush and the existing guarded Lando pull.
+  ddev   Uses ddev start/composer/drush and the existing guarded DDEV Pantheon
+         pull integration.
+
+Safety and mutation boundaries:
+  * The Pantheon environment comes from checkout-local PLT state, never from
+    the Git branch name and never from an inferred Live environment.
+  * Composer runs inside the selected provider. It may access the network and
+    execute project Composer scripts.
+  * The database pull replaces local database data and reuses pantheon-local
+    pull --database-only safeguards/provenance. Files and Git code are not
+    pulled by setup.
+  * updb and cr run only after provider start, Composer, and database pull all
+    succeed. Setup stops on the first failed step and records the failed step.
+  * Setup does not push code/config/data to Pantheon and does not rewrite base
+    DDEV/Lando project configuration.
+  * --dry-run validates local checkout prerequisites and prints the plan only;
+    it does not start a provider, run Composer/Drush, pull data, or change PLT
+    checkout state.
+
+Retry behavior:
+  Fix the reported failure and run pantheon-local setup again. Successful
+  earlier steps may run again; setup never skips ahead based on prior status.
+
+Examples:
+  pantheon-local setup --dry-run
+  pantheon-local setup
+  pantheon-local setup --provider lando
+USAGE
+}
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+validate_environment() {
+  local env=$1
+  [ -n "$env" ] || die 'recorded Pantheon environment cannot be empty'
+  printf '%s\n' "$env" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]*$' || \
+    die "recorded Pantheon environment contains unsupported characters: $env"
+}
+
+git_root() {
+  git rev-parse --show-toplevel 2>/dev/null || die 'setup must be run inside a Git checkout'
+}
+
+git_dir_for_root() {
+  local root=$1 git_dir
+  git_dir=$(git -C "$root" rev-parse --git-dir)
+  case "$git_dir" in
+    /*) printf '%s\n' "$git_dir" ;;
+    *) printf '%s/%s\n' "$root" "$git_dir" ;;
+  esac
+}
+
+state_get() {
+  local state=$1 key=$2
+  [ -f "$state" ] || return 1
+  git config --file "$state" --get "$key" 2>/dev/null
+}
+
+provider_config_present() {
+  local root=$1 provider=$2
+  case "$provider" in
+    ddev) [ -f "$root/.ddev/config.yaml" ] ;;
+    lando) [ -f "$root/.lando.yml" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+detect_provider() {
+  local root=$1 has_ddev=false has_lando=false
+  provider_config_present "$root" ddev && has_ddev=true
+  provider_config_present "$root" lando && has_lando=true
+
+  case "$has_ddev:$has_lando" in
+    true:false) printf '%s\n' ddev ;;
+    false:true) printf '%s\n' lando ;;
+    true:true) die 'both DDEV and Lando project configuration were found; choose --provider explicitly' ;;
+    false:false) die 'neither DDEV nor Lando project configuration was found' ;;
+  esac
+}
+
+resolve_provider() {
+  local root=$1 state=$2 override=$3 recorded=''
+
+  if [ -n "$override" ]; then
+    case "$override" in
+      ddev|lando) ;;
+      *) die '--provider must be ddev or lando' ;;
+    esac
+    provider_config_present "$root" "$override" || \
+      die "$override provider selected but its project configuration is missing"
+    printf '%s\n' "$override"
+    return
+  fi
+
+  recorded=$(state_get "$state" local.provider || true)
+  if [ -n "$recorded" ]; then
+    case "$recorded" in
+      ddev|lando)
+        provider_config_present "$root" "$recorded" || \
+          die "recorded provider $recorded no longer has project configuration"
+        printf '%s\n' "$recorded"
+        return
+        ;;
+      *) die "unsupported provider recorded in local state: $recorded" ;;
+    esac
+  fi
+
+  detect_provider "$root"
+}
+
+utc_now() {
+  date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+record_bootstrap() {
+  local state=$1 status=$2 step=$3 env=$4 provider=$5
+  git config --file "$state" --replace-all bootstrap.status "$status"
+  git config --file "$state" --replace-all bootstrap.step "$step"
+  git config --file "$state" --replace-all bootstrap.environment "$env"
+  git config --file "$state" --replace-all bootstrap.provider "$provider"
+  git config --file "$state" --replace-all bootstrap.updated-at "$(utc_now)"
+}
+
+fail_step() {
+  local state=$1 env=$2 provider=$3 step=$4 label=$5
+  record_bootstrap "$state" failed "$step" "$env" "$provider"
+  die "$label failed; setup stopped at $step. Fix the failure and rerun pantheon-local setup."
+}
+
+run_provider_step() {
+  local root=$1 state=$2 env=$3 provider=$4 step=$5 label=$6
+  shift 6
+  record_bootstrap "$state" in-progress "$step" "$env" "$provider"
+  if ! (cd "$root" && "$provider" "$@"); then
+    fail_step "$state" "$env" "$provider" "$step" "$label"
+  fi
+}
+
+run_pull_step() {
+  local root=$1 state=$2 env=$3 provider=$4
+  record_bootstrap "$state" in-progress database-pull "$env" "$provider"
+  if ! (cd "$root" && "$PULL" "$env" --database-only --provider "$provider"); then
+    fail_step "$state" "$env" "$provider" database-pull 'database pull'
+  fi
+}
+
+print_plan() {
+  local root=$1 site=$2 env=$3 provider=$4
+  printf 'Pantheon Local Tools setup dry-run\n\n'
+  printf 'Directory:   %s\n' "$root"
+  if [ -n "$site" ]; then
+    printf 'Pantheon:    %s.%s\n' "$site" "$env"
+  else
+    printf 'Pantheon:    environment %s (site not recorded)\n' "$env"
+  fi
+  printf 'Provider:    %s\n' "$provider"
+  printf 'Database:    replace local database from %s\n\n' "$env"
+  printf 'Planned steps:\n'
+  printf '  1. %s start\n' "$provider"
+  printf '  2. %s composer install\n' "$provider"
+  printf '  3. pantheon-local pull %s --database-only --provider %s\n' "$env" "$provider"
+  printf '  4. %s drush updb -y\n' "$provider"
+  printf '  5. %s drush cr\n\n' "$provider"
+  printf 'Dry-run only: no provider, Composer, Drush, pull, or state mutation was run.\n'
+}
+
+setup_command() {
+  local provider_override='' dry_run=false root git_dir state env site provider git_state
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --provider)
+        [ "$#" -ge 2 ] || die '--provider requires ddev or lando'
+        provider_override=$2
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      -h|--help|help)
+        usage
+        return
+        ;;
+      --*) die "unknown setup option: $1" ;;
+      *) die 'usage: pantheon-local setup [--provider ddev|lando] [--dry-run]' ;;
+    esac
+  done
+
+  require_command git
+  root=$(git_root)
+  git_dir=$(git_dir_for_root "$root")
+  state="$git_dir/pantheon-local-tools/state"
+  [ -f "$state" ] || \
+    die 'setup requires a Pantheon Local Tools-managed checkout with recorded Pantheon environment state'
+
+  env=$(state_get "$state" pantheon.environment || true)
+  [ -n "$env" ] || \
+    die 'setup requires checkout-local pantheon.environment state; refusing to infer it from the Git branch'
+  validate_environment "$env"
+  site=$(state_get "$state" pantheon.site || true)
+  provider=$(resolve_provider "$root" "$state" "$provider_override")
+
+  [ -f "$root/composer.json" ] || die 'setup requires composer.json at the checkout root'
+  [ -x "$PULL" ] || die "pull module is missing or not executable: $PULL"
+  if [ "$provider" = ddev ]; then
+    [ -f "$root/.ddev/providers/pantheon.yaml" ] || \
+      die 'DDEV Pantheon provider is missing: .ddev/providers/pantheon.yaml'
+  fi
+
+  if [ "$dry_run" = true ]; then
+    print_plan "$root" "$site" "$env" "$provider"
+    return
+  fi
+
+  require_command "$provider"
+  require_command date
+
+  printf 'Preparing Drupal checkout\n\n'
+  printf 'Directory:   %s\n' "$root"
+  printf 'Environment: %s\n' "$env"
+  printf 'Provider:    %s\n\n' "$provider"
+
+  printf 'Step 1/5: starting %s\n' "$provider"
+  run_provider_step "$root" "$state" "$env" "$provider" provider-start 'provider start' start
+
+  printf '\nStep 2/5: installing Composer dependencies inside %s\n' "$provider"
+  run_provider_step "$root" "$state" "$env" "$provider" composer-install 'Composer install' composer install
+
+  printf '\nStep 3/5: refreshing local database from %s\n' "$env"
+  run_pull_step "$root" "$state" "$env" "$provider"
+
+  printf '\nStep 4/5: running Drupal database updates\n'
+  run_provider_step "$root" "$state" "$env" "$provider" drush-updb 'drush updb' drush updb -y
+
+  printf '\nStep 5/5: rebuilding Drupal caches\n'
+  run_provider_step "$root" "$state" "$env" "$provider" drush-cr 'drush cr' drush cr
+
+  record_bootstrap "$state" complete complete "$env" "$provider"
+
+  if [ -n "$(git -C "$root" status --porcelain --untracked-files=normal)" ]; then
+    git_state=modified
+  else
+    git_state=clean
+  fi
+
+  printf '\nDrupal bootstrap complete\n'
+  printf 'Environment: %s\n' "$env"
+  printf 'Provider:    %s\n' "$provider"
+  printf 'Database:    refreshed from %s\n' "$env"
+  printf 'Git state:   %s\n' "$git_state"
+  printf 'Status:      pantheon-local status\n'
+}
+
+setup_command "$@"

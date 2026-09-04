@@ -13,6 +13,8 @@ Usage:
 Shows local checkout metadata without contacting Pantheon or starting a provider.
 When the selected provider is already running, status may query its read-only
 runtime information to report the provider's authoritative local URL.
+For PLT-managed checkouts, the most recent Drupal bootstrap status/step is also
+reported from checkout-local state.
 USAGE
 }
 
@@ -70,6 +72,7 @@ status_command() {
   local root git_dir state branch tracking git_state dirty managed
   local site env target tag provider provider_base local_name recorded_url local_url url_source provider_config
   local legacy_data_source database_source files_source runtime_url=''
+  local bootstrap_status bootstrap_step bootstrap_updated
 
   require_command git
 
@@ -114,6 +117,9 @@ status_command() {
   legacy_data_source=$(state_get "$state" data.source || true)
   database_source=$(state_get "$state" data.database-source || true)
   files_source=$(state_get "$state" data.files-source || true)
+  bootstrap_status=$(state_get "$state" bootstrap.status || true)
+  bootstrap_step=$(state_get "$state" bootstrap.step || true)
+  bootstrap_updated=$(state_get "$state" bootstrap.updated-at || true)
 
   if [ -z "$database_source" ] && [ -n "$legacy_data_source" ]; then
     database_source=$legacy_data_source
@@ -167,6 +173,9 @@ status_command() {
   [ -n "$local_name" ] || local_name='(not recorded)'
   [ -n "$database_source" ] || database_source='(not recorded)'
   [ -n "$files_source" ] || files_source='(not recorded)'
+  [ -n "$bootstrap_status" ] || bootstrap_status='(not recorded)'
+  [ -n "$bootstrap_step" ] || bootstrap_step='(not recorded)'
+  [ -n "$bootstrap_updated" ] || bootstrap_updated='(not recorded)'
 
   printf 'Pantheon Local Tools status\n\n'
   printf 'Directory:       %s\n' "$root"
@@ -183,6 +192,9 @@ status_command() {
   printf 'Git state:       %s\n' "$git_state"
   printf 'Database source: %s\n' "$database_source"
   printf 'Files source:    %s\n' "$files_source"
+  printf 'Bootstrap status:  %s\n' "$bootstrap_status"
+  printf 'Bootstrap step:    %s\n' "$bootstrap_step"
+  printf 'Bootstrap updated: %s\n' "$bootstrap_updated"
 }
 
 case "${1:-}" in

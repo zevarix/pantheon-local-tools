@@ -10,7 +10,7 @@ pantheon-local status
 
 A checkout created by `pantheon-local multidev` records non-secret metadata under Git's local metadata directory. Status reads that state and combines it with the current Git checkout state.
 
-Example output:
+Example output after a successful Drupal setup:
 
 ```text
 Pantheon Local Tools status
@@ -27,8 +27,11 @@ URL source:      provider runtime
 Git branch:      feature-a
 Git tracking:    origin/feature-a
 Git state:       clean
-Database source: test
-Files source:    live
+Database source: feature-a
+Files source:    (not recorded)
+Bootstrap status:  complete
+Bootstrap step:    complete
+Bootstrap updated: 2026-09-04T14:30:00Z
 ```
 
 ## Managed and existing checkouts
@@ -36,6 +39,8 @@ Files source:    live
 A checkout is reported as `Managed: yes` when Pantheon Local Tools state exists for it. Existing Git checkouts that were not created by the tool are still useful with `status`: DDEV or Lando is detected from an unambiguous project configuration, while Pantheon-specific values that have not been recorded are shown as `(not recorded)`.
 
 A successful `pantheon-local pull` may create local Pantheon Local Tools state for an existing checkout so the detected provider and data provenance can be retained without modifying application files.
+
+`pantheon-local setup` is intentionally stricter: it requires PLT-managed state containing the authoritative Pantheon environment before it may replace local database data.
 
 Status does not guess when both DDEV and Lando project configuration are present; it reports the provider as ambiguous unless local state already records which provider owns the checkout.
 
@@ -122,6 +127,24 @@ If a component has never been successfully pulled, status displays `(not recorde
 Older checkout state may contain a single legacy `data.source` value from releases before component-specific provenance. Status interprets that value as both database and files without modifying the state file. The next successful component-aware pull migrates that legacy value losslessly.
 
 Provider failures or post-pull Git-safety failures do not update component provenance.
+
+## Drupal bootstrap status
+
+`pantheon-local setup` records its latest orchestration outcome in the same checkout-local PLT state file used for Pantheon identity and data provenance.
+
+Status displays:
+
+```text
+Bootstrap status:  complete|failed|in-progress
+Bootstrap step:    provider-start|composer-install|database-pull|drush-updb|drush-cr|complete
+Bootstrap updated: UTC timestamp
+```
+
+If setup has never run, these values are `(not recorded)`.
+
+The bootstrap fields are troubleshooting state, not a resumable workflow engine. A retry of `pantheon-local setup` starts from provider start again; it does not skip earlier mutating phases because a prior status says they once succeeded.
+
+Successful database provenance remains separate from bootstrap status. For example, if the database pull succeeds and `drush updb` later fails, `Database source` truthfully records the successful database source while `Bootstrap status` reports `failed` and `Bootstrap step` reports `drush-updb`.
 
 ## Safety
 

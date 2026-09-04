@@ -130,6 +130,14 @@ For `full-export`, readiness uses the configured path, verifies it against Drupa
 
 For `overlay-delta`, readiness validates that the configured protected partial path exists and remains inside the project root, reports Git state, performs no provider/Drush call, and exits nonzero with `Owning validation: unavailable` rather than inventing drift/readiness semantics. Missing YAML, directory size, and file count are not treated as drift. Neither strategy performs `drush cex` / `config:export`. See [`docs/readiness.md`](docs/readiness.md).
 
+When a `full-export` readiness review is complete and you deliberately want to mutate tracked configuration files, use the separate export command:
+
+```bash
+pantheon-local config export
+```
+
+Interactive use confirms before mutation. Automation must supply `--yes`. The configured export path must be Git-clean before export, `overlay-delta` is refused, and PLT never stages, commits, pushes, or modifies a remote Pantheon environment. See [`docs/config-export.md`](docs/config-export.md).
+
 ## Commands
 
 Run `pantheon-local help` or `pantheon-local --help` for the complete in-tool command reference.
@@ -152,6 +160,7 @@ pantheon-local config tag profile get TAG PROPERTY
 pantheon-local config tag profile set TAG PROPERTY VALUE
 pantheon-local config tag profile unset TAG PROPERTY
 pantheon-local config tag profile list [TAG]
+pantheon-local config export [--provider ddev|lando] [--yes]
 
 pantheon-local multidev SITE.ENV
   --provider ddev|lando
@@ -176,7 +185,7 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
+Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
 
 ## Core workflows
 
@@ -213,6 +222,18 @@ For `overlay-delta`, readiness recognizes the configured path as a protected par
 No configuration export is performed for either strategy. Config Ignore's matching rules are not reimplemented, and full-export semantics are never applied to an overlay/delta directory.
 
 See [`docs/readiness.md`](docs/readiness.md) for the complete strategy, Config Ignore, path-containment, Git-integrity, and exit-status contract.
+
+### Explicit Drupal configuration export
+
+`pantheon-local config export [--provider ddev|lando] [--yes]` is the deliberate tracked-source mutation boundary for `full-export` profiles. It is separate from readiness, status, setup, Multidev start, and Tag matching so a reported configuration difference can never turn itself into an automatic export.
+
+Before mutation, PLT requires the configured export path to be Git-clean, completes the normal full-export readiness inspection, requires Config Ignore module-state inspection to succeed, prints the mutation plan, and confirms interactively unless `--yes` was supplied. Unrelated dirty files elsewhere in the checkout are preserved.
+
+The actual mutation is provider-owned `drush config:export -y`. PLT does not pass Drush staging/commit options and does not stage, commit, push, or perform a Pantheon remote write. `overlay-delta` is refused before provider/Drush invocation.
+
+After the export attempt, PLT reports created/changed/deleted files under the configured path plus the complete Git status. If Drush fails after writing files, PLT preserves and reports the partial local state and exits nonzero rather than attempting an unsafe automatic rollback.
+
+See [`docs/config-export.md`](docs/config-export.md) for confirmation, Config Ignore, failure/retry, provider, and Git-safety details.
 
 ### Data pulls
 
@@ -265,7 +286,7 @@ Pantheon Tag routing remains the identity anchor for profile configuration. An e
 - `config-strategy=overlay-delta` for a protected site-specific delta/override set; and
 - a validated relative `config-path` appropriate to that project.
 
-Profile settings remain declarative. They do not themselves run Drupal, export config, start providers, pull data, or mutate Pantheon. Commands that consume them apply separate safety contracts. `pantheon-local readiness` consumes both strategy labels: full-export can complete provider/Drush inspection, while overlay-delta currently reports its protected boundary and fails closed when owning validation is unavailable.
+Profile settings remain declarative. They do not themselves run Drupal, export config, start providers, pull data, or mutate Pantheon. Commands that consume them apply separate safety contracts. `pantheon-local readiness` consumes both strategy labels: full-export can complete provider/Drush inspection, while overlay-delta currently reports its protected boundary and fails closed when owning validation is unavailable. `pantheon-local config export` consumes the same profile only as a separate explicit mutation action and supports `full-export` only.
 
 Examples:
 
@@ -316,6 +337,8 @@ Pantheon Local Tools is intentionally conservative around developer machines and
 - readiness verifies delegated full-export inspection does not change Git state;
 - overlay-delta readiness never interprets missing YAML, directory size, or file count as drift;
 - overlay-delta readiness does not invoke providers/Drush while owning validation is unavailable and exits nonzero rather than claiming readiness;
+- `pantheon-local config export` is explicit, confirmed/acknowledged, supports `full-export` only, and never runs as a readiness/setup/status/start side effect;
+- config export requires the configured export path to be Git-clean, never auto-stages/commits/pushes, and preserves/reports partial local changes after a failed provider export;
 - provider/project configuration remains provider-owned;
 - provider detection and Pantheon Tag routing fail on ambiguity rather than guessing;
 - unsupported Tag profile strategies and unsafe project-relative config paths fail instead of being guessed;
@@ -366,6 +389,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 - [`docs/multidev.md`](docs/multidev.md) — Multidev checkout behavior and safety
 - [`docs/setup.md`](docs/setup.md) — provider-aware Drupal checkout bootstrap, failure/retry behavior, and local mutation boundaries
 - [`docs/readiness.md`](docs/readiness.md) — strategy-aware Drupal config readiness, overlay fail-closed reporting, Config Ignore, path containment, Git-integrity, and exit semantics
+- [`docs/config-export.md`](docs/config-export.md) — explicit full-export mutation, confirmation, Config Ignore authority, change reporting, and failure/retry behavior
 - [`docs/pull.md`](docs/pull.md) — database/files pull behavior and Git protection
 - [`docs/status.md`](docs/status.md) — read-only checkout inspection contract
 - [`docs/local-provider-architecture.md`](docs/local-provider-architecture.md) — DDEV/Lando boundary and provider architecture

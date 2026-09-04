@@ -194,4 +194,4 @@ For `overlay-delta`, it also never runs `drush config:status` while the director
 
 Readiness does not write YAML, recommend a blind export merely because differences exist, or treat an overlay directory as incomplete because files are absent.
 
-Any future export capability is a separate explicit mutation boundary owned by #72.
+The separate `pantheon-local config export` command is the explicit tracked-source mutation boundary for validated `full-export` profiles. It is never invoked by readiness and does not support `overlay-delta`. See [`config-export.md`](config-export.md).

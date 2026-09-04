@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+PROFILE="$SCRIPT_DIR/pantheon-local-config-profile"
+READINESS="$SCRIPT_DIR/pantheon-local-readiness"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local config export [--provider ddev|lando] [--yes]
+
+Explicitly export Drupal configuration for the current Pantheon Local Tools-
+managed checkout when its matched Tag profile uses config-strategy=full-export.
+
+THIS COMMAND MUTATES PROJECT CONFIGURATION FILES.
+
+Preflight and mutation order:
+  1. Resolve the checkout's recorded Pantheon Tag and Tag profile.
+  2. Require config-strategy=full-export and a safe existing config-path.
+  3. Require the configured export path to have no pre-existing Git changes.
+  4. Run the normal full-export readiness inspection and print its report.
+  5. Require Config Ignore module-state inspection to succeed. PLT does not
+     duplicate Config Ignore rules; Drupal's runtime export behavior remains
+     authoritative when the module is enabled.
+  6. Require interactive confirmation, or --yes for a deliberate
+     non-interactive acknowledgement.
+  7. Run provider-owned drush config:export -y.
+  8. Report created/changed/deleted config files and the final Git status.
+
+Strategy support:
+  full-export    Supported after successful preflight and confirmation.
+  overlay-delta  Unsupported. PLT never applies a generic full export to a
+                 protected partial override set.
+
+Options:
+  --provider ddev|lando
+      Explicit provider selection. Otherwise checkout-local provider state or
+      unambiguous project configuration is used.
+
+  --yes
+      Acknowledge the tracked-source mutation without an interactive prompt.
+      Required for non-interactive use.
+
+Safety:
+  * No export occurs from readiness, status, setup, --start, or Tag matching.
+  * The configured export path must be Git-clean before mutation. Unrelated
+    working-tree changes elsewhere are preserved and do not block export.
+  * PLT does not pass Drush --add or --commit and never commits or pushes.
+  * PLT does not modify remote Pantheon environments.
+  * If export fails after writing files, PLT reports the resulting Git state
+    and exits nonzero; it does not roll back or hide partial local changes.
+  * Git HEAD must remain unchanged by export.
+
+Examples:
+  pantheon-local config export
+  pantheon-local config export --provider ddev
+  pantheon-local config export --yes
+USAGE
+}
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+git_root() {
+  git rev-parse --show-toplevel 2>/dev/null || die 'config export must be run inside a Git checkout'
+}
+
+git_dir_for_root() {
+  local root=$1 git_dir
+  git_dir=$(git -C "$root" rev-parse --git-dir)
+  case "$git_dir" in
+    /*) printf '%s\n' "$git_dir" ;;
+    *) printf '%s/%s\n' "$root" "$git_dir" ;;
+  esac
+}
+
+state_get() {
+  local state=$1 key=$2
+  [ -f "$state" ] || return 1
+  git config --file "$state" --get "$key" 2>/dev/null
+}
+
+provider_config_present() {
+  local root=$1 provider=$2
+  case "$provider" in
+    ddev) [ -f "$root/.ddev/config.yaml" ] ;;
+    lando) [ -f "$root/.lando.yml" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+detect_provider() {
+  local root=$1 has_ddev=false has_lando=false
+  provider_config_present "$root" ddev && has_ddev=true
+  provider_config_present "$root" lando && has_lando=true
+
+  case "$has_ddev:$has_lando" in
+    true:false) printf '%s\n' ddev ;;
+    false:true) printf '%s\n' lando ;;
+    true:true) die 'both DDEV and Lando project configuration were found; choose --provider explicitly' ;;
+    false:false) die 'neither DDEV nor Lando project configuration was found' ;;
+  esac
+}
+
+resolve_provider() {
+  local root=$1 state=$2 override=$3 recorded=''
+
+  if [ -n "$override" ]; then
+    provider_config_present "$root" "$override" || \
+      die "$override provider selected but its project configuration is missing"
+    printf '%s\n' "$override"
+    return
+  fi
+
+  recorded=$(state_get "$state" local.provider || true)
+  if [ -n "$recorded" ]; then
+    case "$recorded" in
+      ddev|lando)
+        provider_config_present "$root" "$recorded" || \
+          die "recorded provider $recorded no longer has project configuration"
+        printf '%s\n' "$recorded"
+        return
+        ;;
+      *) die "unsupported provider recorded in local state: $recorded" ;;
+    esac
+  fi
+
+  detect_provider "$root"
+}
+
+profile_get() {
+  local tag=$1 property=$2
+  [ -x "$PROFILE" ] || die "tag-profile module is missing or not executable: $PROFILE"
+  "$PROFILE" get "$tag" "$property"
+}
+
+require_config_directory() {
+  local root=$1 config_path=$2 root_physical config_physical
+
+  [ -d "$root/$config_path" ] || \
+    die "configured full-export config-path does not exist as a directory: $config_path"
+
+  root_physical=$(cd "$root" && pwd -P)
+  config_physical=$(cd "$root/$config_path" && pwd -P)
+  case "$config_physical" in
+    "$root_physical"/*) ;;
+    *) die "configured full-export config-path escapes the project root through filesystem links: $config_path" ;;
+  esac
+}
+
+run_drush_capture() {
+  local root=$1 provider=$2
+  shift 2
+  (cd "$root" && "$provider" drush "$@")
+}
+
+config_ignore_state() {
+  local root=$1 provider=$2 modules
+
+  if ! modules=$(run_drush_capture "$root" "$provider" pm:list --type=module --status=enabled --field=name 2>/dev/null); then
+    return 1
+  fi
+
+  if printf '%s\n' "$modules" | grep -Fx 'config_ignore' >/dev/null 2>&1; then
+    printf '%s\n' enabled
+  else
+    printf '%s\n' disabled
+  fi
+}
+
+count_nonempty_lines() {
+  local value=$1
+  if [ -z "$value" ]; then
+    printf '0\n'
+  else
+    printf '%s\n' "$value" | awk 'NF { count++ } END { print count + 0 }'
+  fi
+}
+
+report_git_state() {
+  local root=$1 config_path=$2 tracked untracked created_tracked created_count changed_count deleted_count final_status
+
+  tracked=$(git -C "$root" diff --name-status HEAD -- "$config_path")
+  untracked=$(git -C "$root" ls-files --others --exclude-standard -- "$config_path")
+  created_tracked=$(printf '%s\n' "$tracked" | awk '$1 == "A" { count++ } END { print count + 0 }')
+  created_count=$(count_nonempty_lines "$untracked")
+  created_count=$((created_count + created_tracked))
+  changed_count=$(printf '%s\n' "$tracked" | awk '$1 == "M" || $1 == "T" || $1 ~ /^R[0-9]+$/ || $1 ~ /^C[0-9]+$/ { count++ } END { print count + 0 }')
+  deleted_count=$(printf '%s\n' "$tracked" | awk '$1 == "D" { count++ } END { print count + 0 }')
+
+  printf '\nExport change summary for %s:\n' "$config_path"
+  printf '  created: %s\n' "$created_count"
+  printf '  changed: %s\n' "$changed_count"
+  printf '  deleted: %s\n' "$deleted_count"
+
+  final_status=$(git -C "$root" status --short)
+  printf '\nFinal Git status:\n'
+  if [ -n "$final_status" ]; then
+    printf '%s\n' "$final_status"
+  else
+    printf '(clean)\n'
+  fi
+}
+
+confirm_export() {
+  local assume_yes=$1 answer=''
+
+  if [ "$assume_yes" = true ]; then
+    printf 'Confirmation:          acknowledged by --yes\n'
+    return
+  fi
+
+  [ -t 0 ] || die 'non-interactive config export requires --yes acknowledgement'
+  printf 'Proceed with configuration export? [y/N] ' >&2
+  IFS= read -r answer || answer=''
+  case "$answer" in
+    y|Y|yes|YES|Yes) ;;
+    *) die 'configuration export cancelled; no export command was run' ;;
+  esac
+}
+
+export_command() {
+  local provider_override='' assume_yes=false root git_dir state tag strategy config_path provider
+  local path_state readiness_output ignore_state head_before head_after export_status=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --provider)
+        [ "$#" -ge 2 ] || die '--provider requires ddev or lando'
+        provider_override=$2
+        case "$provider_override" in
+          ddev|lando) ;;
+          *) die '--provider must be ddev or lando' ;;
+        esac
+        shift 2
+        ;;
+      --yes)
+        assume_yes=true
+        shift
+        ;;
+      -h|--help|help)
+        usage
+        return
+        ;;
+      --*) die "unknown config export option: $1" ;;
+      *) die 'usage: pantheon-local config export [--provider ddev|lando] [--yes]' ;;
+    esac
+  done
+
+  require_command git
+  require_command grep
+  require_command awk
+  root=$(git_root)
+  git_dir=$(git_dir_for_root "$root")
+  state="$git_dir/pantheon-local-tools/state"
+  [ -f "$state" ] || \
+    die 'config export requires a Pantheon Local Tools-managed checkout with recorded Pantheon Tag state'
+
+  tag=$(state_get "$state" pantheon.tag || true)
+  [ -n "$tag" ] || \
+    die 'config export requires checkout-local pantheon.tag state so the matching profile can be resolved'
+
+  strategy=$(profile_get "$tag" config-strategy)
+  config_path=$(profile_get "$tag" config-path)
+  case "$strategy" in
+    full-export) ;;
+    overlay-delta)
+      die 'overlay-delta config export is unsupported; refusing to apply a generic full export to a protected partial override set'
+      ;;
+    *) die "unsupported config strategy for export: $strategy" ;;
+  esac
+
+  require_config_directory "$root" "$config_path"
+
+  path_state=$(git -C "$root" status --porcelain --untracked-files=normal -- "$config_path")
+  [ -z "$path_state" ] || \
+    die "configured export path has pre-existing Git changes; review, commit, stash, or otherwise resolve $config_path before exporting"
+
+  provider=$(resolve_provider "$root" "$state" "$provider_override")
+  require_command "$provider"
+  [ -x "$READINESS" ] || die "readiness module is missing or not executable: $READINESS"
+
+  printf 'Pantheon Local Tools config export preflight\n\n'
+  if ! readiness_output=$("$READINESS" --provider "$provider" 2>&1); then
+    printf '%s\n' "$readiness_output"
+    die 'full-export readiness preflight failed; configuration was not exported'
+  fi
+  printf '%s\n' "$readiness_output"
+
+  if ! ignore_state=$(config_ignore_state "$root" "$provider"); then
+    die 'Config Ignore module-state inspection failed; refusing tracked-source mutation rather than guessing runtime export semantics'
+  fi
+
+  printf '\nExport mutation plan\n'
+  printf 'Directory:             %s\n' "$root"
+  printf 'Pantheon Tag:          %s\n' "$tag"
+  printf 'Config strategy:       full-export\n'
+  printf 'Configured config path:%s%s\n' ' ' "$config_path"
+  printf 'Provider:              %s\n' "$provider"
+  printf 'Config Ignore module:  %s\n' "$ignore_state"
+  printf 'Mutation:              provider-owned drush config:export -y\n'
+  printf 'Git commit/push:       not performed\n'
+
+  if [ "$ignore_state" = enabled ]; then
+    printf '\nConfig Ignore is enabled. Drupal/Config Ignore runtime export rules, including any runtime deactivation setting, remain authoritative; PLT does not duplicate those rules.\n'
+  fi
+
+  confirm_export "$assume_yes"
+
+  head_before=$(git -C "$root" rev-parse HEAD)
+  printf '\nRunning provider-owned Drupal configuration export...\n'
+  if ! (cd "$root" && "$provider" drush config:export -y); then
+    export_status=1
+  fi
+  head_after=$(git -C "$root" rev-parse HEAD)
+
+  report_git_state "$root" "$config_path"
+
+  if [ "$head_after" != "$head_before" ]; then
+    die 'configuration export unexpectedly changed Git HEAD; PLT did not request a commit, so inspect repository state before continuing'
+  fi
+
+  if [ "$export_status" -ne 0 ]; then
+    die 'provider-owned drush config:export failed; inspect the reported local Git changes before retrying'
+  fi
+
+  printf '\nConfiguration export completed. Review the reported Git changes; PLT did not commit or push them.\n'
+}
+
+export_command "$@"

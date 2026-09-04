@@ -29,6 +29,7 @@ dpkg-deb -x "$PACKAGE" "$EXTRACT"
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/bin/pantheon-local" ] || fail 'packaged command is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-core" ] || fail 'packaged core module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-config-profile" ] || fail 'packaged tag-profile module is missing or not executable'
+[ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-config-export" ] || fail 'packaged config-export module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-provider-url" ] || fail 'packaged URL module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-pull" ] || fail 'packaged pull module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-readiness" ] || fail 'packaged readiness module is missing or not executable'
@@ -53,6 +54,7 @@ assert_eq "$("$EXTRACT/usr/bin/pantheon-local" config get provider)" 'ddev'
 "$EXTRACT/usr/bin/pantheon-local" config tag profile set 'Package Example' config-path config/sync
 assert_eq "$("$EXTRACT/usr/bin/pantheon-local" config tag profile get 'Package Example' config-strategy)" 'full-export'
 assert_eq "$("$EXTRACT/usr/bin/pantheon-local" config tag profile get 'Package Example' config-path)" 'config/sync'
+"$EXTRACT/usr/bin/pantheon-local" config export --help | grep -F 'MUTATES PROJECT CONFIGURATION FILES' >/dev/null 2>&1 || fail 'packaged config export help is unavailable'
 "$EXTRACT/usr/bin/pantheon-local" setup --help | grep -F 'pantheon-local setup' >/dev/null 2>&1 || fail 'packaged setup help is unavailable'
 "$EXTRACT/usr/bin/pantheon-local" readiness --help | grep -F 'pantheon-local readiness' >/dev/null 2>&1 || fail 'packaged readiness help is unavailable'
 

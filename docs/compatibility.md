@@ -45,6 +45,7 @@ pantheon-local config tag profile get TAG PROPERTY
 pantheon-local config tag profile set TAG PROPERTY VALUE
 pantheon-local config tag profile unset TAG PROPERTY
 pantheon-local config tag profile list [TAG]
+pantheon-local config export [--provider ddev|lando] [--yes]
 
 pantheon-local multidev SITE.ENV
   --provider ddev|lando
@@ -69,9 +70,9 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
+Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
 
-New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only.
+New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only. Adding `pantheon-local config export` does not make setup, readiness, status, Tag matching, or provider start export configuration implicitly.
 
 ## Configuration contract
 
@@ -105,6 +106,8 @@ When stored configuration uses `provider=auto`, provider selection is based on p
 `pantheon-local setup` uses provider-owned command surfaces for provider start, Composer, and Drush. Composer is never silently replaced with host Composer when a supported provider owns the checkout runtime. The database refresh remains delegated through the existing provider-specific `pantheon-local pull --database-only` path.
 
 `pantheon-local readiness` uses provider-owned Drush only for strategy states whose readiness contract calls for it. Full-export readiness does not start or rebuild the provider; a runtime that cannot execute its required read-oriented Drush commands is an inspection failure rather than an implicit start request. Overlay-delta readiness does not invoke provider-owned commands while owning validation is unavailable.
+
+`pantheon-local config export` uses provider-owned Drush only after full-export preflight and explicit confirmation/acknowledgement. It does not start or rebuild the provider. A provider/runtime that cannot run the required readiness, module-state, or export command fails rather than falling back to host Drush.
 
 A provider-specific implementation detail may change in a patch release when the user-visible command contract and safety properties remain the same.
 
@@ -169,6 +172,38 @@ A later compatible implementation may add a reliable generic or explicitly confi
 
 Readiness records no successful-state metadata and performs no configuration export. It must not run `drush config:export`, `drush cex`, or an equivalent write merely because differences are reported.
 
+## Drupal configuration export contract
+
+`pantheon-local config export [--provider ddev|lando] [--yes]` is a separate, explicitly mutating tracked-source operation. Calling the command is explicit intent, and interactive execution still requires confirmation before export. `--yes` is the only documented non-interactive acknowledgement and skips only the PLT confirmation prompt.
+
+### Full-export mutation
+
+Export is supported only for a PLT-managed checkout whose recorded Tag resolves to `config-strategy=full-export` plus a valid existing `config-path` that remains physically inside the project root.
+
+Before mutation, PLT must:
+
+- require the configured export path to contain no pre-existing tracked or untracked Git changes;
+- resolve a supported provider without starting/rebuilding it;
+- complete the normal full-export readiness inspection successfully;
+- require Config Ignore enabled-module inspection to succeed rather than guessing mutation semantics;
+- print the mutation plan and require confirmation or `--yes`.
+
+Unrelated Git changes outside the configured export path do not block the command. They remain untouched and are included in the final repository-wide Git status.
+
+The mutation is provider-owned Drupal configuration export equivalent to `drush config:export -y`. PLT must not pass Drush options that stage or commit changes and must not itself stage, commit, or push the resulting files.
+
+Config Ignore remains Drupal runtime behavior. If `config_ignore` is enabled, PLT reports that fact but does not duplicate ignore patterns, export/import direction rules, or runtime deactivation behavior in PLT configuration. The actual Drupal/Config Ignore runtime remains authoritative for the provider-owned export.
+
+After the export attempt, PLT reports created/changed/deleted file counts under the configured export path and the complete final short Git status. Git `HEAD` must remain unchanged; an unexpected `HEAD` change is a failure because PLT did not request commit behavior.
+
+A provider-owned export can fail after writing files. PLT must preserve and report that partial local state, exit nonzero, and require the developer to review/resolve the resulting Git state before retrying. It must not automatically reset, stash, roll back, stage, commit, or hide those files.
+
+### Overlay-delta mutation
+
+`config-strategy=overlay-delta` is unsupported for generic config export. PLT must refuse before provider resolution or Drush invocation and must never flatten a protected partial override set with a generic full export.
+
+A future overlay mutation mechanism requires its own proven strategy-aware contract; the current fail-closed overlay readiness state does not authorize one.
+
 ## Safety contract
 
 A compatible `0.1.x` release must preserve these properties:
@@ -186,7 +221,7 @@ A compatible `0.1.x` release must preserve these properties:
 - validate all guided `config init` selections before writing so an invalid later value cannot leave a partial configuration update;
 - reject unsupported Tag `config-strategy` values instead of guessing future semantics;
 - reject unsafe/escaping Tag `config-path` values rather than treating them as project-relative paths;
-- reject readiness config directories that escape the Git project root through filesystem links;
+- reject readiness/config-export directories that escape the Git project root through filesystem links;
 - never make setting a Tag profile property implicitly create a Pantheon Tag route;
 - never interpret `overlay-delta` as permission to flatten or fully export Drupal configuration into the configured delta path;
 - never infer overlay drift from missing YAML, directory size, or file count;
@@ -197,8 +232,13 @@ A compatible `0.1.x` release must preserve these properties:
 - never make `multidev --start` silently perform the full Drupal setup pipeline;
 - never let `pantheon-local readiness` start/rebuild a provider or automatically export Drupal configuration;
 - never let full-export readiness silently substitute a different config path for the configured Tag profile;
-- never apply full-export readiness semantics to an `overlay-delta` profile; and
-- never report readiness success if a delegated full-export inspection changed Git `HEAD` or Git-visible working-tree state.
+- never apply full-export readiness semantics to an `overlay-delta` profile;
+- never report readiness success if a delegated full-export inspection changed Git `HEAD` or Git-visible working-tree state;
+- never let `pantheon-local config export` run implicitly from readiness, status, setup, `--start`, or Tag matching;
+- never export when the configured full-export path already has Git-visible changes;
+- never export an `overlay-delta` profile through generic `drush config:export` semantics;
+- never auto-stage, auto-commit, auto-push, or mutate remote Pantheon environments as part of config export; and
+- never hide or automatically roll back partial local YAML changes after a failed provider-owned config export.
 
 Safety tightening that converts a previously ambiguous/unsafe case into an explicit failure is considered compatible when documented in release notes.
 
@@ -212,7 +252,7 @@ In particular, the legacy `data.source` migration to independent database/files 
 
 Setup may add local troubleshooting keys for bootstrap status, failed/current step, recorded environment/provider, and update timestamp. `pantheon-local status` may display those fields. Their presence does not make checkout-local state a stable machine API or application configuration.
 
-Readiness consumes the recorded Pantheon Tag and provider identity when applicable but does not add a persistent readiness-result cache. The current Drupal/Git state is inspected fresh on each run.
+Readiness consumes the recorded Pantheon Tag and provider identity when applicable but does not add a persistent readiness-result cache. Config export consumes the same current profile/runtime state and does not add a persistent export-result cache; the resulting project-file state is represented by Git itself.
 
 ## Human-readable output
 
@@ -220,7 +260,7 @@ Normal command output is designed for developers and may gain additional labeled
 
 The text output is **not** yet a stable machine-readable API. Scripts that require a formal structured output format should wait for an explicitly documented JSON/porcelain interface rather than parsing incidental spacing.
 
-Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success is exit `0`, failure is nonzero. A successful full-export readiness inspection may still report a review-required state, while overlay-delta currently exits nonzero when owning validation is unavailable.
+Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success is exit `0`, failure is nonzero. A successful full-export readiness inspection may still report a review-required state, while overlay-delta currently exits nonzero when owning validation is unavailable. Config export exits nonzero for refused/cancelled/failed mutation paths, including partial provider-export failure after local files were written.
 
 ## Packaging contract
 

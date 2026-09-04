@@ -7,14 +7,22 @@
 #   ~/.config/pantheon-local-tools/config
 #
 # All values below are generic examples only. Organization-specific Pantheon
-# Tags and directory names belong in each user's local config.
+# Tags, directory names, configuration strategies, and paths belong in each
+# user's local config.
 
 [local]
     root = ~/sites/pantheon
     provider = auto
 
-[tag "Example Group"]
-    directory = example-group
+[tag "Full Export Example"]
+    directory = full-export-example
+    config-strategy = full-export
+    config-path = config/sync
 
-[tag "Another Group"]
-    directory = another-group
+[tag "Protected Overlay Example"]
+    directory = protected-overlay-example
+    config-strategy = overlay-delta
+    config-path = config/site-overrides
+
+[tag "Routing Only Example"]
+    directory = routing-only-example

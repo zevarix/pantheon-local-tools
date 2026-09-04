@@ -81,6 +81,16 @@ pantheon-local config set root ~/sites/pantheon
 pantheon-local config set provider ddev
 ```
 
+Optional Pantheon Tag profiles can describe how later setup/config-readiness workflows should treat a routed project without hard-coding organization names or config paths:
+
+```bash
+pantheon-local config tag set 'Example Group' example-group
+pantheon-local config tag profile set 'Example Group' config-strategy full-export
+pantheon-local config tag profile set 'Example Group' config-path config/sync
+```
+
+See [`docs/configuration.md`](docs/configuration.md) for the Git-compatible profile contract, including `full-export` versus `overlay-delta` semantics.
+
 Resolve a real existing Pantheon Multidev without changing the filesystem:
 
 ```bash
@@ -113,6 +123,10 @@ pantheon-local config tag get TAG
 pantheon-local config tag set TAG DIRECTORY
 pantheon-local config tag unset TAG
 pantheon-local config tag list
+pantheon-local config tag profile get TAG PROPERTY
+pantheon-local config tag profile set TAG PROPERTY VALUE
+pantheon-local config tag profile unset TAG PROPERTY
+pantheon-local config tag profile list [TAG]
 
 pantheon-local multidev SITE.ENV
   --provider ddev|lando
@@ -130,7 +144,7 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local multidev --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
+Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
 
 ## Core workflows
 
@@ -183,8 +197,17 @@ Built-in defaults are:
 - `root`: `$HOME/sites/pantheon`
 - `provider`: `auto`
 - Pantheon Tag mappings: none
+- Pantheon Tag profile properties: none
 
 `provider=auto` detects the checkout's project configuration after clone: `.ddev/config.yaml` selects DDEV and `.lando.yml` selects Lando. If detection is ambiguous, the tool refuses to guess.
+
+Pantheon Tag routing remains the identity anchor for profile configuration. An existing Tag route may optionally declare:
+
+- `config-strategy=full-export` for complete exported configuration;
+- `config-strategy=overlay-delta` for a protected site-specific delta/override set; and
+- a validated relative `config-path` appropriate to that project.
+
+Profile settings remain declarative. They do not run Drupal, export config, start providers, pull data, or mutate Pantheon. Later feature tickets consume this configuration under their own safety contracts.
 
 Examples:
 
@@ -193,10 +216,15 @@ pantheon-local config init
 pantheon-local config init --provider lando
 pantheon-local config set root ~/work/pantheon
 pantheon-local config tag set "Client Sites" clients
+pantheon-local config tag profile set "Client Sites" config-strategy full-export
+pantheon-local config tag profile set "Client Sites" config-path config/sync
+pantheon-local config tag profile list "Client Sites"
 pantheon-local config list
 ```
 
-Organization-specific Pantheon Tags, directory names, account details, and machine paths belong only in user configuration and are never project defaults.
+The persistent representation continues to be one Git-compatible configuration file managed through Git's own `git config --file` parser/writer. No YAML/JSON/TOML profile store is introduced. See [`docs/configuration.md`](docs/configuration.md) for validation, unset behavior, and strategy boundaries.
+
+Organization-specific Pantheon Tags, directory names, config strategies/paths, account details, and machine paths belong only in user configuration and are never project defaults.
 
 ## Providers and hosts
 
@@ -223,6 +251,8 @@ Pantheon Local Tools is intentionally conservative around developer machines and
 - `pantheon-local pull` never pulls Git code;
 - provider/project configuration remains provider-owned;
 - provider detection and Pantheon Tag routing fail on ambiguity rather than guessing;
+- unsupported Tag profile strategies and unsafe project-relative config paths fail instead of being guessed;
+- an `overlay-delta` profile never implies that its path is a complete Drupal export or may be overwritten by a blanket export;
 - provider start/rebuild behavior is explicit;
 - Pantheon machine tokens are not collected or persisted;
 - pull provenance is recorded only after provider success and Git-integrity verification; and
@@ -265,6 +295,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 
 ## Documentation
 
+- [`docs/configuration.md`](docs/configuration.md) — Git-compatible user configuration and Pantheon Tag profile strategies
 - [`docs/multidev.md`](docs/multidev.md) — Multidev checkout behavior and safety
 - [`docs/pull.md`](docs/pull.md) — database/files pull behavior and Git protection
 - [`docs/status.md`](docs/status.md) — read-only checkout inspection contract

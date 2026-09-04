@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local config tag profile get TAG PROPERTY
+  pantheon-local config tag profile set TAG PROPERTY VALUE
+  pantheon-local config tag profile unset TAG PROPERTY
+  pantheon-local config tag profile list [TAG]
+
+Properties:
+  config-strategy  full-export or overlay-delta
+  config-path      Relative project configuration path, for example config/sync
+
+A tag profile extends an existing `config tag` directory mapping. Profile
+properties are optional and remain in the same Git-compatible [tag "..."]
+configuration section. Setting a profile property never creates a tag route.
+USAGE
+}
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+pantheon_local_profile_config_path() {
+  if [ -n "${PANTHEON_LOCAL_CONFIG:-}" ]; then
+    printf '%s\n' "$PANTHEON_LOCAL_CONFIG"
+    return
+  fi
+
+  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+    printf '%s/pantheon-local-tools/config\n' "${XDG_CONFIG_HOME%/}"
+    return
+  fi
+
+  [ -n "${HOME:-}" ] || die 'HOME is not set; set PANTHEON_LOCAL_CONFIG explicitly'
+  printf '%s/.config/pantheon-local-tools/config\n' "${HOME%/}"
+}
+
+validate_tag() {
+  local tag=$1
+  [ -n "$tag" ] || die 'Pantheon Tag cannot be empty'
+  printf '%s\n' "$tag" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9._ -]*$' || \
+    die 'Pantheon Tag may contain letters, numbers, spaces, dot, underscore, and hyphen'
+}
+
+validate_relative_path() {
+  local path=$1 wrapped
+  [ -n "$path" ] || die 'config-path cannot be empty'
+  case "$path" in
+    /*) die 'config-path must be relative to the project root' ;;
+    '~'|'~/'*) die 'config-path must be project-relative, not home-relative' ;;
+    */) die 'config-path must not end with a slash' ;;
+    *\\*) die 'config-path must use forward slashes (including under WSL)' ;;
+    *$'\n'*|*$'\r'*) die 'config-path cannot contain newlines' ;;
+    *'//'*) die 'config-path cannot contain empty path segments' ;;
+  esac
+  wrapped="/$path/"
+  case "$wrapped" in
+    */./*|*/../*) die 'config-path cannot contain . or .. path segments' ;;
+  esac
+}
+
+validate_property() {
+  case "$1" in
+    config-strategy|config-path) ;;
+    *) die 'profile property must be one of: config-strategy, config-path' ;;
+  esac
+}
+
+validate_property_value() {
+  local property=$1 value=$2
+  case "$property" in
+    config-strategy)
+      case "$value" in
+        full-export|overlay-delta) ;;
+        *) die 'config-strategy must be one of: full-export, overlay-delta' ;;
+      esac
+      ;;
+    config-path)
+      validate_relative_path "$value"
+      ;;
+  esac
+}
+
+tag_directory_git_key() {
+  printf 'tag.%s.directory\n' "$1"
+}
+
+pantheon_local_profile_git_key() {
+  local tag=$1 property=$2
+  validate_property "$property"
+  printf 'tag.%s.%s\n' "$tag" "$property"
+}
+
+require_tag_route() {
+  local tag=$1 file key
+  require_command git
+  validate_tag "$tag"
+  file=$(pantheon_local_profile_config_path)
+  key=$(tag_directory_git_key "$tag")
+  [ -f "$file" ] || die "no directory mapping configured for Pantheon Tag: $tag"
+  git config --file "$file" --get "$key" >/dev/null 2>&1 || \
+    die "no directory mapping configured for Pantheon Tag: $tag"
+}
+
+# Reusable read seam for later setup/readiness modules. Returns 1 only when the
+# property is absent; callers validate the returned value for their own action.
+pantheon_local_profile_get_optional() {
+  local tag=$1 property=$2 file key
+  require_command git
+  validate_tag "$tag"
+  validate_property "$property"
+  file=$(pantheon_local_profile_config_path)
+  [ -f "$file" ] || return 1
+  key=$(pantheon_local_profile_git_key "$tag" "$property")
+  git config --file "$file" --get "$key" 2>/dev/null
+}
+
+profile_get() {
+  local tag=$1 property=$2 value
+  require_tag_route "$tag"
+  if ! value=$(pantheon_local_profile_get_optional "$tag" "$property"); then
+    die "no $property configured for Pantheon Tag: $tag"
+  fi
+  validate_property_value "$property" "$value"
+  printf '%s\n' "$value"
+}
+
+profile_set() {
+  local tag=$1 property=$2 value=$3 file key
+  require_tag_route "$tag"
+  validate_property "$property"
+  validate_property_value "$property" "$value"
+  file=$(pantheon_local_profile_config_path)
+  key=$(pantheon_local_profile_git_key "$tag" "$property")
+  git config --file "$file" --replace-all "$key" "$value"
+}
+
+profile_unset() {
+  local tag=$1 property=$2 file key
+  require_tag_route "$tag"
+  validate_property "$property"
+  file=$(pantheon_local_profile_config_path)
+  key=$(pantheon_local_profile_git_key "$tag" "$property")
+  git config --file "$file" --unset-all "$key" >/dev/null 2>&1 || true
+}
+
+profile_purge() {
+  local tag=$1 file property key
+  require_command git
+  validate_tag "$tag"
+  file=$(pantheon_local_profile_config_path)
+  [ -f "$file" ] || return 0
+  for property in config-strategy config-path; do
+    key=$(pantheon_local_profile_git_key "$tag" "$property")
+    git config --file "$file" --unset-all "$key" >/dev/null 2>&1 || true
+  done
+}
+
+profile_list_one() {
+  local tag=$1 property value
+  require_tag_route "$tag"
+  for property in config-strategy config-path; do
+    if value=$(pantheon_local_profile_get_optional "$tag" "$property"); then
+      validate_property_value "$property" "$value"
+      printf '%s=%s\n' "$property" "$value"
+    fi
+  done
+}
+
+profile_list_all() {
+  local file key tag property value
+  require_command git
+  file=$(pantheon_local_profile_config_path)
+  [ -f "$file" ] || return 0
+
+  { git config --file "$file" --name-only --get-regexp '^tag\..*\.directory$' 2>/dev/null || true; } | while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    tag=${key#tag.}
+    tag=${tag%.directory}
+    validate_tag "$tag"
+    for property in config-strategy config-path; do
+      if value=$(pantheon_local_profile_get_optional "$tag" "$property"); then
+        validate_property_value "$property" "$value"
+        printf '%s.%s=%s\n' "$tag" "$property" "$value"
+      fi
+    done
+  done
+}
+
+profile_list() {
+  case "$#" in
+    0) profile_list_all ;;
+    1) profile_list_one "$1" ;;
+    *) die 'usage: pantheon-local config tag profile list [TAG]' ;;
+  esac
+}
+
+main() {
+  local action=${1:-}
+  case "$action" in
+    get)
+      [ "$#" -eq 3 ] || die 'usage: pantheon-local config tag profile get TAG PROPERTY'
+      profile_get "$2" "$3"
+      ;;
+    set)
+      [ "$#" -eq 4 ] || die 'usage: pantheon-local config tag profile set TAG PROPERTY VALUE'
+      profile_set "$2" "$3" "$4"
+      ;;
+    unset)
+      [ "$#" -eq 3 ] || die 'usage: pantheon-local config tag profile unset TAG PROPERTY'
+      profile_unset "$2" "$3"
+      ;;
+    list)
+      shift
+      profile_list "$@"
+      ;;
+    __purge)
+      [ "$#" -eq 2 ] || die 'internal profile purge requires TAG'
+      profile_purge "$2"
+      ;;
+    ''|-h|--help|help) usage ;;
+    *) die "unknown config tag profile command: $action" ;;
+  esac
+}
+
+main "$@"

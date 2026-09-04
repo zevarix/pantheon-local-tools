@@ -39,6 +39,7 @@ The formula installs the source payload beneath Homebrew's formula `libexec` dir
 libexec/
   bin/pantheon-local
   libexec/pantheon-local-core
+  libexec/pantheon-local-config-profile
   libexec/pantheon-local-provider-url
   libexec/pantheon-local-pull
   libexec/pantheon-local-status
@@ -79,7 +80,7 @@ The repository test suite performs a local Homebrew installation on macOS CI fro
 - formula Ruby syntax;
 - source checksum enforcement;
 - the Homebrew `libexec` layout;
-- command/module executability;
+- command/module executability, including the Tag-profile config module;
 - `pantheon-local version` and `--version` consistency;
 - the formula `test do` block; and
 - user configuration remaining outside Homebrew-owned paths.

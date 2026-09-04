@@ -4,27 +4,38 @@ title: "[Feature]: "
 labels:
   - enhancement
 body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a public repository. Describe workflows with generic public-safe names only. Do not include employer/client/organization names, internal project or site identifiers, private environment names, machine/user names, local paths, or copied private configuration.
   - type: textarea
     id: problem
     attributes:
       label: Problem or workflow
-      description: What problem are you trying to solve?
+      description: What problem are you trying to solve? Replace real identifiers with generic examples.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: Proposed behavior
-      description: Describe the behavior you would like to see.
+      description: Describe the behavior you would like to see using generic public-safe examples only.
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
-      description: Optional. Describe workarounds or alternative designs you considered.
+      description: Optional. Describe workarounds or alternative designs you considered without exposing private/internal identifiers.
   - type: textarea
     id: safety
     attributes:
       label: Safety or compatibility considerations
-      description: Note any remote writes, destructive operations, path handling, platform compatibility, or configuration concerns.
+      description: Note any remote writes, destructive operations, path handling, platform compatibility, configuration concerns, or public-repository sanitization considerations.
+  - type: checkboxes
+    id: public_safety
+    attributes:
+      label: Public-repository safety check
+      options:
+        - label: I replaced employer-, client-, organization-, institution-, internal-project-, private-site-, environment-, machine-, username-, directory-, and local-path identifiers with generic public-safe examples.
+          required: true

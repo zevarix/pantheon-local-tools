@@ -7,26 +7,26 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a problem. Do not include credentials, tokens, SSH keys, or other secrets.
+        Thanks for taking the time to report a problem. This is a public repository. Do not include credentials, tokens, SSH keys, employer/client/organization names, internal project or site identifiers, private environment names, machine/user names, local paths, or other private data. Replace real identifiers with generic examples.
   - type: textarea
     id: summary
     attributes:
       label: What happened?
-      description: Describe the problem and what you expected instead.
+      description: Describe the problem and what you expected instead using generic public-safe identifiers.
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
       label: Steps to reproduce
-      description: Include the smallest reliable set of steps and commands that reproduces the issue.
+      description: Include the smallest reliable set of sanitized steps and commands that reproduces the issue.
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
       label: Environment
-      description: Include OS, shell, WSL distribution/version when applicable, local provider and version, Terminus version, and tool version when known.
+      description: Include OS, shell, WSL distribution/version when applicable, local provider and version, Terminus version, and tool version when known. Do not include private site/environment names or local paths.
       placeholder: |
         OS:
         WSL distribution/version (if applicable):
@@ -41,12 +41,14 @@ body:
     id: output
     attributes:
       label: Relevant output
-      description: Paste sanitized output or logs. Remove credentials and private data first.
+      description: Paste sanitized output or logs. Replace real organization, project, site, environment, machine, username, and path values with generic placeholders first.
       render: shell
   - type: checkboxes
     id: safety
     attributes:
-      label: Safety check
+      label: Public-repository safety check
       options:
         - label: I removed credentials, tokens, keys, passwords, and other secrets from this report.
+          required: true
+        - label: I replaced employer-, client-, organization-, institution-, internal-project-, private-site-, environment-, machine-, username-, directory-, and local-path identifiers with generic public-safe examples.
           required: true

@@ -52,6 +52,10 @@ pantheon-local multidev SITE.ENV
   --dry-run
   --start
 
+pantheon-local setup
+  --provider ddev|lando
+  --dry-run
+
 pantheon-local pull ENV
   --database-only
   --files-only
@@ -62,9 +66,9 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
+Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
 
-New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning.
+New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only.
 
 ## Configuration contract
 
@@ -95,7 +99,29 @@ Provider-owned project configuration remains authoritative. Pantheon Local Tools
 
 When stored configuration uses `provider=auto`, provider selection is based on project configuration after checkout (`.ddev/config.yaml` versus `.lando.yml`), not simply on which provider binaries are installed. Ambiguous detection fails rather than guessing.
 
+`pantheon-local setup` uses provider-owned command surfaces for provider start, Composer, and Drush. Composer is never silently replaced with host Composer when a supported provider owns the checkout runtime. The database refresh remains delegated through the existing provider-specific `pantheon-local pull --database-only` path.
+
 A provider-specific implementation detail may change in a patch release when the user-visible command contract and safety properties remain the same.
+
+## Drupal setup contract
+
+`pantheon-local setup` is available only for a checkout with PLT checkout-local state containing a valid `pantheon.environment`. That recorded environment is authoritative for the setup database refresh. Setup must not infer an environment from the Git branch or silently fall back to `live`.
+
+The public setup order is:
+
+```text
+provider start
+→ provider-owned composer install
+→ guarded database-only pull from recorded pantheon.environment
+→ provider-owned drush updb -y
+→ provider-owned drush cr
+```
+
+Setup stops at the first failed mutating step. It must not continue to database pull after a failed Composer install, to `updb` after a failed pull, or to cache rebuild after a failed `updb`.
+
+`pantheon-local setup --dry-run` may inspect local prerequisites and print the plan, but must not start/rebuild a provider, execute Composer/Drush, pull data, contact Pantheon through the pull path, or mutate checkout-local bootstrap state.
+
+Setup is a local mutation workflow. It may start/build provider runtime services; Composer may access the network and execute project scripts; the database pull replaces local database data; and Drush may mutate the local database/cache. Setup does not pull files or Git code, export Drupal configuration, push to Pantheon, or rewrite provider-owned base project configuration.
 
 ## Safety contract
 
@@ -114,8 +140,11 @@ A compatible `0.1.x` release must preserve these properties:
 - validate all guided `config init` selections before writing so an invalid later value cannot leave a partial configuration update;
 - reject unsupported Tag `config-strategy` values instead of guessing future semantics;
 - reject unsafe/escaping Tag `config-path` values rather than treating them as project-relative paths;
-- never make setting a Tag profile property implicitly create a Pantheon Tag route; and
-- never interpret `overlay-delta` as permission to flatten or fully export Drupal configuration into the configured delta path.
+- never make setting a Tag profile property implicitly create a Pantheon Tag route;
+- never interpret `overlay-delta` as permission to flatten or fully export Drupal configuration into the configured delta path;
+- never let `pantheon-local setup` infer its Pantheon database source from Git branch naming or an implicit Live default;
+- never run setup `updb`/`cr` after an earlier required step fails; and
+- never make `multidev --start` silently perform the full Drupal setup pipeline.
 
 Safety tightening that converts a previously ambiguous/unsafe case into an explicit failure is considered compatible when documented in release notes.
 
@@ -126,6 +155,8 @@ Safety tightening that converts a previously ambiguous/unsafe case into an expli
 Its schema is not a general-purpose external API. However, upgrades must preserve/migrate state created by earlier supported versions rather than silently discarding known provenance or checkout identity.
 
 In particular, the legacy `data.source` migration to independent database/files provenance demonstrates the expected upgrade behavior.
+
+Setup may add local troubleshooting keys for bootstrap status, failed/current step, recorded environment/provider, and update timestamp. `pantheon-local status` may display those fields. Their presence does not make checkout-local state a stable machine API or application configuration.
 
 ## Human-readable output
 

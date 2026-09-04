@@ -105,6 +105,21 @@ pantheon-local multidev SITE.ENV --provider ddev --start
 
 Use `lando` instead of `ddev` when that is the project/provider you want.
 
+For a PLT-managed Drupal checkout, inspect the bootstrap plan before replacing local database data:
+
+```bash
+cd /path/to/the/checkout
+pantheon-local setup --dry-run
+```
+
+Then run the provider-aware Drupal bootstrap explicitly:
+
+```bash
+pantheon-local setup
+```
+
+Setup starts the selected provider, runs Composer inside that provider, reuses the guarded database-only pull from the checkout's recorded Pantheon environment, then runs `drush updb -y` and `drush cr`. See [`docs/setup.md`](docs/setup.md) for its mutation and retry contract.
+
 ## Commands
 
 Run `pantheon-local help` or `pantheon-local --help` for the complete in-tool command reference.
@@ -134,6 +149,10 @@ pantheon-local multidev SITE.ENV
   --dry-run
   --start
 
+pantheon-local setup
+  --provider ddev|lando
+  --dry-run
+
 pantheon-local pull ENV
   --database-only
   --files-only
@@ -144,7 +163,7 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
+Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
 
 ## Core workflows
 
@@ -152,9 +171,21 @@ Focused help remains available for nontrivial commands, for example `pantheon-lo
 
 `pantheon-local multidev SITE.ENV` clones an **existing** Pantheon Multidev into an isolated local checkout. It does not create, delete, or mutate the remote Pantheon environment.
 
-The command resolves the authoritative Git URL through Terminus, applies user-configured Pantheon Tag routing when present, refuses occupied destinations, configures the selected local provider additively, and finalizes the checkout only after local setup succeeds. `--dry-run` resolves and prints the plan without cloning; `--start` is explicit.
+The command resolves the authoritative Git URL through Terminus, applies user-configured Pantheon Tag routing when present, refuses occupied destinations, configures the selected local provider additively, and finalizes the checkout only after local setup succeeds. `--dry-run` resolves and prints the plan without cloning; `--start` is explicit and continues to mean provider start only.
 
 See [`docs/multidev.md`](docs/multidev.md) for the full workflow and safety contract.
+
+### Drupal checkout setup
+
+`pantheon-local setup` bootstraps an existing **PLT-managed Drupal checkout** using the Pantheon environment recorded when the checkout was created. It refuses to infer that source from the Git branch or silently substitute Live.
+
+The required order is provider start → provider-owned `composer install` → existing guarded `pull --database-only` → provider-owned `drush updb -y` → provider-owned `drush cr`. The pipeline stops on the first failed mutating step and records the failed/current/completed bootstrap step in checkout-local PLT state.
+
+`--dry-run` performs local preflight and prints the exact plan without starting the provider, running Composer/Drush, pulling data, or changing bootstrap state. A real setup run is explicitly local and mutating: Composer may access the network and run project scripts, the local database is replaced from the recorded Pantheon environment, and Drush updates local database/cache state.
+
+Setup does not pull files or Git code, export Drupal configuration, push to Pantheon, or rewrite provider-owned base configuration. `multidev --start` remains start-only; setup is a separate command.
+
+See [`docs/setup.md`](docs/setup.md) for provider mappings, preflight, failure/retry behavior, upstream references, and state fields.
 
 ### Data pulls
 
@@ -174,7 +205,7 @@ See [`docs/pull.md`](docs/pull.md) for component selection, provider behavior, a
 
 `pantheon-local status` is a local, read-only inspection command. It can run from the checkout root or a subdirectory and does not contact Pantheon or start/rebuild a provider.
 
-For managed checkouts it reports recorded Pantheon identity, provider, Git state, provider-derived runtime URL when available, and independent database/files provenance. Existing DDEV/Lando Git checkouts are also supported; unavailable Pantheon metadata is reported as not recorded rather than guessed.
+For managed checkouts it reports recorded Pantheon identity, provider, Git state, provider-derived runtime URL when available, independent database/files provenance, and the latest recorded Drupal bootstrap status/step/timestamp. Existing DDEV/Lando Git checkouts are also supported; unavailable Pantheon/bootstrap metadata is reported as not recorded rather than guessed.
 
 See [`docs/status.md`](docs/status.md) for the status contract.
 
@@ -249,6 +280,9 @@ Pantheon Local Tools is intentionally conservative around developer machines and
 - existing checkout destinations are never silently overwritten;
 - local checkout creation never creates or deletes a remote Pantheon Multidev;
 - `pantheon-local pull` never pulls Git code;
+- `pantheon-local setup` uses only the checkout's recorded Pantheon environment for its database refresh and never infers Live/current-branch semantics;
+- setup runs Composer inside the selected provider and stops immediately when provider start, Composer, database pull, `updb`, or cache rebuild fails;
+- setup does not pull files/Git code, export config, push to Pantheon, or change the meaning of `multidev --start`;
 - provider/project configuration remains provider-owned;
 - provider detection and Pantheon Tag routing fail on ambiguity rather than guessing;
 - unsupported Tag profile strategies and unsafe project-relative config paths fail instead of being guessed;
@@ -297,6 +331,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 
 - [`docs/configuration.md`](docs/configuration.md) — Git-compatible user configuration and Pantheon Tag profile strategies
 - [`docs/multidev.md`](docs/multidev.md) — Multidev checkout behavior and safety
+- [`docs/setup.md`](docs/setup.md) — provider-aware Drupal checkout bootstrap, failure/retry behavior, and local mutation boundaries
 - [`docs/pull.md`](docs/pull.md) — database/files pull behavior and Git protection
 - [`docs/status.md`](docs/status.md) — read-only checkout inspection contract
 - [`docs/local-provider-architecture.md`](docs/local-provider-architecture.md) — DDEV/Lando boundary and provider architecture

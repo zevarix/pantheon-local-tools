@@ -82,7 +82,7 @@ assert_contains "$readiness_help" 'configured config-path'
 assert_contains "$readiness_help" 'No drush config:export / cex is run.'
 assert_contains "$readiness_help" 'still exit 0 when inspection succeeds'
 assert_contains "$readiness_help" 'Config Ignore detection is advisory.'
-assert_contains "$readiness_help" 'does not start or rebuild'
+assert_contains "$readiness_help" 'provider is not started or rebuilt'
 
 pull_help=$(bash "$CLI" pull --help)
 assert_contains "$pull_help" 'pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]'

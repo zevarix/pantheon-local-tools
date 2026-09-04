@@ -55,7 +55,7 @@ Tag routing remains backward compatible. A route can exist with no configuration
 
 ## Optional Tag profile properties
 
-Issue #68 extends the same `[tag "..."]` subsection with two optional properties used by later setup/config-readiness work:
+Issue #68 extends the same `[tag "..."]` subsection with two optional properties consumed by later setup/config-readiness work:
 
 - `config-strategy` — one of `full-export` or `overlay-delta`;
 - `config-path` — a relative project path such as `config/sync` or `config/site-overrides`.
@@ -102,7 +102,7 @@ Human-readable output may gain labeled fields; it is not a structured/porcelain 
 
 ## `full-export`
 
-`full-export` identifies a project whose configured path represents its complete Drupal configuration export for the workflow Pantheon Local Tools will later inspect.
+`full-export` identifies a project whose configured path represents its complete Drupal configuration export for the workflow Pantheon Local Tools inspects.
 
 Generic example:
 
@@ -110,12 +110,20 @@ Generic example:
 [tag "Full Export Example"]
     directory = full-export-example
     config-strategy = full-export
-    config-path = config/sync
+    config-path = config/project-export
 ```
 
-This profile is configuration only. Issue #68 does **not** run Drush, inspect active Drupal configuration, detect Config Ignore, export YAML, or decide whether differences are safe. Those behaviors belong to later tickets such as #70 and #72.
+The path is configurable. `config/sync` is a common example, not a product assumption.
 
-The path is configurable; `config/sync` is an example, not a product assumption.
+Issue #70 adds the read-oriented consumer:
+
+```bash
+pantheon-local readiness
+```
+
+For a PLT-managed checkout whose recorded Pantheon Tag resolves to a `full-export` profile, readiness requires both `config-strategy` and `config-path`, verifies that the configured directory exists, and checks that Drupal's runtime `config-sync` path corresponds to the configured profile path before interpreting `drush config:status` output.
+
+Readiness reports synchronized/different configuration, Config Ignore module state when detectable, and the final Git working-tree state. It never performs `drush config:export` / `cex`. See [`readiness.md`](readiness.md) for the complete inspection and exit-status contract.
 
 ## `overlay-delta`
 
@@ -132,7 +140,7 @@ Generic example:
 
 A delta directory may contain any small subset of configuration files. Missing YAML, directory size, or file count does not imply drift. Pantheon Local Tools must not treat this profile as permission to run a blanket `drush cex` into the delta path.
 
-Issue #71 owns the later strategy-aware readiness behavior after the relevant platform/update mechanism is established.
+The current `pantheon-local readiness` command fails explicitly for `overlay-delta` instead of applying `full-export` rules. Issue #71 owns the strategy-aware readiness behavior after the relevant platform/update mechanism is established.
 
 ## Validation and failure behavior
 
@@ -156,7 +164,7 @@ overlay-delta
 
 A profile setter refuses a Pantheon Tag that has no existing `directory` route. This keeps routing identity explicit and prevents configuration-only subsections from silently changing Multidev Tag matching.
 
-The two properties are independently optional so users can build or edit a profile incrementally. A later command that requires a complete strategy/path pair must validate that requirement itself and fail closed when the profile is incomplete.
+The two properties are independently optional so users can build or edit a profile incrementally. A command that requires a complete strategy/path pair validates that requirement itself and fails closed when the profile is incomplete. `pantheon-local readiness` is such a consumer for `full-export`.
 
 ## Organization-specific values
 
@@ -172,8 +180,8 @@ The profile is declarative routing/setup metadata. It does not grant permission 
 - mutate remote Pantheon environments;
 - start providers;
 - pull databases/files;
-- run Composer or Drush;
+- run Composer;
 - export Drupal configuration;
 - commit or push project changes.
 
-Those actions remain explicit command boundaries owned by their respective workflows.
+A consumer such as `pantheon-local readiness` may run explicitly documented provider-owned, read-oriented Drush inspection commands. That consumer remains responsible for its own runtime, mutation, failure, and Git-integrity boundaries.

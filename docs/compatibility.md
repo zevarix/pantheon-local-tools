@@ -56,6 +56,9 @@ pantheon-local setup
   --provider ddev|lando
   --dry-run
 
+pantheon-local readiness
+  --provider ddev|lando
+
 pantheon-local pull ENV
   --database-only
   --files-only
@@ -66,7 +69,7 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
+Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
 
 New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only.
 
@@ -101,6 +104,8 @@ When stored configuration uses `provider=auto`, provider selection is based on p
 
 `pantheon-local setup` uses provider-owned command surfaces for provider start, Composer, and Drush. Composer is never silently replaced with host Composer when a supported provider owns the checkout runtime. The database refresh remains delegated through the existing provider-specific `pantheon-local pull --database-only` path.
 
+`pantheon-local readiness` also uses provider-owned Drush. Unlike setup, readiness does not start or rebuild the provider; a runtime that cannot execute the required read-oriented Drush commands is an inspection failure rather than an implicit start request.
+
 A provider-specific implementation detail may change in a patch release when the user-visible command contract and safety properties remain the same.
 
 ## Drupal setup contract
@@ -123,6 +128,30 @@ Setup stops at the first failed mutating step. It must not continue to database 
 
 Setup is a local mutation workflow. It may start/build provider runtime services; Composer may access the network and execute project scripts; the database pull replaces local database data; and Drush may mutate the local database/cache. Setup does not pull files or Git code, export Drupal configuration, push to Pantheon, or rewrite provider-owned base project configuration.
 
+## Drupal readiness contract
+
+`pantheon-local readiness` is a separate read-oriented inspection boundary. It requires a PLT-managed checkout with a recorded `pantheon.tag` that resolves through the existing Git-compatible profile configuration.
+
+For the current `full-export` implementation, both profile values are required:
+
+- `config-strategy=full-export`;
+- a valid project-relative `config-path`.
+
+The configured path must exist and must correspond to the Drupal runtime `config-sync` path reported by provider-owned `drush core:status --field=config-sync`. PLT must not silently substitute or assume `config/sync`.
+
+After the path check, readiness uses provider-owned `drush config:status --format=list` to distinguish synchronized configuration from reported active-versus-sync differences. It also attempts enabled-module inspection through Drush to report Config Ignore as `enabled`, `disabled`, or `unavailable`.
+
+Config Ignore detection is advisory. PLT does not duplicate Config Ignore matching semantics, hide reported configuration differences because Config Ignore is enabled, or treat an unavailable module-state query as permission to guess.
+
+Readiness distinguishes an inspection result from an inspection failure:
+
+- synchronized configuration, reported differences, Config Ignore enabled/disabled/unavailable, and a pre-existing modified Git working tree are successful report states and exit `0` when the inspection itself completed reliably;
+- incomplete/unsupported profile data, provider/required-Drush failure, runtime path mismatch, or Git-visible changes caused during inspection fail nonzero.
+
+Readiness records no successful-state metadata and performs no configuration export. It must not run `drush config:export`, `drush cex`, or an equivalent write merely because differences are reported.
+
+`overlay-delta` is intentionally unsupported by this initial readiness implementation. Until its separate contract is implemented, the command must fail rather than apply full-export interpretation to a protected partial/delta directory.
+
 ## Safety contract
 
 A compatible `0.1.x` release must preserve these properties:
@@ -143,8 +172,12 @@ A compatible `0.1.x` release must preserve these properties:
 - never make setting a Tag profile property implicitly create a Pantheon Tag route;
 - never interpret `overlay-delta` as permission to flatten or fully export Drupal configuration into the configured delta path;
 - never let `pantheon-local setup` infer its Pantheon database source from Git branch naming or an implicit Live default;
-- never run setup `updb`/`cr` after an earlier required step fails; and
-- never make `multidev --start` silently perform the full Drupal setup pipeline.
+- never run setup `updb`/`cr` after an earlier required step fails;
+- never make `multidev --start` silently perform the full Drupal setup pipeline;
+- never let `pantheon-local readiness` start/rebuild a provider or automatically export Drupal configuration;
+- never let full-export readiness silently substitute a different config path for the configured Tag profile;
+- never apply full-export readiness semantics to an `overlay-delta` profile; and
+- never report readiness success if the inspection itself changed Git `HEAD` or Git-visible working-tree state.
 
 Safety tightening that converts a previously ambiguous/unsafe case into an explicit failure is considered compatible when documented in release notes.
 
@@ -158,13 +191,15 @@ In particular, the legacy `data.source` migration to independent database/files 
 
 Setup may add local troubleshooting keys for bootstrap status, failed/current step, recorded environment/provider, and update timestamp. `pantheon-local status` may display those fields. Their presence does not make checkout-local state a stable machine API or application configuration.
 
+Readiness consumes the recorded Pantheon Tag and provider identity when available but does not add a persistent readiness-result cache. The current Drupal/Git state is inspected fresh on each run.
+
 ## Human-readable output
 
 Normal command output is designed for developers and may gain additional labeled fields in patch releases. Existing labels should not be casually renamed or removed within `0.1.x`.
 
 The text output is **not** yet a stable machine-readable API. Scripts that require a formal structured output format should wait for an explicitly documented JSON/porcelain interface rather than parsing incidental spacing.
 
-Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success is exit `0`, failure is non-zero.
+Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success is exit `0`, failure is nonzero. A successful readiness inspection may still report a review-required state, as described above.
 
 ## Packaging contract
 

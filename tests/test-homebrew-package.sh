@@ -90,6 +90,7 @@ FORMULA_CLI="$PREFIX/bin/pantheon-local"
 [ -x "$PREFIX/libexec/libexec/pantheon-local-config-profile" ] || fail 'Homebrew tag-profile module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-provider-url" ] || fail 'Homebrew provider URL module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-pull" ] || fail 'Homebrew pull module is missing'
+[ -x "$PREFIX/libexec/libexec/pantheon-local-readiness" ] || fail 'Homebrew readiness module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-setup" ] || fail 'Homebrew setup module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-status" ] || fail 'Homebrew status module is missing'
 [ -f "$PREFIX/libexec/VERSION" ] || fail 'Homebrew VERSION is missing'
@@ -98,6 +99,7 @@ expected="pantheon-local $VERSION"
 assert_eq "$("$FORMULA_CLI" --version)" "$expected"
 assert_eq "$("$FORMULA_CLI" version)" "$expected"
 "$FORMULA_CLI" setup --help | grep -F 'pantheon-local setup' >/dev/null 2>&1 || fail 'Homebrew setup help is unavailable'
+"$FORMULA_CLI" readiness --help | grep -F 'pantheon-local readiness' >/dev/null 2>&1 || fail 'Homebrew readiness help is unavailable'
 
 TEST_HOME="$TMP_ROOT/home"
 CALLER_CONFIG="$TMP_ROOT/caller-config"

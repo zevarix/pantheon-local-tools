@@ -14,15 +14,17 @@ The project follows Semantic Versioning for its public command/configuration con
 - Added bootstrap status/step/timestamp reporting to checkout-local state and `pantheon-local status`.
 - Added `pantheon-local readiness [--provider ddev|lando]` for read-oriented `full-export` Drupal configuration inspection using the recorded Tag profile, configured config path, provider-owned Drush, Config Ignore module-state reporting, and final Git state.
 - Added fail-closed `overlay-delta` readiness reporting that validates the configured protected partial path and Git state without invoking a provider/Drush or treating file count/missing YAML as drift.
+- Added explicit `pantheon-local config export [--provider ddev|lando] [--yes]` for confirmed `full-export` Drupal configuration mutation with clean-path preflight, Config Ignore runtime awareness, post-export change reporting, and no automatic Git commit/push.
 
 ### Changed
 
 - `pantheon-local config list` now reports configured Tag profile properties in addition to the established root/provider and Tag-directory lines.
 - `pantheon-local config tag unset TAG` now removes that Tag's optional profile properties so stale strategy/path state is not orphaned after route deletion.
-- Debian/Homebrew/release packaging coverage now includes the Tag-profile, Drupal-setup, and readiness command modules.
+- Debian/Homebrew/release packaging coverage now includes the Tag-profile, Drupal-setup, readiness, and explicit config-export command modules.
 - Drupal setup now composes the existing guarded database-only pull after provider-owned Composer install, then runs `drush updb -y` and `drush cr`, stopping on the first failed step.
 - Full-export readiness now verifies the configured profile path against Drupal's runtime config-sync path, reports configuration differences as review states rather than automatically exporting, and fails if inspection itself changes Git-visible source state.
 - Readiness now rejects configured directories that escape the Git project root through filesystem links. Overlay-delta reports `Owning validation: unavailable` / `Readiness: unavailable` and exits nonzero until a reliable non-destructive owning validation mechanism exists.
+- Config export refuses `overlay-delta`, requires the configured full-export path to be Git-clean before mutation, requires a reliable Config Ignore module-state check, and reports partial local changes if provider-owned `drush config:export` fails after writing files.
 
 ## 0.1.1 — 2026-08-28
 

@@ -42,7 +42,7 @@ First patch release after v0.1.0, focused on lower-friction onboarding, self-doc
 - Added non-interactive `config init --root PATH` and `--provider auto|ddev|lando` options for experienced users and automation.
 - Added complete top-level `pantheon-local help` / `pantheon-local --help` output that enumerates the supported public command surface, important options, provider-detection semantics, and representative examples.
 - Published the current stable release through the public Homebrew tap at `zevarix/tap`.
-- Published a signed Debian/Ubuntu/WSL APT repository on GitHub Pages with dedicated `Signed-By` trust.
+- Published a signed Debian/Ubuntu/WSL APT repository on GitHub Pages with dedicated `Signed-By` keyring trust, hosted-Ubuntu validation, and real WSL2 validation.
 - Added the public Pantheon Local Tools product homepage at the same GitHub Pages origin used by the signed APT repository.
 - Added a one-command Debian/Ubuntu/WSL APT bootstrap that verifies the canonical archive fingerprint, configures the scoped keyring/source, refreshes APT, and installs the package.
 

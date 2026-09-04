@@ -148,7 +148,8 @@ help_output=$(bash "$CLI" multidev create --help)
 assert_contains "$help_output" 'THIS COMMAND PERFORMS AN EXPLICIT REMOTE PANTHEON WRITE'
 assert_contains "$help_output" 'at most 11 characters'
 assert_contains "$help_output" '--yes'
-assert_contains "$help_output" 'remote Multidev is deliberately preserved'
+assert_contains "$help_output" 'If remote creation succeeds but local checkout/start fails'
+assert_contains "$help_output" 'Multidev is deliberately preserved.'
 
 # Dry-run validates remote/local inputs but performs neither remote creation nor local checkout.
 : > "$MOCK_TERMINUS_LOG"

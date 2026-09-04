@@ -13,7 +13,7 @@ Usage:
 Commands:
   pantheon-local config init [--root PATH] [--provider auto|ddev|lando]
       Guided first-run setup. With flags, configure root and/or provider
-      noninteractively.
+      non-interactively.
 
   pantheon-local config path
       Print the active configuration file path.

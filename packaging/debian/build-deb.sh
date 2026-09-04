@@ -43,6 +43,7 @@ install -m 0755 "$REPO_ROOT/libexec/pantheon-local-core" "$APP_ROOT/libexec/pant
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-config-profile" "$APP_ROOT/libexec/pantheon-local-config-profile"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-provider-url" "$APP_ROOT/libexec/pantheon-local-provider-url"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-pull" "$APP_ROOT/libexec/pantheon-local-pull"
+install -m 0755 "$REPO_ROOT/libexec/pantheon-local-readiness" "$APP_ROOT/libexec/pantheon-local-readiness"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-setup" "$APP_ROOT/libexec/pantheon-local-setup"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-status" "$APP_ROOT/libexec/pantheon-local-status"
 install -m 0644 "$VERSION_FILE" "$APP_ROOT/VERSION"
@@ -62,8 +63,8 @@ Depends: bash, git
 Homepage: https://github.com/zevarix/pantheon-local-tools
 Description: Provider-neutral local development helpers for Pantheon
  Pantheon Local Tools provides a consistent CLI for Pantheon multidev
- checkout, Drupal bootstrap, data pull, and local status workflows with DDEV
- and Lando.
+ checkout, Drupal bootstrap/readiness, data pull, and local status workflows
+ with DDEV and Lando.
 EOF
 
 chmod 0755 "$CONTROL_ROOT"

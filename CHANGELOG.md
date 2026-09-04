@@ -12,13 +12,15 @@ The project follows Semantic Versioning for its public command/configuration con
 - Added `pantheon-local config tag profile get/set/unset/list` with focused help, regression coverage, generic examples, and no organization-specific built-ins.
 - Added checkout-local `pantheon-local setup [--provider ddev|lando] [--dry-run]` for provider-aware Drupal bootstrap using the checkout's recorded Pantheon environment.
 - Added bootstrap status/step/timestamp reporting to checkout-local state and `pantheon-local status`.
+- Added `pantheon-local readiness [--provider ddev|lando]` for read-oriented `full-export` Drupal configuration inspection using the recorded Tag profile, configured config path, provider-owned Drush, Config Ignore module-state reporting, and final Git state.
 
 ### Changed
 
 - `pantheon-local config list` now reports configured Tag profile properties in addition to the established root/provider and Tag-directory lines.
 - `pantheon-local config tag unset TAG` now removes that Tag's optional profile properties so stale strategy/path state is not orphaned after route deletion.
-- Debian/Homebrew/release packaging coverage now includes the Tag-profile and Drupal-setup command modules.
+- Debian/Homebrew/release packaging coverage now includes the Tag-profile, Drupal-setup, and readiness command modules.
 - Drupal setup now composes the existing guarded database-only pull after provider-owned Composer install, then runs `drush updb -y` and `drush cr`, stopping on the first failed step.
+- Full-export readiness now verifies the configured profile path against Drupal's runtime config-sync path, reports configuration differences as review states rather than automatically exporting, and fails if inspection itself changes Git-visible source state.
 
 ## 0.1.1 — 2026-08-28
 

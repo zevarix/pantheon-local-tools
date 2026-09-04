@@ -65,6 +65,11 @@ Commands:
       Pantheon environment: start provider, Composer install, guarded local
       database pull, drush updb, then drush cr. --dry-run prints the plan only.
 
+  pantheon-local readiness [--provider ddev|lando]
+      Inspect the matched tag profile's Drupal configuration readiness without
+      exporting config or starting the provider. full-export is supported now;
+      unsupported strategies fail safely instead of being reinterpreted.
+
   pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]
       Refresh local Pantheon database/files without changing checked-out Git
       code. By default both database and files are pulled.
@@ -97,6 +102,7 @@ Examples:
   pantheon-local multidev example.feature --dry-run
   pantheon-local setup --dry-run
   pantheon-local setup
+  pantheon-local readiness
   pantheon-local pull test --database-only
   pantheon-local status
 
@@ -107,6 +113,7 @@ Help:
   pantheon-local config tag profile --help
   pantheon-local multidev --help
   pantheon-local setup --help
+  pantheon-local readiness --help
   pantheon-local pull --help
   pantheon-local status --help
 USAGE
@@ -152,6 +159,7 @@ LIBEXEC_DIR="$PROJECT_ROOT/libexec"
 CORE="$LIBEXEC_DIR/pantheon-local-core"
 PROFILE="$LIBEXEC_DIR/pantheon-local-config-profile"
 PULL="$LIBEXEC_DIR/pantheon-local-pull"
+READINESS="$LIBEXEC_DIR/pantheon-local-readiness"
 SETUP="$LIBEXEC_DIR/pantheon-local-setup"
 STATUS="$LIBEXEC_DIR/pantheon-local-status"
 
@@ -169,6 +177,11 @@ case "$command" in
     [ -x "$PULL" ] || die "pull module is missing or not executable: $PULL"
     shift
     exec "$PULL" "$@"
+    ;;
+  readiness)
+    [ -x "$READINESS" ] || die "readiness module is missing or not executable: $READINESS"
+    shift
+    exec "$READINESS" "$@"
     ;;
   setup)
     [ -x "$SETUP" ] || die "setup module is missing or not executable: $SETUP"

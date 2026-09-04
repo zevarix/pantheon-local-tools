@@ -1,0 +1,288 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="pantheon-local"
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+PROFILE="$SCRIPT_DIR/pantheon-local-config-profile"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local readiness [--provider ddev|lando]
+
+Inspect Drupal configuration readiness for the current Pantheon Local Tools-
+managed checkout without exporting configuration or starting the provider.
+
+Current strategy support:
+  full-export    Inspect the matched tag profile's configured config-path.
+  overlay-delta  Not yet supported by readiness; the command fails safely.
+
+Inspection steps for full-export:
+  1. Resolve the recorded Pantheon Tag and its config-strategy/config-path.
+  2. Verify the configured path exists and matches Drupal's runtime config-sync
+     path reported by provider-owned Drush.
+  3. Run provider-owned drush config:status --format=list.
+  4. Detect whether the Config Ignore module is enabled when Drush can report it.
+  5. Report the final Git working-tree state and readiness summary.
+
+Safety and exit semantics:
+  * No drush config:export / cex is run. Configuration files are not written.
+  * The provider is not started or rebuilt. If provider-owned Drush cannot run,
+    readiness fails instead of starting the environment implicitly.
+  * Drupal configuration differences and an already-modified Git working tree
+    are reportable review states and still exit 0 when inspection succeeds.
+  * Missing/unsupported profile data, provider/Drush failures, runtime path
+    mismatch, or Git changes caused during inspection exit nonzero.
+  * Config Ignore detection is advisory. If module-state inspection is
+    unavailable, readiness reports "unavailable" rather than guessing.
+
+Examples:
+  pantheon-local readiness
+  pantheon-local readiness --provider ddev
+USAGE
+}
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+git_root() {
+  git rev-parse --show-toplevel 2>/dev/null || die 'readiness must be run inside a Git checkout'
+}
+
+git_dir_for_root() {
+  local root=$1 git_dir
+  git_dir=$(git -C "$root" rev-parse --git-dir)
+  case "$git_dir" in
+    /*) printf '%s\n' "$git_dir" ;;
+    *) printf '%s/%s\n' "$root" "$git_dir" ;;
+  esac
+}
+
+state_get() {
+  local state=$1 key=$2
+  [ -f "$state" ] || return 1
+  git config --file "$state" --get "$key" 2>/dev/null
+}
+
+provider_config_present() {
+  local root=$1 provider=$2
+  case "$provider" in
+    ddev) [ -f "$root/.ddev/config.yaml" ] ;;
+    lando) [ -f "$root/.lando.yml" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+detect_provider() {
+  local root=$1 has_ddev=false has_lando=false
+  provider_config_present "$root" ddev && has_ddev=true
+  provider_config_present "$root" lando && has_lando=true
+
+  case "$has_ddev:$has_lando" in
+    true:false) printf '%s\n' ddev ;;
+    false:true) printf '%s\n' lando ;;
+    true:true) die 'both DDEV and Lando project configuration were found; choose --provider explicitly' ;;
+    false:false) die 'neither DDEV nor Lando project configuration was found' ;;
+  esac
+}
+
+resolve_provider() {
+  local root=$1 state=$2 override=$3 recorded=''
+
+  if [ -n "$override" ]; then
+    case "$override" in
+      ddev|lando) ;;
+      *) die '--provider must be ddev or lando' ;;
+    esac
+    provider_config_present "$root" "$override" || \
+      die "$override provider selected but its project configuration is missing"
+    printf '%s\n' "$override"
+    return
+  fi
+
+  recorded=$(state_get "$state" local.provider || true)
+  if [ -n "$recorded" ]; then
+    case "$recorded" in
+      ddev|lando)
+        provider_config_present "$root" "$recorded" || \
+          die "recorded provider $recorded no longer has project configuration"
+        printf '%s\n' "$recorded"
+        return
+        ;;
+      *) die "unsupported provider recorded in local state: $recorded" ;;
+    esac
+  fi
+
+  detect_provider "$root"
+}
+
+profile_get() {
+  local tag=$1 property=$2
+  [ -x "$PROFILE" ] || die "tag-profile module is missing or not executable: $PROFILE"
+  "$PROFILE" get "$tag" "$property"
+}
+
+run_drush_capture() {
+  local root=$1 provider=$2
+  shift 2
+  (cd "$root" && "$provider" drush "$@")
+}
+
+runtime_path_matches_profile() {
+  local runtime=${1%/} configured=$2 stripped=$1
+
+  while :; do
+    case "$stripped" in
+      ./*) stripped=${stripped#./} ;;
+      ../*) stripped=${stripped#../} ;;
+      *) break ;;
+    esac
+  done
+  stripped=${stripped%/}
+
+  case "$runtime" in
+    "$configured"|*/"$configured") return 0 ;;
+  esac
+  [ "$stripped" = "$configured" ]
+}
+
+nonempty_lines() {
+  grep -v '^[[:space:]]*$' || true
+}
+
+detect_config_ignore() {
+  local root=$1 provider=$2 modules
+  if ! modules=$(run_drush_capture "$root" "$provider" pm:list --type=module --status=enabled --field=name 2>/dev/null); then
+    printf '%s\n' unavailable
+    return
+  fi
+
+  if printf '%s\n' "$modules" | grep -Fx 'config_ignore' >/dev/null 2>&1; then
+    printf '%s\n' enabled
+  else
+    printf '%s\n' disabled
+  fi
+}
+
+readiness_command() {
+  local provider_override='' root git_dir state tag strategy config_path provider
+  local runtime_config_path config_output config_entries config_state config_ignore
+  local head_before head_after git_before git_after git_state readiness
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --provider)
+        [ "$#" -ge 2 ] || die '--provider requires ddev or lando'
+        provider_override=$2
+        shift 2
+        ;;
+      -h|--help|help)
+        usage
+        return
+        ;;
+      --*) die "unknown readiness option: $1" ;;
+      *) die 'usage: pantheon-local readiness [--provider ddev|lando]' ;;
+    esac
+  done
+
+  require_command git
+  require_command grep
+  root=$(git_root)
+  git_dir=$(git_dir_for_root "$root")
+  state="$git_dir/pantheon-local-tools/state"
+  [ -f "$state" ] || \
+    die 'readiness requires a Pantheon Local Tools-managed checkout with recorded Pantheon Tag state'
+
+  tag=$(state_get "$state" pantheon.tag || true)
+  [ -n "$tag" ] || \
+    die 'readiness requires checkout-local pantheon.tag state so the matching profile can be resolved'
+
+  strategy=$(profile_get "$tag" config-strategy)
+  config_path=$(profile_get "$tag" config-path)
+  case "$strategy" in
+    full-export) ;;
+    overlay-delta) die 'overlay-delta readiness is not implemented yet; refusing to apply full-export semantics' ;;
+    *) die "unsupported config strategy for readiness: $strategy" ;;
+  esac
+
+  [ -d "$root/$config_path" ] || \
+    die "configured full-export config-path does not exist as a directory: $config_path"
+
+  provider=$(resolve_provider "$root" "$state" "$provider_override")
+  require_command "$provider"
+
+  head_before=$(git -C "$root" rev-parse HEAD)
+  git_before=$(git -C "$root" status --porcelain --untracked-files=normal)
+
+  if ! runtime_config_path=$(run_drush_capture "$root" "$provider" core:status --field=config-sync); then
+    die 'provider-owned drush core:status failed; readiness inspection could not verify Drupal config-sync path'
+  fi
+  runtime_config_path=${runtime_config_path%$'\r'}
+  [ -n "$runtime_config_path" ] || die 'Drupal runtime config-sync path was empty'
+  runtime_path_matches_profile "$runtime_config_path" "$config_path" || \
+    die "configured config-path $config_path does not match Drupal runtime config-sync path: $runtime_config_path"
+
+  if ! config_output=$(run_drush_capture "$root" "$provider" config:status --format=list); then
+    die 'provider-owned drush config:status failed; readiness inspection is incomplete'
+  fi
+  config_entries=$(printf '%s\n' "$config_output" | nonempty_lines)
+  if [ -n "$config_entries" ]; then
+    config_state='differences detected'
+  else
+    config_state='synchronized'
+  fi
+
+  config_ignore=$(detect_config_ignore "$root" "$provider")
+
+  head_after=$(git -C "$root" rev-parse HEAD)
+  git_after=$(git -C "$root" status --porcelain --untracked-files=normal)
+  [ "$head_after" = "$head_before" ] || \
+    die 'readiness inspection changed Git HEAD; refusing to report readiness'
+  [ "$git_after" = "$git_before" ] || \
+    die 'readiness inspection changed the Git working tree; refusing to report readiness'
+
+  if [ -n "$git_after" ]; then
+    git_state=modified
+  else
+    git_state=clean
+  fi
+
+  if [ "$config_state" = 'differences detected' ] && [ "$git_state" = modified ]; then
+    readiness='review configuration differences and working tree'
+  elif [ "$config_state" = 'differences detected' ]; then
+    readiness='review configuration differences'
+  elif [ "$git_state" = modified ]; then
+    readiness='review working tree'
+  else
+    readiness=ready
+  fi
+
+  printf 'Pantheon Local Tools readiness\n\n'
+  printf 'Directory:             %s\n' "$root"
+  printf 'Pantheon Tag:          %s\n' "$tag"
+  printf 'Config strategy:       %s\n' "$strategy"
+  printf 'Configured config path:%s%s\n' ' ' "$config_path"
+  printf 'Provider:              %s\n' "$provider"
+  printf 'Drupal configuration:  %s\n' "$config_state"
+  printf 'Config Ignore:         %s\n' "$config_ignore"
+  printf 'Config export:         not performed\n'
+  printf 'Git working tree:      %s\n' "$git_state"
+  printf 'Readiness:             %s\n' "$readiness"
+
+  if [ "$config_state" = 'differences detected' ]; then
+    printf '\nConfiguration differences were detected. Review them before choosing any export action.\n'
+    if [ "$config_ignore" = enabled ]; then
+      printf 'Config Ignore is enabled; PLT does not reinterpret its matching rules or assume the differences are errors.\n'
+    elif [ "$config_ignore" = unavailable ]; then
+      printf 'Config Ignore state was unavailable; review runtime module state as part of the difference review.\n'
+    fi
+  fi
+}
+
+readiness_command "$@"

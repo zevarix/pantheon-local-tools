@@ -81,12 +81,12 @@ pantheon-local config set root ~/sites/pantheon
 pantheon-local config set provider ddev
 ```
 
-Optional Pantheon Tag profiles can describe how later setup/config-readiness workflows should treat a routed project without hard-coding organization names or config paths:
+Optional Pantheon Tag profiles describe strategy-aware configuration workflows without hard-coding organization names or config paths:
 
 ```bash
 pantheon-local config tag set 'Example Group' example-group
 pantheon-local config tag profile set 'Example Group' config-strategy full-export
-pantheon-local config tag profile set 'Example Group' config-path config/sync
+pantheon-local config tag profile set 'Example Group' config-path config/project-export
 ```
 
 See [`docs/configuration.md`](docs/configuration.md) for the Git-compatible profile contract, including `full-export` versus `overlay-delta` semantics.
@@ -119,6 +119,14 @@ pantheon-local setup
 ```
 
 Setup starts the selected provider, runs Composer inside that provider, reuses the guarded database-only pull from the checkout's recorded Pantheon environment, then runs `drush updb -y` and `drush cr`. See [`docs/setup.md`](docs/setup.md) for its mutation and retry contract.
+
+For a checkout whose recorded Tag uses a complete `full-export` profile, inspect Drupal configuration readiness without exporting anything:
+
+```bash
+pantheon-local readiness
+```
+
+Readiness uses the profile's configured path, verifies it against Drupal's runtime config-sync path, reports `drush config:status`, Config Ignore module state when detectable, and the Git working tree. Differences are review states rather than automatic failures, and no `drush cex` / `config:export` is performed. See [`docs/readiness.md`](docs/readiness.md).
 
 ## Commands
 
@@ -153,6 +161,9 @@ pantheon-local setup
   --provider ddev|lando
   --dry-run
 
+pantheon-local readiness
+  --provider ddev|lando
+
 pantheon-local pull ENV
   --database-only
   --files-only
@@ -163,7 +174,7 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
+Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local multidev --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
 
 ## Core workflows
 
@@ -186,6 +197,18 @@ The required order is provider start → provider-owned `composer install` → e
 Setup does not pull files or Git code, export Drupal configuration, push to Pantheon, or rewrite provider-owned base configuration. `multidev --start` remains start-only; setup is a separate command.
 
 See [`docs/setup.md`](docs/setup.md) for provider mappings, preflight, failure/retry behavior, upstream references, and state fields.
+
+### Drupal configuration readiness
+
+`pantheon-local readiness` is a standalone, read-oriented inspection for the current PLT-managed checkout. The initial implementation supports only profiles whose recorded Tag declares `config-strategy=full-export` plus a configured `config-path`.
+
+Readiness does not start/rebuild the provider. It uses provider-owned Drush to verify that Drupal's runtime config-sync path corresponds to the configured profile path, inspect active-versus-exported configuration differences, and detect whether Config Ignore is enabled when that module-state query is available. It also compares Git state before and after inspection so a supposedly read-only inspection cannot silently mutate source.
+
+Synchronized configuration and a clean tree report `ready`. Configuration differences and a pre-existing modified tree report review-required states but still exit successfully when the inspection itself is complete. Provider/Drush failures, path mismatch, unsupported/incomplete profiles, or Git changes caused during inspection fail nonzero.
+
+No configuration export is performed. Config Ignore's matching rules are not reimplemented, and an `overlay-delta` profile fails closed until its separate #71 strategy contract exists.
+
+See [`docs/readiness.md`](docs/readiness.md) for the complete full-export, Config Ignore, Git-integrity, and exit-status contract.
 
 ### Data pulls
 
@@ -238,7 +261,7 @@ Pantheon Tag routing remains the identity anchor for profile configuration. An e
 - `config-strategy=overlay-delta` for a protected site-specific delta/override set; and
 - a validated relative `config-path` appropriate to that project.
 
-Profile settings remain declarative. They do not run Drupal, export config, start providers, pull data, or mutate Pantheon. Later feature tickets consume this configuration under their own safety contracts.
+Profile settings remain declarative. They do not themselves run Drupal, export config, start providers, pull data, or mutate Pantheon. Commands that consume them apply separate safety contracts. `pantheon-local readiness` currently consumes complete `full-export` profiles only.
 
 Examples:
 
@@ -248,7 +271,7 @@ pantheon-local config init --provider lando
 pantheon-local config set root ~/work/pantheon
 pantheon-local config tag set "Client Sites" clients
 pantheon-local config tag profile set "Client Sites" config-strategy full-export
-pantheon-local config tag profile set "Client Sites" config-path config/sync
+pantheon-local config tag profile set "Client Sites" config-path config/project-export
 pantheon-local config tag profile list "Client Sites"
 pantheon-local config list
 ```
@@ -283,6 +306,9 @@ Pantheon Local Tools is intentionally conservative around developer machines and
 - `pantheon-local setup` uses only the checkout's recorded Pantheon environment for its database refresh and never infers Live/current-branch semantics;
 - setup runs Composer inside the selected provider and stops immediately when provider start, Composer, database pull, `updb`, or cache rebuild fails;
 - setup does not pull files/Git code, export config, push to Pantheon, or change the meaning of `multidev --start`;
+- `pantheon-local readiness` does not start/rebuild providers or export config and refuses mismatched/unsupported profile semantics;
+- readiness reports Config Ignore conservatively without hiding drift or duplicating Config Ignore matching rules;
+- readiness verifies Git state did not change as a side effect of inspection;
 - provider/project configuration remains provider-owned;
 - provider detection and Pantheon Tag routing fail on ambiguity rather than guessing;
 - unsupported Tag profile strategies and unsafe project-relative config paths fail instead of being guessed;
@@ -332,6 +358,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 - [`docs/configuration.md`](docs/configuration.md) — Git-compatible user configuration and Pantheon Tag profile strategies
 - [`docs/multidev.md`](docs/multidev.md) — Multidev checkout behavior and safety
 - [`docs/setup.md`](docs/setup.md) — provider-aware Drupal checkout bootstrap, failure/retry behavior, and local mutation boundaries
+- [`docs/readiness.md`](docs/readiness.md) — full-export Drupal config inspection, Config Ignore reporting, Git-integrity, and exit semantics
 - [`docs/pull.md`](docs/pull.md) — database/files pull behavior and Git protection
 - [`docs/status.md`](docs/status.md) — read-only checkout inspection contract
 - [`docs/local-provider-architecture.md`](docs/local-provider-architecture.md) — DDEV/Lando boundary and provider architecture

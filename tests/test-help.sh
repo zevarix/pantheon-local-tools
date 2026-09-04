@@ -68,7 +68,7 @@ setup_help=$(bash "$CLI" setup --help)
 assert_contains "$setup_help" 'pantheon-local setup [--provider ddev|lando] [--dry-run]'
 assert_contains "$setup_help" 'provider-owned composer install'
 assert_contains "$setup_help" 'replaces local database data'
-assert_contains "$setup_help" 'never from the Git branch name'
+assert_contains "$setup_help" 'checkout-local PLT state'
 assert_contains "$setup_help" 'Setup stops on the first failed step'
 assert_contains "$setup_help" 'Fix the reported failure and run pantheon-local setup again.'
 

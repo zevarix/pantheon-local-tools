@@ -120,13 +120,15 @@ pantheon-local setup
 
 Setup starts the selected provider, runs Composer inside that provider, reuses the guarded database-only pull from the checkout's recorded Pantheon environment, then runs `drush updb -y` and `drush cr`. See [`docs/setup.md`](docs/setup.md) for its mutation and retry contract.
 
-For a checkout whose recorded Tag uses a complete `full-export` profile, inspect Drupal configuration readiness without exporting anything:
+Inspect the recorded Tag profile's configuration boundary without exporting anything:
 
 ```bash
 pantheon-local readiness
 ```
 
-Readiness uses the profile's configured path, verifies it against Drupal's runtime config-sync path, reports `drush config:status`, Config Ignore module state when detectable, and the Git working tree. Differences are review states rather than automatic failures, and no `drush cex` / `config:export` is performed. See [`docs/readiness.md`](docs/readiness.md).
+For `full-export`, readiness uses the configured path, verifies it against Drupal's runtime config-sync path, reports `drush config:status`, Config Ignore module state when detectable, and the Git working tree. Differences are review states rather than automatic failures.
+
+For `overlay-delta`, readiness validates that the configured protected partial path exists and remains inside the project root, reports Git state, performs no provider/Drush call, and exits nonzero with `Owning validation: unavailable` rather than inventing drift/readiness semantics. Missing YAML, directory size, and file count are not treated as drift. Neither strategy performs `drush cex` / `config:export`. See [`docs/readiness.md`](docs/readiness.md).
 
 ## Commands
 
@@ -200,15 +202,17 @@ See [`docs/setup.md`](docs/setup.md) for provider mappings, preflight, failure/r
 
 ### Drupal configuration readiness
 
-`pantheon-local readiness` is a standalone, read-oriented inspection for the current PLT-managed checkout. The initial implementation supports only profiles whose recorded Tag declares `config-strategy=full-export` plus a configured `config-path`.
+`pantheon-local readiness` is a standalone, strategy-aware inspection for the current PLT-managed checkout. The recorded Tag must declare either `config-strategy=full-export` or `config-strategy=overlay-delta` plus a configured `config-path`.
 
-Readiness does not start/rebuild the provider. It uses provider-owned Drush to verify that Drupal's runtime config-sync path corresponds to the configured profile path, inspect active-versus-exported configuration differences, and detect whether Config Ignore is enabled when that module-state query is available. It also compares Git state before and after inspection so a supposedly read-only inspection cannot silently mutate source.
+For `full-export`, readiness does not start/rebuild the provider. It uses provider-owned Drush to verify that Drupal's runtime config-sync path corresponds to the configured profile path, inspect active-versus-exported configuration differences, and detect whether Config Ignore is enabled when that module-state query is available. It also compares Git state before and after delegated inspection so a supposedly read-only command cannot silently mutate source.
 
-Synchronized configuration and a clean tree report `ready`. Configuration differences and a pre-existing modified tree report review-required states but still exit successfully when the inspection itself is complete. Provider/Drush failures, path mismatch, unsupported/incomplete profiles, or Git changes caused during inspection fail nonzero.
+Synchronized full-export configuration and a clean tree report `ready`. Configuration differences and a pre-existing modified tree report review-required states but still exit successfully when the inspection itself is complete. Provider/Drush failures, path mismatch, unsupported/incomplete profiles, or Git changes caused during delegated inspection fail nonzero.
 
-No configuration export is performed. Config Ignore's matching rules are not reimplemented, and an `overlay-delta` profile fails closed until its separate #71 strategy contract exists.
+For `overlay-delta`, readiness recognizes the configured path as a protected partial override set. It validates that the directory exists and stays physically inside the Git project root, reports the current Git working tree, and performs no provider or Drush command while a reliable owning validation mechanism is unavailable. Missing YAML, directory size, and file count do not imply drift. The command reports `Owning validation: unavailable` / `Readiness: unavailable` and exits nonzero rather than claiming success.
 
-See [`docs/readiness.md`](docs/readiness.md) for the complete full-export, Config Ignore, Git-integrity, and exit-status contract.
+No configuration export is performed for either strategy. Config Ignore's matching rules are not reimplemented, and full-export semantics are never applied to an overlay/delta directory.
+
+See [`docs/readiness.md`](docs/readiness.md) for the complete strategy, Config Ignore, path-containment, Git-integrity, and exit-status contract.
 
 ### Data pulls
 
@@ -261,7 +265,7 @@ Pantheon Tag routing remains the identity anchor for profile configuration. An e
 - `config-strategy=overlay-delta` for a protected site-specific delta/override set; and
 - a validated relative `config-path` appropriate to that project.
 
-Profile settings remain declarative. They do not themselves run Drupal, export config, start providers, pull data, or mutate Pantheon. Commands that consume them apply separate safety contracts. `pantheon-local readiness` currently consumes complete `full-export` profiles only.
+Profile settings remain declarative. They do not themselves run Drupal, export config, start providers, pull data, or mutate Pantheon. Commands that consume them apply separate safety contracts. `pantheon-local readiness` consumes both strategy labels: full-export can complete provider/Drush inspection, while overlay-delta currently reports its protected boundary and fails closed when owning validation is unavailable.
 
 Examples:
 
@@ -307,8 +311,11 @@ Pantheon Local Tools is intentionally conservative around developer machines and
 - setup runs Composer inside the selected provider and stops immediately when provider start, Composer, database pull, `updb`, or cache rebuild fails;
 - setup does not pull files/Git code, export config, push to Pantheon, or change the meaning of `multidev --start`;
 - `pantheon-local readiness` does not start/rebuild providers or export config and refuses mismatched/unsupported profile semantics;
-- readiness reports Config Ignore conservatively without hiding drift or duplicating Config Ignore matching rules;
-- readiness verifies Git state did not change as a side effect of inspection;
+- full-export readiness reports Config Ignore conservatively without hiding drift or duplicating Config Ignore matching rules;
+- readiness rejects configured directories that escape the Git project root through filesystem links;
+- readiness verifies delegated full-export inspection does not change Git state;
+- overlay-delta readiness never interprets missing YAML, directory size, or file count as drift;
+- overlay-delta readiness does not invoke providers/Drush while owning validation is unavailable and exits nonzero rather than claiming readiness;
 - provider/project configuration remains provider-owned;
 - provider detection and Pantheon Tag routing fail on ambiguity rather than guessing;
 - unsupported Tag profile strategies and unsafe project-relative config paths fail instead of being guessed;
@@ -358,7 +365,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 - [`docs/configuration.md`](docs/configuration.md) — Git-compatible user configuration and Pantheon Tag profile strategies
 - [`docs/multidev.md`](docs/multidev.md) — Multidev checkout behavior and safety
 - [`docs/setup.md`](docs/setup.md) — provider-aware Drupal checkout bootstrap, failure/retry behavior, and local mutation boundaries
-- [`docs/readiness.md`](docs/readiness.md) — full-export Drupal config inspection, Config Ignore reporting, Git-integrity, and exit semantics
+- [`docs/readiness.md`](docs/readiness.md) — strategy-aware Drupal config readiness, overlay fail-closed reporting, Config Ignore, path containment, Git-integrity, and exit semantics
 - [`docs/pull.md`](docs/pull.md) — database/files pull behavior and Git protection
 - [`docs/status.md`](docs/status.md) — read-only checkout inspection contract
 - [`docs/local-provider-architecture.md`](docs/local-provider-architecture.md) — DDEV/Lando boundary and provider architecture

@@ -55,7 +55,7 @@ Tag routing remains backward compatible. A route can exist with no configuration
 
 ## Optional Tag profile properties
 
-Issue #68 extends the same `[tag "..."]` subsection with two optional properties consumed by later setup/config-readiness work:
+Issue #68 extends the same `[tag "..."]` subsection with two optional properties consumed by setup/config-readiness work:
 
 - `config-strategy` — one of `full-export` or `overlay-delta`;
 - `config-path` — a relative project path such as `config/sync` or `config/site-overrides`.
@@ -115,13 +115,7 @@ Generic example:
 
 The path is configurable. `config/sync` is a common example, not a product assumption.
 
-Issue #70 adds the read-oriented consumer:
-
-```bash
-pantheon-local readiness
-```
-
-For a PLT-managed checkout whose recorded Pantheon Tag resolves to a `full-export` profile, readiness requires both `config-strategy` and `config-path`, verifies that the configured directory exists, and checks that Drupal's runtime `config-sync` path corresponds to the configured profile path before interpreting `drush config:status` output.
+For a PLT-managed checkout whose recorded Pantheon Tag resolves to a `full-export` profile, `pantheon-local readiness` requires both `config-strategy` and `config-path`, verifies that the configured directory exists and stays physically inside the project root, and checks that Drupal's runtime `config-sync` path corresponds to the configured profile path before interpreting `drush config:status` output.
 
 Readiness reports synchronized/different configuration, Config Ignore module state when detectable, and the final Git working-tree state. It never performs `drush config:export` / `cex`. See [`readiness.md`](readiness.md) for the complete inspection and exit-status contract.
 
@@ -138,9 +132,21 @@ Generic example:
     config-path = config/site-overrides
 ```
 
-A delta directory may contain any small subset of configuration files. Missing YAML, directory size, or file count does not imply drift. Pantheon Local Tools must not treat this profile as permission to run a blanket `drush cex` into the delta path.
+A delta directory may contain any subset of configuration files. Missing YAML, directory size, or file count does not imply drift. Pantheon Local Tools must not treat this profile as permission to run a blanket `drush cex` into the delta path.
 
-The current `pantheon-local readiness` command fails explicitly for `overlay-delta` instead of applying `full-export` rules. Issue #71 owns the strategy-aware readiness behavior after the relevant platform/update mechanism is established.
+`pantheon-local readiness` recognizes this strategy and validates only the generic boundary that PLT can establish safely:
+
+- the Tag/profile resolves through the existing Git-compatible configuration model;
+- the configured path passes the existing project-relative validation rules;
+- the configured directory exists;
+- its physical filesystem location remains inside the Git project root;
+- the current Git working-tree state is reported and preserved.
+
+While no reliable generic non-destructive owning validation mechanism is established, readiness does **not** invoke DDEV, Lando, or Drush for `overlay-delta`. It reports the path as a protected partial override set, reports `Owning validation: unavailable`, performs no export, and exits nonzero rather than claiming the project is ready.
+
+That nonzero result is a safety state, not evidence that the delta is wrong. PLT intentionally does not classify empty, tiny, or large delta sets as drift and does not compare missing files against complete active Drupal configuration.
+
+A future owning-validation implementation must preserve this boundary and may only replace the unavailable state when it has an explicit reliable non-destructive mechanism for the relevant merge/import/update semantics.
 
 ## Validation and failure behavior
 
@@ -162,9 +168,11 @@ overlay-delta
 - contain no empty path segment (`//`);
 - contain no `.` or `..` path segment.
 
+Readiness adds a filesystem-boundary check: even a lexically valid relative path is rejected if the configured directory resolves outside the Git project root through a symlink or another filesystem link.
+
 A profile setter refuses a Pantheon Tag that has no existing `directory` route. This keeps routing identity explicit and prevents configuration-only subsections from silently changing Multidev Tag matching.
 
-The two properties are independently optional so users can build or edit a profile incrementally. A command that requires a complete strategy/path pair validates that requirement itself and fails closed when the profile is incomplete. `pantheon-local readiness` is such a consumer for `full-export`.
+The two properties are independently optional so users can build or edit a profile incrementally. A command that requires a complete strategy/path pair validates that requirement itself and fails closed when the profile is incomplete. `pantheon-local readiness` is such a consumer for both supported strategy labels.
 
 ## Organization-specific values
 
@@ -184,4 +192,4 @@ The profile is declarative routing/setup metadata. It does not grant permission 
 - export Drupal configuration;
 - commit or push project changes.
 
-A consumer such as `pantheon-local readiness` may run explicitly documented provider-owned, read-oriented Drush inspection commands. That consumer remains responsible for its own runtime, mutation, failure, and Git-integrity boundaries.
+A consumer such as `pantheon-local readiness` may run explicitly documented provider-owned, read-oriented Drush inspection commands only when its strategy contract calls for them. Current `overlay-delta` readiness does not invoke provider-owned commands while owning validation semantics remain unavailable. Each consumer remains responsible for its own runtime, mutation, failure, and Git-integrity boundaries.

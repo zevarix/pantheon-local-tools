@@ -13,6 +13,7 @@ The project follows Semantic Versioning for its public command/configuration con
 - Added checkout-local `pantheon-local setup [--provider ddev|lando] [--dry-run]` for provider-aware Drupal bootstrap using the checkout's recorded Pantheon environment.
 - Added bootstrap status/step/timestamp reporting to checkout-local state and `pantheon-local status`.
 - Added `pantheon-local readiness [--provider ddev|lando]` for read-oriented `full-export` Drupal configuration inspection using the recorded Tag profile, configured config path, provider-owned Drush, Config Ignore module-state reporting, and final Git state.
+- Added fail-closed `overlay-delta` readiness reporting that validates the configured protected partial path and Git state without invoking a provider/Drush or treating file count/missing YAML as drift.
 
 ### Changed
 
@@ -21,6 +22,7 @@ The project follows Semantic Versioning for its public command/configuration con
 - Debian/Homebrew/release packaging coverage now includes the Tag-profile, Drupal-setup, and readiness command modules.
 - Drupal setup now composes the existing guarded database-only pull after provider-owned Composer install, then runs `drush updb -y` and `drush cr`, stopping on the first failed step.
 - Full-export readiness now verifies the configured profile path against Drupal's runtime config-sync path, reports configuration differences as review states rather than automatically exporting, and fails if inspection itself changes Git-visible source state.
+- Readiness now rejects configured directories that escape the Git project root through filesystem links. Overlay-delta reports `Owning validation: unavailable` / `Readiness: unavailable` and exits nonzero until a reliable non-destructive owning validation mechanism exists.
 
 ## 0.1.1 — 2026-08-28
 

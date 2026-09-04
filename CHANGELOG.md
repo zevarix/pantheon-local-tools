@@ -8,7 +8,7 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## 0.1.2 — 2026-09-04
 
-Second patch release after v0.1.1, focused on provider-aware Drupal bootstrap and configuration workflows plus explicit guarded Pantheon Multidev creation while preserving the established 0.1.x safety and compatibility contracts.
+Patch release after v0.1.1, focused on provider-aware Drupal bootstrap and configuration workflows plus explicit guarded Pantheon Multidev creation while preserving the established 0.1.x safety and compatibility contracts.
 
 ### Added
 
@@ -93,13 +93,13 @@ First public release of Pantheon Local Tools.
 - Real temporary-tap Homebrew install/test/uninstall coverage on macOS CI.
 - Deterministic `git archive | gzip -n` release source-artifact builder.
 - `SHA256SUMS` generation for release artifacts.
-- Maintainer release procedure covering tag identity, artifacts, GitHub Release, Homebrew tap publication, Debian packaging, and recovery.
+- Maintainer release procedure covering tag identity, artifacts, GitHub Release, Homebrew, Debian packaging, and recovery.
 
 ### Validation completed
 
 - Required shell syntax, ShellCheck, and integration tests on Ubuntu and macOS.
 - Isolated-home clone-installer tests on Ubuntu and macOS.
-- Real macOS + Lando multidev clone, isolated runtime start, Pantheon authentication, explicit database/files pull, provider-derived status, and Git-integrity validation.
+- Real macOS + Lando multidev clone, isolated runtime start validation, Pantheon authentication, explicit database/files pull, provider-derived status, and Git-integrity validation.
 - Real WSL2 + DDEV Pantheon startup, provider-derived status, full database/files pull, database-only/files-only pulls, provenance, credential separation, and Git-integrity validation.
 - Real WSL2 fresh-clone/install/full-suite validation, including native Windows-path rejection, Debian package tests, ShellCheck, shell-startup-file integrity, and clean Git state.
 - Real clean-macOS fresh-clone/install/full-suite validation, including isolated Homebrew package smoke and host-state restoration.

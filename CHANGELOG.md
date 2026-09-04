@@ -6,6 +6,10 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+## 0.1.2 — 2026-09-04
+
+Second patch release after v0.1.1, focused on provider-aware Drupal bootstrap and configuration workflows plus explicit guarded Pantheon Multidev creation while preserving the established 0.1.x safety and compatibility contracts.
+
 ### Added
 
 - Added optional Pantheon Tag profile properties in the existing Git-compatible configuration file: `config-strategy` (`full-export` or `overlay-delta`) and a validated project-relative `config-path`.

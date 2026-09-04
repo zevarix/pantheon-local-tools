@@ -45,6 +45,7 @@ tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/VERSION" >/dev/null 2>&1 || fail 'VER
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/bin/pantheon-local" >/dev/null 2>&1 || fail 'CLI missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-core" >/dev/null 2>&1 || fail 'core module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-config-profile" >/dev/null 2>&1 || fail 'tag-profile module missing from source archive'
+tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-setup" >/dev/null 2>&1 || fail 'setup module missing from source archive'
 if tar -tzf "$SOURCE_ONE" | grep -E '/\.git(/|$)|/dist(/|$)|/\.agents(/|$)' >/dev/null 2>&1; then
   fail 'source archive contains repository-local/private build state'
 fi
@@ -54,6 +55,7 @@ mkdir -p "$EXTRACT"
 tar -xzf "$SOURCE_ONE" -C "$EXTRACT"
 expected="pantheon-local $VERSION"
 assert_eq "$(bash "$EXTRACT/$PREFIX/bin/pantheon-local" --version)" "$expected"
+bash "$EXTRACT/$PREFIX/bin/pantheon-local" setup --help | grep -F 'pantheon-local setup' >/dev/null 2>&1 || fail 'source archive setup help is unavailable'
 
 if command -v dpkg-deb >/dev/null 2>&1; then
   DEB_NAME="pantheon-local-tools_${VERSION}_all.deb"

@@ -66,9 +66,10 @@ Commands:
       database pull, drush updb, then drush cr. --dry-run prints the plan only.
 
   pantheon-local readiness [--provider ddev|lando]
-      Inspect the matched tag profile's Drupal configuration readiness without
-      exporting config or starting the provider. full-export is supported now;
-      unsupported strategies fail safely instead of being reinterpreted.
+      Inspect the matched tag profile's Drupal configuration boundary without
+      exporting config or starting the provider. full-export can complete a
+      readiness inspection; overlay-delta reports its protected partial path
+      and Git state but fails closed while owning validation is unavailable.
 
   pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]
       Refresh local Pantheon database/files without changing checked-out Git

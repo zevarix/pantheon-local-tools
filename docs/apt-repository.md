@@ -152,6 +152,8 @@ Never place a private primary key, private signing subkey, passphrase, decrypted
 
 The initial v0.1.0 repository was published through GitHub Pages with signed `InRelease`/`Release.gpg` metadata. The public WSL2 path was exercised through `apt update`, candidate discovery, install, CLI/config verification, reinstall with configuration preservation, uninstall, and package-file removal. `.github/workflows/validate-published-apt.yml` provides the corresponding clean GitHub-hosted Ubuntu validation against the public URL and separately exercises the one-command bootstrap helper against that same public repository. Both paths assert that the architecture-independent source does not emit a host-architecture mismatch notice.
 
-The product homepage is deployed as part of the same static Pages artifact without changing APT's signed metadata or trust path.
+The v0.1.2 release added the first real previous-version upgrade proof through the public signed repository. In a separate disposable Ubuntu 26.04 WSL2 distribution, published v0.1.1 was installed, representative user-owned configuration was created, and APT upgraded the package to published v0.1.2. The CLI reported the expected version before and after the upgrade. User configuration remained byte-for-byte unchanged, and `.bashrc`, `.bash_profile`, `.bash_login`, `.profile`, `.zshenv`, `.zprofile`, `.zshrc`, `.zlogin`, and `.zlogout` remained byte-for-byte unchanged across prerequisite package installation, v0.1.1 installation, v0.1.2 upgrade, v0.1.2 reinstall, and package removal.
 
-A real previous-version to newer-version upgrade remains deferred until a second stable Debian package has actually been published.
+Future real WSL/WSL2 package validation must use an explicitly disposable distribution/home rather than a maintainer's normal WSL environment. Preserve startup-file/config evidence on failure and keep the disposable target isolated until the validation result has been reviewed.
+
+The product homepage is deployed as part of the same static Pages artifact without changing APT's signed metadata or trust path.

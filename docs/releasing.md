@@ -148,6 +148,8 @@ Verify user configuration remains outside package ownership and survives package
 
 Before advertising upgrade support, exercise a real previous-version -> current-version package upgrade. WSL/WSL2 requires its own real validation pass; Ubuntu CI is useful contract evidence but is not a substitute for WSL runtime proof.
 
+Run real WSL/WSL2 release-package validation only in an explicitly named disposable distribution/home. Never use a maintainer's normal WSL distro or normal home for install/upgrade/reinstall/remove proof. Before any package operation, seed or snapshot the common Bash/Zsh startup files (`.bashrc`, `.bash_profile`, `.bash_login`, `.profile`, `.zshenv`, `.zprofile`, `.zshrc`, `.zlogin`, and `.zlogout`) plus representative user-owned Pantheon Local Tools configuration. Verify those bytes remain unchanged after prerequisite installation, previous-version installation, upgrade, current-version reinstall, and package removal. Fail closed if the runtime distro identity does not match the explicitly requested disposable target, never unregister the target automatically, and preserve evidence on failure until the result is reviewed.
+
 The project website and signed hosted APT repository share this GitHub Pages origin:
 
 ```text
@@ -178,7 +180,7 @@ After publication, verify:
 - Debian installation when shipped;
 - signed APT repository fingerprint/signature and package discovery when Debian distribution is enabled;
 - clean hosted-Ubuntu APT install/reinstall/uninstall through the public HTTPS repository;
-- required WSL2 APT validation through the same public repository;
+- required WSL2 APT install/upgrade/reinstall/remove validation through the same public repository in a disposable distro/home when a previous stable package exists;
 - the GitHub Pages root serves the product homepage rather than a 404, and its install/docs links point at the current maintained procedures;
 - configuration remains user-owned;
 - no provider/project state is created merely by package installation; and

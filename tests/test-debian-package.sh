@@ -22,6 +22,14 @@ assert_eq "$(dpkg-deb -f "$PACKAGE" Version)" "$VERSION"
 assert_eq "$(dpkg-deb -f "$PACKAGE" Architecture)" 'all'
 assert_eq "$(dpkg-deb -f "$PACKAGE" Depends)" 'bash, git'
 
+CONTROL_EXTRACT="$TMP_ROOT/control"
+mkdir -p "$CONTROL_EXTRACT"
+dpkg-deb -e "$PACKAGE" "$CONTROL_EXTRACT"
+for maintainer_file in preinst postinst prerm postrm config triggers; do
+  [ ! -e "$CONTROL_EXTRACT/$maintainer_file" ] ||
+    fail "Debian package unexpectedly contains maintainer hook: $maintainer_file"
+done
+
 EXTRACT="$TMP_ROOT/root"
 mkdir -p "$EXTRACT"
 dpkg-deb -x "$PACKAGE" "$EXTRACT"

@@ -63,3 +63,28 @@ jobs:
           for test in tests/test-*.sh; do
             bash "$test"
           done
+
+  validate-powershell-release-harness:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Parse PowerShell release harness
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          $path = (Resolve-Path 'packaging/release/validate-wsl2-apt-upgrade.ps1').Path
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $path,
+            [ref] $tokens,
+            [ref] $errors
+          ) | Out-Null
+
+          if ($errors.Count -gt 0) {
+            $errors | Format-List | Out-String | Write-Error
+            exit 1
+          }
+
+          Write-Host 'PowerShell release harness syntax: PASS'

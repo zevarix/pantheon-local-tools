@@ -150,6 +150,8 @@ Before advertising upgrade support, exercise a real previous-version -> current-
 
 Run real WSL/WSL2 release-package validation only in an explicitly named disposable distribution/home. Never use a maintainer's normal WSL distro or normal home for install/upgrade/reinstall/remove proof. Before any package operation, seed or snapshot the common Bash/Zsh startup files (`.bashrc`, `.bash_profile`, `.bash_login`, `.profile`, `.zshenv`, `.zprofile`, `.zshrc`, `.zlogin`, and `.zlogout`) plus representative user-owned Pantheon Local Tools configuration. Verify those bytes remain unchanged after prerequisite installation, previous-version installation, upgrade, current-version reinstall, and package removal. Fail closed if the runtime distro identity does not match the explicitly requested disposable target, never unregister the target automatically, and preserve evidence on failure until the result is reviewed.
 
+Use the checked-in harness and disposable-distro lifecycle in [`Disposable WSL2 APT release validation`](wsl2-apt-release-validation.md) for this proof.
+
 The project website and signed hosted APT repository share this GitHub Pages origin:
 
 ```text

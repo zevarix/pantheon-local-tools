@@ -17,6 +17,23 @@ assert_file_contains() {
     fail "expected $file to contain [$expected]"
 }
 
+SHELL_HOME="$TMP_ROOT/home"
+SHELL_SNAPSHOT="$TMP_ROOT/shell-startup-before"
+mkdir -p "$SHELL_HOME" "$SHELL_SNAPSHOT"
+for rc in .bashrc .bash_profile .bash_login .profile .zshenv .zprofile .zshrc .zlogin .zlogout; do
+  printf 'sentinel:%s\n' "$rc" > "$SHELL_HOME/$rc"
+  cp "$SHELL_HOME/$rc" "$SHELL_SNAPSHOT/$rc"
+done
+export HOME="$SHELL_HOME"
+
+assert_shell_startup_files_unchanged() {
+  for rc in .bashrc .bash_profile .bash_login .profile .zshenv .zprofile .zshrc .zlogin .zlogout; do
+    [ -f "$HOME/$rc" ] || fail "APT installer removed shell startup file: $HOME/$rc"
+    cmp -s "$SHELL_SNAPSHOT/$rc" "$HOME/$rc" ||
+      fail "APT installer modified shell startup file: $HOME/$rc"
+  done
+}
+
 MOCK_BIN="$TMP_ROOT/mock-bin"
 CALL_LOG="$TMP_ROOT/calls.log"
 CAPTURE_SOURCE="$TMP_ROOT/pantheon-local-tools.sources"
@@ -117,6 +134,7 @@ assert_file_contains "$CAPTURE_SOURCE" 'Suites: stable'
 assert_file_contains "$CAPTURE_SOURCE" 'Components: main'
 assert_file_contains "$CAPTURE_SOURCE" 'Architectures: all'
 assert_file_contains "$CAPTURE_SOURCE" 'Signed-By: /etc/apt/keyrings/pantheon-local-tools.gpg'
+assert_shell_startup_files_unchanged
 
 # A fingerprint mismatch must fail before any privileged write or APT action.
 : > "$CALL_LOG"
@@ -127,6 +145,7 @@ fi
 if grep -Eq '^(sudo |apt-get |install )' "$CALL_LOG"; then
   fail 'fingerprint mismatch reached a privileged write or APT action'
 fi
+assert_shell_startup_files_unchanged
 
 # The helper is intentionally Linux/APT-only; macOS users should use Homebrew.
 : > "$CALL_LOG"
@@ -134,6 +153,7 @@ if MOCK_UNAME='Darwin' bash "$REPO_ROOT/install-apt.sh" >/dev/null 2>&1; then
   fail 'installer accepted an unsupported non-Linux host'
 fi
 [ ! -s "$CALL_LOG" ] || fail 'unsupported host executed external setup actions'
+assert_shell_startup_files_unchanged
 
 # Root execution must not require sudo.
 : > "$CALL_LOG"
@@ -144,5 +164,6 @@ if grep -Eq '^sudo ' "$CALL_LOG"; then
 fi
 assert_file_contains "$CALL_LOG" 'apt-get update'
 assert_file_contains "$CALL_LOG" 'apt-get install --yes pantheon-local-tools'
+assert_shell_startup_files_unchanged
 
 printf 'APT install tests passed\n'

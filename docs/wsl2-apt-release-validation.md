@@ -49,6 +49,18 @@ pwsh -NoProfile -File .\packaging\release\validate-wsl2-apt-upgrade.ps1 `
   -ConfirmDisposableDistro
 ```
 
+If Windows execution policy refuses an unsigned `.ps1` — commonly when invoking a repository checkout through a `\\wsl.localhost\...` UNC path — do not weaken the machine/user policy. Start a child PowerShell process with a process-local bypass instead:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\packaging\release\validate-wsl2-apt-upgrade.ps1 `
+  -FromVersion '0.1.1' `
+  -ToVersion '0.1.2' `
+  -DistroName $DistroName `
+  -ConfirmDisposableDistro
+```
+
+`-ExecutionPolicy Bypass` on this `pwsh` invocation applies only to that child process; it does not persistently change the current user or machine execution policy. Review the checked-in script before using the bypass.
+
 For a later release, replace the example versions with the actual previous and current published stable versions.
 
 Optional OS assertions can pin the expected disposable image when a release tracker requires a specific WSL image:

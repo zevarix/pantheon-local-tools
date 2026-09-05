@@ -204,11 +204,30 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Seed isolated shell startup files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          shell_home="$RUNNER_TEMP/pantheon-local-tools-shell-home"
+          snapshot="$RUNNER_TEMP/pantheon-local-tools-shell-before"
+          mkdir -p "$shell_home" "$snapshot"
+
+          for rc in \
+            .bashrc .bash_profile .bash_login .profile \
+            .zshenv .zprofile .zshrc .zlogin .zlogout; do
+            printf 'sentinel:%s\n' "$rc" > "$shell_home/$rc"
+            cp "$shell_home/$rc" "$snapshot/$rc"
+          done
+
+          printf 'APT_TEST_HOME=%s\n' "$shell_home" >> "$GITHUB_ENV"
+          printf 'APT_SHELL_SNAPSHOT=%s\n' "$snapshot" >> "$GITHUB_ENV"
+
       - name: Install through the one-command APT bootstrap
         shell: bash
         run: |
           set -euo pipefail
-          install_output=$(bash ./install-apt.sh 2>&1)
+          install_output=$(HOME="$APT_TEST_HOME" bash ./install-apt.sh 2>&1)
           printf '%s\n' "$install_output"
           case "$install_output" in
             *"doesn't support architecture"*)
@@ -234,11 +253,33 @@ jobs:
             grep -qx 'install ok installed'
           /usr/bin/pantheon-local --version
 
+          for rc in \
+            .bashrc .bash_profile .bash_login .profile \
+            .zshenv .zprofile .zshrc .zlogin .zlogout; do
+            cmp -s "$APT_SHELL_SNAPSHOT/$rc" "$APT_TEST_HOME/$rc" || {
+              printf 'shell startup file changed during APT bootstrap: %s\n' \
+                "$rc" >&2
+              exit 1
+            }
+          done
+
       - name: Remove bootstrap validation state
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
+
           sudo apt-get remove --yes pantheon-local-tools || true
           sudo rm -f \
             /etc/apt/sources.list.d/pantheon-local-tools.sources \
             /etc/apt/keyrings/pantheon-local-tools.gpg
+
+          for rc in \
+            .bashrc .bash_profile .bash_login .profile \
+            .zshenv .zprofile .zshrc .zlogin .zlogout; do
+            cmp -s "$APT_SHELL_SNAPSHOT/$rc" "$APT_TEST_HOME/$rc" || {
+              printf 'shell startup file changed during APT install/remove cycle: %s\n' \
+                "$rc" >&2
+              exit 1
+            }
+          done

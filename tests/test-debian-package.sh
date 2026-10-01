@@ -39,6 +39,7 @@ dpkg-deb -x "$PACKAGE" "$EXTRACT"
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-config-profile" ] || fail 'packaged tag-profile module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-config-export" ] || fail 'packaged config-export module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-multidev-create" ] || fail 'packaged multidev-create module is missing or not executable'
+[ -r "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-output" ] || fail 'packaged output-contract module is missing or unreadable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-provider-url" ] || fail 'packaged URL module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-pull" ] || fail 'packaged pull module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-readiness" ] || fail 'packaged readiness module is missing or not executable'

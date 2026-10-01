@@ -148,6 +148,9 @@ help_output=$(bash "$CLI" multidev create --help)
 assert_contains "$help_output" 'THIS COMMAND PERFORMS AN EXPLICIT REMOTE PANTHEON WRITE'
 assert_contains "$help_output" 'at most 11 characters'
 assert_contains "$help_output" '--yes'
+assert_contains "$help_output" '--format human|json'
+assert_contains "$help_output" '--record FILE'
+assert_contains "$help_output" 'JSON is currently supported for --dry-run planning only.'
 assert_contains "$help_output" 'If remote creation succeeds but local checkout/start fails'
 assert_contains "$help_output" 'Multidev is deliberately preserved.'
 
@@ -165,6 +168,42 @@ assert_contains "$dry_output" 'Local checkout:        not performed (--dry-run)'
 assert_env_absent feature1
 assert_file_not_contains "$MOCK_TERMINUS_LOG" 'multidev:create'
 [ ! -e "$LOCAL_ROOT/multidev/migration/example-site-feature1" ] || fail 'dry-run created a local checkout'
+
+# Structured dry-run exposes the exact sanitized Terminus primitive without mutating.
+export TERMINUS_MACHINE_TOKEN='super-secret-terminus-token'
+export PANTHEON_MACHINE_TOKEN='super-secret-pantheon-token'
+: > "$MOCK_TERMINUS_LOG"
+json_plan=$(bash "$CLI" multidev create example-site.live feature1 --provider lando --group migration --dry-run --format json)
+assert_contains "$json_plan" '"schema_version":1'
+assert_contains "$json_plan" '"record_type":"plan"'
+assert_contains "$json_plan" '"command":"multidev-create"'
+assert_contains "$json_plan" '"primitive":"terminus-multidev-create"'
+assert_contains "$json_plan" '"result":{"state":"planned","reason_code":"multidev-create-plan-ready","exit_code":0,"exit_category":"success"'
+assert_contains "$json_plan" '"source":{"site":"example-site","environment":"live"}'
+assert_contains "$json_plan" '"targets":[{"site":"example-site","environment":"feature1"}]'
+assert_contains "$json_plan" '"local":{"provider":"lando","provider_source":"explicit","group":"migration","start_provider":false}'
+assert_contains "$json_plan" '"command_preview":["terminus","multidev:create","example-site.live","feature1","--yes"]'
+assert_contains "$json_plan" '"workflow":{"schema_version":1,"name":"multidev-create","kind":"built-in","phase":"plan","status":"planned","step":"remote-create"'
+assert_contains "$json_plan" '"authority":{"pantheon":"terminus","terminus_primitive":"multidev:create"}'
+case "$json_plan" in *'super-secret-'*) fail 'structured Multidev plan emitted a secret-bearing environment value' ;; esac
+assert_file_not_contains "$MOCK_TERMINUS_LOG" 'multidev:create'
+assert_env_absent feature1
+
+PLAN_RECORD="$TMP_ROOT/multidev-plan.json"
+record_plan=$(bash "$CLI" multidev create example-site.live feature1 --provider lando --group migration --dry-run --format json --record "$PLAN_RECORD")
+[ "$(cat "$PLAN_RECORD")" = "$record_plan" ] || fail 'recorded Multidev plan did not match JSON stdout'
+set +e
+bash "$CLI" multidev create example-site.live feature1 --provider lando --dry-run --record "$PLAN_RECORD" >/dev/null 2>&1
+record_status=$?
+set -e
+[ "$record_status" -eq 30 ] || fail "expected existing plan record to exit 30, got $record_status"
+unset TERMINUS_MACHINE_TOKEN PANTHEON_MACHINE_TOKEN
+
+# Structured output/recording currently belongs to the safe dry-run planning boundary.
+if bash "$CLI" multidev create example-site.live nojson --provider lando --format json --yes >/dev/null 2>&1; then
+  fail 'real Multidev creation accepted --format json'
+fi
+assert_env_absent nojson
 
 # Source must exist and target must not already exist before any mutation.
 : > "$MOCK_TERMINUS_LOG"

@@ -409,6 +409,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 ## Documentation
 
 - [`docs/workflows.md`](docs/workflows.md) — shared primitive/built-in/downstream workflow model and Terminus authority boundary
+- [`docs/structured-output.md`](docs/structured-output.md) — stable JSON schema, exit categories, and durable operation-record contract
 - [`docs/configuration.md`](docs/configuration.md) — Git-compatible user configuration and Pantheon Tag profile strategies
 - [`docs/multidev.md`](docs/multidev.md) — existing Multidev checkout plus guarded remote creation behavior and safety
 - [`docs/setup.md`](docs/setup.md) — provider-aware Drupal checkout bootstrap, failure/retry behavior, and local mutation boundaries

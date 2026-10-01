@@ -33,10 +33,11 @@ for expected in \
   'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]' \
   'pantheon-local multidev create SITE.SOURCE NEW_ENV' \
   '[--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]' \
+  '[--format human|json] [--record FILE]' \
   'pantheon-local setup [--provider ddev|lando] [--dry-run]' \
   'pantheon-local readiness [--provider ddev|lando]' \
   'pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]' \
-  'pantheon-local status' \
+  'pantheon-local status [--format human|json] [--record FILE]' \
   'pantheon-local version' \
   'pantheon-local --version' \
   'auto   Detect from project configuration after checkout' \
@@ -99,6 +100,9 @@ assert_contains "$multidev_create_help" 'Pantheon-reserved environment name'
 assert_contains "$multidev_create_help" '--dry-run'
 assert_contains "$multidev_create_help" '--start'
 assert_contains "$multidev_create_help" '--yes'
+assert_contains "$multidev_create_help" '--format human|json'
+assert_contains "$multidev_create_help" '--record FILE'
+assert_contains "$multidev_create_help" 'JSON is currently supported for --dry-run planning only.'
 assert_contains "$multidev_create_help" 'Required for non-interactive creation.'
 assert_contains "$multidev_create_help" 'If remote creation succeeds but local checkout/start fails'
 assert_contains "$multidev_create_help" 'Multidev is deliberately preserved.'
@@ -130,8 +134,11 @@ assert_contains "$pull_help" 'pantheon-local pull ENV [--database-only|--files-o
 assert_contains "$pull_help" 'without changing checked-out Git code'
 
 status_help=$(bash "$CLI" status --help)
-assert_contains "$status_help" 'pantheon-local status'
+assert_contains "$status_help" 'pantheon-local status [--format human|json] [--record FILE]'
 assert_contains "$status_help" 'without contacting Pantheon or starting a provider'
-assert_contains "$status_help" 'Drupal bootstrap status/step'
+assert_contains "$status_help" 'Drupal bootstrap state is reported'
+assert_contains "$status_help" 'JSON also includes the shared workflow lifecycle'
+assert_contains "$status_help" '--format json'
+assert_contains "$status_help" '--record FILE'
 
 printf 'help tests passed\n'

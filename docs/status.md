@@ -6,6 +6,8 @@ Run it from the checkout root or any subdirectory:
 
 ```bash
 pantheon-local status
+pantheon-local status --format json
+pantheon-local status --record ./status-result.json
 ```
 
 A checkout created by `pantheon-local multidev` records non-secret metadata under Git's local metadata directory. Status reads that state and combines it with the current Git checkout state.
@@ -33,6 +35,25 @@ Bootstrap status:  complete
 Bootstrap step:    complete
 Bootstrap updated: 2026-09-04T14:30:00Z
 ```
+
+## Structured output and records
+
+Human-readable output remains the default. `pantheon-local status --format json` emits schema-versioned JSON using the shared [`structured-output`](structured-output.md) contract instead of human placeholders or spacing.
+
+The structured result includes:
+
+- exact recorded Pantheon site/environment target when available;
+- Git directory, branch, tracking branch, and working-tree state;
+- whether the checkout is PLT-managed;
+- provider identity/source/config state and bounded runtime URL evidence;
+- database/files provenance;
+- bootstrap status;
+- the shared `setup` workflow lifecycle when present; and
+- authority metadata that explicitly records that local `status` did not contact Pantheon or invoke a Terminus primitive.
+
+Unknown values are JSON `null`. A checkout with no recorded Pantheon target emits an empty `targets` array rather than `(not recorded)`.
+
+`--record FILE` explicitly writes the same JSON result to a new file. The parent directory must already exist, and PLT refuses to overwrite an existing file or symlink. Recording is the only `status` mode that intentionally writes a file; it does not change checkout state or provider configuration.
 
 ## Managed and existing checkouts
 
@@ -148,7 +169,7 @@ Successful database provenance remains separate from bootstrap status. For examp
 
 ## Safety
 
-`pantheon-local status` is local and read-only. It does not:
+Without `--record`, `pantheon-local status` is local and read-only. With `--record`, its only intentional write is the explicitly named bounded JSON result file. In either mode it does not:
 
 - contact Pantheon;
 - require Terminus authentication;

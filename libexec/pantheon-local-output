@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+# Shared machine-output contract for Pantheon Local Tools.
+# shellcheck disable=SC2034 # Public constants are consumed by scripts that source this file.
+PLT_STRUCTURED_SCHEMA_VERSION=1
+
+PLT_EXIT_SUCCESS=0
+PLT_EXIT_CHANGED=10
+PLT_EXIT_NO_TARGETS=20
+PLT_EXIT_UNSAFE_LOCAL_STATE=30
+PLT_EXIT_AMBIGUOUS_CONFIGURATION=31
+PLT_EXIT_AUTHORITY_UNAVAILABLE=32
+PLT_EXIT_VERIFICATION_FAILED=33
+PLT_EXIT_OPERATION_FAILED=40
+PLT_EXIT_USAGE=64
+
+plt_exit_category() {
+  case "$1" in
+    0) printf '%s\n' success ;;
+    10) printf '%s\n' changed ;;
+    20) printf '%s\n' no-targets ;;
+    30) printf '%s\n' unsafe-local-state ;;
+    31) printf '%s\n' ambiguous-configuration ;;
+    32) printf '%s\n' authority-unavailable ;;
+    33) printf '%s\n' verification-failed ;;
+    40) printf '%s\n' operation-failed ;;
+    64) printf '%s\n' usage-error ;;
+    *) printf '%s\n' unknown ;;
+  esac
+}
+
+plt_json_escape() {
+  local value=$1 out='' ch code escaped
+  local LC_ALL=C
+
+  while [ -n "$value" ]; do
+    ch=${value%"${value#?}"}
+    value=${value#?}
+    case "$ch" in
+      '"') out="$out\\\"" ;;
+      \\) out="$out\\\\" ;;
+      $'\b') out="$out\\b" ;;
+      $'\f') out="$out\\f" ;;
+      $'\n') out="$out\\n" ;;
+      $'\r') out="$out\\r" ;;
+      $'\t') out="$out\\t" ;;
+      *)
+        code=$(printf '%d' "'$ch")
+        if [ "$code" -lt 32 ]; then
+          printf -v escaped '\\u%04x' "$code"
+          out="$out$escaped"
+        else
+          out="$out$ch"
+        fi
+        ;;
+    esac
+  done
+
+  printf '%s' "$out"
+}
+
+plt_json_string() {
+  printf '"%s"' "$(plt_json_escape "$1")"
+}
+
+plt_json_nullable_string() {
+  if [ "$#" -eq 0 ] || [ -z "${1:-}" ]; then
+    printf 'null'
+  else
+    plt_json_string "$1"
+  fi
+}
+
+plt_json_bool() {
+  case "$1" in
+    true|false) printf '%s' "$1" ;;
+    *) return 1 ;;
+  esac
+}
+
+plt_json_string_array() {
+  local first=true value
+  printf '['
+  for value in "$@"; do
+    if [ "$first" = true ]; then
+      first=false
+    else
+      printf ','
+    fi
+    plt_json_string "$value"
+  done
+  printf ']'
+}
+
+plt_write_record() (
+  local file=$1 payload=$2 parent tmp
+
+  [ -n "$file" ] || return "$PLT_EXIT_USAGE"
+  case "$file" in
+    *$'\n'*|*$'\r'*) return "$PLT_EXIT_USAGE" ;;
+  esac
+
+  parent=${file%/*}
+  [ "$parent" != "$file" ] || parent='.'
+  [ -d "$parent" ] || return "$PLT_EXIT_OPERATION_FAILED"
+  [ ! -e "$file" ] && [ ! -L "$file" ] || return "$PLT_EXIT_UNSAFE_LOCAL_STATE"
+
+  umask 077
+  tmp=$(mktemp "$parent/.pantheon-local-record.XXXXXX") || return "$PLT_EXIT_OPERATION_FAILED"
+  trap 'rm -f "$tmp"' EXIT HUP INT TERM
+  printf '%s\n' "$payload" > "$tmp" || return "$PLT_EXIT_OPERATION_FAILED"
+
+  # A hard-link publish is atomic within the target directory and refuses to
+  # replace an existing path. Remove the private temporary name afterward.
+  if ! ln "$tmp" "$file" 2>/dev/null; then
+    if [ -e "$file" ] || [ -L "$file" ]; then
+      return "$PLT_EXIT_UNSAFE_LOCAL_STATE"
+    fi
+    return "$PLT_EXIT_OPERATION_FAILED"
+  fi
+)

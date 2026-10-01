@@ -9,6 +9,7 @@ MOCK_BIN="$TMP_ROOT/bin"
 mkdir -p "$MOCK_BIN"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+assert_eq() { [ "$1" = "$2" ] || fail "expected [$2], got [$1]"; }
 assert_contains() { case "$1" in *"$2"*) ;; *) fail "expected output to contain [$2], got [$1]" ;; esac; }
 
 cat > "$MOCK_BIN/lando" <<'MOCK'
@@ -116,6 +117,48 @@ assert_contains "$(cat "$MANAGED/.lando.yml")" 'type: phpmyadmin'
 assert_contains "$(cat "$MANAGED/.lando.yml")" 'type: redis'
 assert_contains "$(cat "$MANAGED/.lando.yml")" 'custom-check:'
 
+# Structured status uses the stable shared schema and exposes the same semantic facts.
+WORKFLOW_HELPER="$REPO_ROOT/libexec/pantheon-local-workflow-state"
+"$WORKFLOW_HELPER" record "$STATE" setup built-in apply failed drush-updb \
+  'rerun pantheon-local setup after resolving the reported failure'
+git config --file "$STATE" local.name 'example-"quoted"\\name'
+export TERMINUS_MACHINE_TOKEN='super-secret-terminus-token'
+export PANTHEON_MACHINE_TOKEN='super-secret-pantheon-token'
+json_output=$(cd "$MANAGED/subdir" && bash "$CLI" status --format json)
+assert_contains "$json_output" '"schema_version":1'
+assert_contains "$json_output" '"record_type":"inspection"'
+assert_contains "$json_output" '"primitive":"local-status-inspection"'
+assert_contains "$json_output" '"result":{"state":"current","reason_code":"status-observed","exit_code":0,"exit_category":"success"'
+assert_contains "$json_output" '"targets":[{"site":"example-site","environment":"feature1"}]'
+assert_contains "$json_output" '"git":{"directory":'
+assert_contains "$json_output" '"managed":true'
+assert_contains "$json_output" '"local_name":"example-\"quoted\"\\\\name"'
+assert_contains "$json_output" '"provider":{"name":"lando","source":"recorded","config_state":"present"'
+assert_contains "$json_output" '"workflow":{"schema_version":1,"name":"setup","kind":"built-in","phase":"apply","status":"failed","step":"drush-updb"'
+assert_contains "$json_output" '"authority":{"git":"git","provider":"lando","pantheon":"not-contacted","terminus_primitive":null}'
+case "$json_output" in
+  *'(not recorded)'*) fail 'structured status leaked a human placeholder' ;;
+  *'super-secret-'*) fail 'structured status emitted an unrelated secret-bearing environment value' ;;
+esac
+
+RECORD="$TMP_ROOT/status-result.json"
+record_output=$(cd "$MANAGED" && bash "$CLI" status --format json --record "$RECORD")
+assert_eq "$(cat "$RECORD")" "$record_output"
+set +e
+(cd "$MANAGED" && bash "$CLI" status --record "$RECORD" >/dev/null 2>&1)
+record_rc=$?
+set -e
+assert_eq "$record_rc" '30'
+assert_eq "$(cat "$RECORD")" "$record_output"
+
+set +e
+(cd "$MANAGED" && bash "$CLI" status --format yaml >/dev/null 2>&1)
+format_rc=$?
+set -e
+assert_eq "$format_rc" '64'
+unset TERMINUS_MACHINE_TOKEN PANTHEON_MACHINE_TOKEN
+git config --file "$STATE" local.name example-site-feature1
+
 # Runtime discovery failure falls back to recorded state without starting or mutating Lando.
 export MOCK_LANDO_FAIL=true
 fallback_output=$(cd "$MANAGED" && bash "$CLI" status)
@@ -159,6 +202,11 @@ assert_contains "$unmanaged_output" 'Local URL:       https://example-ddev.test'
 assert_contains "$unmanaged_output" 'URL source:      provider runtime'
 assert_contains "$unmanaged_output" 'Database source: (not recorded)'
 assert_contains "$unmanaged_output" 'Files source:    (not recorded)'
+unmanaged_json=$(cd "$UNMANAGED" && bash "$CLI" status --format json)
+assert_contains "$unmanaged_json" '"targets":[]'
+assert_contains "$unmanaged_json" '"target":{"site":null,"environment":null}'
+assert_contains "$unmanaged_json" '"checkout":{"managed":false'
+assert_contains "$unmanaged_json" '"provider":{"name":"ddev","source":"detected"'
 [ "$(git -C "$UNMANAGED" hash-object .ddev/config.yaml)" = "$DDEV_CONFIG_BEFORE" ] || fail 'status changed DDEV base configuration'
 [ "$(git -C "$UNMANAGED" hash-object .ddev/docker-compose.adminer.yaml)" = "$DDEV_EXTRA_BEFORE" ] || fail 'status changed DDEV extra service configuration'
 

@@ -463,7 +463,9 @@ estate_status_command() {
 
   [ "$all" = false ] || [ ! -s "$selectors_file" ] || usage_error '--all cannot be combined with --tag'
   if [ -n "$target" ]; then
-    [ "$all" = false ] && [ ! -s "$selectors_file" ] || usage_error 'SITE cannot be combined with --all or --tag'
+    if [ "$all" != false ] || [ -s "$selectors_file" ]; then
+      usage_error 'SITE cannot be combined with --all or --tag'
+    fi
     validate_site "$target"
   else
     [ "$all" = true ] || [ -s "$selectors_file" ] || usage_error 'estate status requires SITE, --all, or at least one --tag'

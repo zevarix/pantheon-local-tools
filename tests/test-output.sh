@@ -9,7 +9,7 @@ trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 assert_eq() { [ "$1" = "$2" ] || fail "expected [$2], got [$1]"; }
 
-# shellcheck source=libexec/pantheon-local-output
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$OUTPUT_LIB"
 
 assert_eq "$PLT_STRUCTURED_SCHEMA_VERSION" '1'

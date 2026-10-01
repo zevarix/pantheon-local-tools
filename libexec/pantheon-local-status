@@ -7,7 +7,7 @@ PROVIDER_URL="$SCRIPT_DIR/pantheon-local-provider-url"
 OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
 
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
-# shellcheck source=libexec/pantheon-local-output
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$OUTPUT_LIB"
 
 usage() {

@@ -4,12 +4,18 @@ set -euo pipefail
 PROGRAM_NAME="pantheon-local"
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 CORE="$SCRIPT_DIR/pantheon-local-core"
+OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+
+[ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$OUTPUT_LIB"
 
 usage() {
   cat <<'USAGE'
 Usage:
   pantheon-local multidev create SITE.SOURCE NEW_ENV
     [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]
+    [--format human|json] [--record FILE]
 
 Create a new Pantheon Multidev from an existing source environment, then hand
 off to Pantheon Local Tools' existing local Multidev checkout command.
@@ -38,6 +44,14 @@ Options:
       Authenticate and perform read-only source/target/config validation, then
       print the remote-create and local-handoff plan. No remote Multidev, Git
       checkout, provider override, or provider runtime is created/started.
+
+  --format human|json
+      Select human plan output (default) or the stable structured JSON plan.
+      JSON is currently supported for --dry-run planning only.
+
+  --record FILE
+      With --dry-run, atomically write the same structured JSON plan to a new
+      file. Existing paths are never overwritten.
 
   --start
       After successful remote creation and local checkout finalization, pass the
@@ -162,6 +176,34 @@ validate_local_preflight() {
   fi
 }
 
+build_plan_json() {
+  local source=$1 site=$2 source_env=$3 new_env=$4 target=$5 provider=$6 group=$7 start=$8
+  local provider_json group_json start_json command_json next_action
+
+  provider_json=$(plt_json_nullable_string "$provider")
+  group_json=$(plt_json_nullable_string "$group")
+  if [ "$start" = true ]; then start_json=true; else start_json=false; fi
+  command_json=$(plt_json_string_array terminus multidev:create "$source" "$new_env" --yes)
+  next_action='review the plan, then rerun without --dry-run with explicit confirmation or --yes'
+
+  printf '{'
+  printf '"schema_version":%s,' "$PLT_STRUCTURED_SCHEMA_VERSION"
+  printf '"record_type":"plan",'
+  printf '"command":"multidev-create",'
+  printf '"primitive":"terminus-multidev-create",'
+  printf '"operation_id":null,'
+  printf '"read_only":true,'
+  printf '"result":{"state":"planned","reason_code":"multidev-create-plan-ready","exit_code":%s,"exit_category":%s,"failure_source":null,"next_action":%s},' "$PLT_EXIT_SUCCESS" "$(plt_json_string "$(plt_exit_category "$PLT_EXIT_SUCCESS")")" "$(plt_json_string "$next_action")"
+  printf '"source":{"site":%s,"environment":%s},' "$(plt_json_string "$site")" "$(plt_json_string "$source_env")"
+  printf '"targets":[{"site":%s,"environment":%s}],' "$(plt_json_string "$site")" "$(plt_json_string "$new_env")"
+  printf '"target":{"site":%s,"environment":%s,"identity":%s},' "$(plt_json_string "$site")" "$(plt_json_string "$new_env")" "$(plt_json_string "$target")"
+  printf '"local":{"provider":%s,"provider_source":%s,"group":%s,"start_provider":%s},' "$provider_json" "$(if [ -n "$provider" ]; then plt_json_string explicit; else plt_json_string configured-detection; fi)" "$group_json" "$start_json"
+  printf '"pantheon":{"authority":"terminus","preflight_primitives":["auth:whoami","env:list"],"mutation_primitive":"multidev:create","command_preview":%s,"content_clone":"terminus-default-database-and-files"},' "$command_json"
+  printf '"workflow":{"schema_version":1,"name":"multidev-create","kind":"built-in","phase":"plan","status":"planned","step":"remote-create","safe_next_action":%s},' "$(plt_json_string "$next_action")"
+  printf '"authority":{"pantheon":"terminus","terminus_primitive":"multidev:create"}'
+  printf '}'
+}
+
 print_plan() {
   local source=$1 target=$2 provider=$3 group=$4 start=$5 dry_run=$6
   printf 'Pantheon Local Tools Multidev creation plan\n\n'
@@ -223,8 +265,8 @@ print_retry() {
 }
 
 multidev_create_command() {
-  local source='' new_env='' provider='' group='' dry_run=false start=false assume_yes=false
-  local parsed site source_env target environments after_create
+  local source='' new_env='' provider='' group='' dry_run=false start=false assume_yes=false format=human record_file=''
+  local parsed site source_env target environments after_create plan_json record_rc
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -252,6 +294,18 @@ multidev_create_command() {
         assume_yes=true
         shift
         ;;
+      --format)
+        [ "$#" -ge 2 ] || die '--format requires human or json'
+        format=$2
+        case "$format" in human|json) ;; *) die '--format must be human or json' ;; esac
+        shift 2
+        ;;
+      --record)
+        [ "$#" -ge 2 ] || die '--record requires a file path'
+        record_file=$2
+        [ -n "$record_file" ] || die '--record requires a non-empty file path'
+        shift 2
+        ;;
       -h|--help|help)
         usage
         return
@@ -274,6 +328,12 @@ multidev_create_command() {
     die 'usage: pantheon-local multidev create SITE.SOURCE NEW_ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]'
   fi
   [ "$dry_run" = false ] || [ "$start" = false ] || die '--start cannot be combined with --dry-run'
+  if [ "$format" = json ] && [ "$dry_run" != true ]; then
+    die '--format json is currently supported only with --dry-run'
+  fi
+  if [ -n "$record_file" ] && [ "$dry_run" != true ]; then
+    die '--record is currently supported only with --dry-run'
+  fi
 
   require_command grep
   parsed=$(parse_source "$source")
@@ -291,10 +351,28 @@ multidev_create_command() {
     die "target Pantheon environment already exists: $target"
   fi
 
-  print_plan "$source" "$target" "$provider" "$group" "$start" "$dry_run"
   if [ "$dry_run" = true ]; then
+    plan_json=$(build_plan_json "$source" "$site" "$source_env" "$new_env" "$target" "$provider" "$group" "$start")
+    if [ -n "$record_file" ]; then
+      record_rc=0
+      plt_write_record "$record_file" "$plan_json" || record_rc=$?
+      case "$record_rc" in
+        0) ;;
+        "$PLT_EXIT_UNSAFE_LOCAL_STATE") printf '%s: refusing to overwrite operation record: %s\n' "$PROGRAM_NAME" "$record_file" >&2; return "$record_rc" ;;
+        "$PLT_EXIT_USAGE") printf '%s: invalid operation record path\n' "$PROGRAM_NAME" >&2; return "$record_rc" ;;
+        *) printf '%s: could not write operation record: %s\n' "$PROGRAM_NAME" "$record_file" >&2; return "$PLT_EXIT_OPERATION_FAILED" ;;
+      esac
+    fi
+    if [ "$format" = json ]; then
+      printf '%s\n' "$plan_json"
+    else
+      print_plan "$source" "$target" "$provider" "$group" "$start" "$dry_run"
+      [ -z "$record_file" ] || printf 'Operation record:       %s\n' "$record_file"
+    fi
     return 0
   fi
+
+  print_plan "$source" "$target" "$provider" "$group" "$start" "$dry_run"
 
   confirm_creation "$assume_yes" "$source" "$target"
 

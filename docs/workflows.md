@@ -71,7 +71,7 @@ A run has:
 - safe next action;
 - evidence from the authoritative systems used by its primitives.
 
-Structured operation records and stable machine-readable result schemas are tracked separately from this lifecycle model.
+Structured operation records and stable machine-readable result schemas compose with this lifecycle model through the shared [`structured-output`](structured-output.md) contract.
 
 ## Phases
 

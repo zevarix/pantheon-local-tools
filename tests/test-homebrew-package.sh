@@ -90,6 +90,7 @@ FORMULA_CLI="$PREFIX/bin/pantheon-local"
 [ -x "$PREFIX/libexec/libexec/pantheon-local-config-profile" ] || fail 'Homebrew tag-profile module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-config-export" ] || fail 'Homebrew config-export module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-multidev-create" ] || fail 'Homebrew multidev-create module is missing'
+[ -r "$PREFIX/libexec/libexec/pantheon-local-output" ] || fail 'Homebrew output-contract module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-provider-url" ] || fail 'Homebrew provider URL module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-pull" ] || fail 'Homebrew pull module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-readiness" ] || fail 'Homebrew readiness module is missing'

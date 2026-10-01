@@ -8,6 +8,9 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ### Added
 
+- Added a stable structured-output foundation with schema-versioned JSON, centrally defined exit categories, explicit durable operation records, and `pantheon-local status --format json` as the first reference consumer.
+- Added `pantheon-local status --record FILE`, which atomically writes the same bounded JSON result to a new file and refuses to overwrite existing evidence.
+- Added structured `multidev create --dry-run` planning with the exact sanitized Terminus `multidev:create` preview and optional no-overwrite plan records.
 - Added a shared workflow lifecycle model that distinguishes primitives, built-in workflows, downstream workflows, and concrete workflow runs while keeping purpose-specific CLI commands intact.
 - Added an internal atomic workflow-state helper and migrated `pantheon-local setup` to record the shared lifecycle alongside its existing `bootstrap.*` compatibility state.
 - Documented the authority boundary that keeps Pantheon-owned reads and mutations in Terminus while PLT owns orchestration, local/provider/Drupal safety, verification, and reconciliation.

@@ -4,27 +4,45 @@ set -euo pipefail
 PROGRAM_NAME="pantheon-local"
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 PROVIDER_URL="$SCRIPT_DIR/pantheon-local-provider-url"
+OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+
+[ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$OUTPUT_LIB"
 
 usage() {
   cat <<'USAGE'
 Usage:
-  pantheon-local status
+  pantheon-local status [--format human|json] [--record FILE]
 
 Shows local checkout metadata without contacting Pantheon or starting a provider.
 When the selected provider is already running, status may query its read-only
 runtime information to report the provider's authoritative local URL.
-For PLT-managed checkouts, the most recent Drupal bootstrap status/step is also
-reported from checkout-local state.
+For PLT-managed checkouts, Drupal bootstrap state is reported from local state;
+JSON also includes the shared workflow lifecycle when present.
+
+Output:
+  --format human  Human-readable output (default).
+  --format json   Stable structured schema for automation.
+  --record FILE   Atomically write the same JSON result to a new FILE. Existing
+                  paths are never overwritten. Recording is the only status
+                  mode that intentionally writes a file.
 USAGE
 }
 
-die() {
+die_code() {
+  local code=$1
+  shift
   printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
-  exit 1
+  exit "$code"
+}
+
+usage_error() {
+  die_code "$PLT_EXIT_USAGE" "$*"
 }
 
 require_command() {
-  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+  command -v "$1" >/dev/null 2>&1 || die_code "$PLT_EXIT_OPERATION_FAILED" "required command not found: $1"
 }
 
 state_get() {
@@ -50,63 +68,111 @@ provider_config_status() {
   local root=$1 provider=$2
   case "$provider" in
     ddev)
-      if [ -f "$root/.ddev/config.yaml" ]; then
-        printf '%s\n' present
-      else
-        printf '%s\n' missing
-      fi
+      if [ -f "$root/.ddev/config.yaml" ]; then printf '%s\n' present; else printf '%s\n' missing; fi
       ;;
     lando)
-      if [ -f "$root/.lando.yml" ]; then
-        printf '%s\n' present
-      else
-        printf '%s\n' missing
-      fi
+      if [ -f "$root/.lando.yml" ]; then printf '%s\n' present; else printf '%s\n' missing; fi
       ;;
     ambiguous) printf '%s\n' ambiguous ;;
     *) printf '%s\n' unknown ;;
   esac
 }
 
+build_status_json() {
+  local root=$1 managed=$2 site=$3 env=$4 tag=$5 provider_base=$6 provider_source=$7 provider_config=$8
+  local local_name=$9 local_url=${10} url_source=${11} branch=${12} tracking=${13} git_state=${14}
+  local database_source=${15} files_source=${16} bootstrap_status=${17} bootstrap_step=${18} bootstrap_updated=${19}
+  local workflow_schema=${20} workflow_kind=${21} workflow_phase=${22} workflow_status=${23} workflow_step=${24}
+  local workflow_next=${25} workflow_updated=${26}
+  local managed_json tracking_json workflow_json targets_json
+
+  if [ "$managed" = yes ]; then managed_json=true; else managed_json=false; fi
+  if [ "$tracking" = '(none)' ]; then tracking_json=null; else tracking_json=$(plt_json_string "$tracking"); fi
+
+  if [ -n "$site" ] && [ -n "$env" ]; then
+    targets_json="[{\"site\":$(plt_json_string "$site"),\"environment\":$(plt_json_string "$env")}]"
+  else
+    targets_json='[]'
+  fi
+
+  if [ -n "$workflow_schema" ]; then
+    workflow_json="{\"schema_version\":$workflow_schema,\"name\":\"setup\",\"kind\":$(plt_json_nullable_string "$workflow_kind"),\"phase\":$(plt_json_nullable_string "$workflow_phase"),\"status\":$(plt_json_nullable_string "$workflow_status"),\"step\":$(plt_json_nullable_string "$workflow_step"),\"safe_next_action\":$(plt_json_nullable_string "$workflow_next"),\"updated_at\":$(plt_json_nullable_string "$workflow_updated")}"
+  else
+    workflow_json=null
+  fi
+
+  printf '{'
+  printf '"schema_version":%s,' "$PLT_STRUCTURED_SCHEMA_VERSION"
+  printf '"record_type":"inspection",'
+  printf '"command":"status",'
+  printf '"primitive":"local-status-inspection",'
+  printf '"operation_id":null,'
+  printf '"read_only":true,'
+  printf '"result":{"state":"current","reason_code":"status-observed","exit_code":%s,"exit_category":%s,"failure_source":null,"next_action":null},' "$PLT_EXIT_SUCCESS" "$(plt_json_string "$(plt_exit_category "$PLT_EXIT_SUCCESS")")"
+  printf '"targets":%s,' "$targets_json"
+  printf '"target":{"site":%s,"environment":%s},' "$(plt_json_nullable_string "$site")" "$(plt_json_nullable_string "$env")"
+  printf '"git":{"directory":%s,"branch":%s,"tracking":%s,"state":%s},' "$(plt_json_string "$root")" "$(plt_json_string "$branch")" "$tracking_json" "$(plt_json_string "$git_state")"
+  printf '"checkout":{"managed":%s,"tag":%s,"local_name":%s},' "$managed_json" "$(plt_json_nullable_string "$tag")" "$(plt_json_nullable_string "$local_name")"
+  printf '"provider":{"name":%s,"source":%s,"config_state":%s,"local_url":%s,"url_source":%s},' "$(plt_json_string "$provider_base")" "$(plt_json_string "$provider_source")" "$(plt_json_string "$provider_config")" "$(plt_json_nullable_string "$local_url")" "$(plt_json_string "$url_source")"
+  printf '"data":{"database_source":%s,"files_source":%s},' "$(plt_json_nullable_string "$database_source")" "$(plt_json_nullable_string "$files_source")"
+  printf '"bootstrap":{"status":%s,"step":%s,"updated_at":%s},' "$(plt_json_nullable_string "$bootstrap_status")" "$(plt_json_nullable_string "$bootstrap_step")" "$(plt_json_nullable_string "$bootstrap_updated")"
+  printf '"workflow":%s,' "$workflow_json"
+  printf '"authority":{"git":"git","provider":%s,"pantheon":"not-contacted","terminus_primitive":null}' "$(plt_json_string "$provider_base")"
+  printf '}'
+}
+
 status_command() {
-  local root git_dir state branch tracking git_state dirty managed
-  local site env target tag provider provider_base local_name recorded_url local_url url_source provider_config
+  local format=human record_file='' root git_dir state branch tracking git_state dirty managed
+  local site env target tag provider provider_base provider_source local_name recorded_url local_url url_source provider_config
   local legacy_data_source database_source files_source runtime_url=''
   local bootstrap_status bootstrap_step bootstrap_updated
+  local workflow_schema workflow_kind workflow_phase workflow_status workflow_step workflow_next workflow_updated
+  local json record_rc
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --format)
+        [ "$#" -ge 2 ] || usage_error '--format requires human or json'
+        format=$2
+        case "$format" in human|json) ;; *) usage_error '--format must be human or json' ;; esac
+        shift 2
+        ;;
+      --record)
+        [ "$#" -ge 2 ] || usage_error '--record requires a file path'
+        record_file=$2
+        [ -n "$record_file" ] || usage_error '--record requires a non-empty file path'
+        shift 2
+        ;;
+      -h|--help|help)
+        [ "$#" -eq 1 ] || usage_error 'usage: pantheon-local status [--format human|json] [--record FILE]'
+        usage
+        return
+        ;;
+      *) usage_error 'usage: pantheon-local status [--format human|json] [--record FILE]' ;;
+    esac
+  done
 
   require_command git
 
   if ! root=$(git rev-parse --show-toplevel 2>/dev/null); then
-    die 'status must be run inside a Git checkout'
+    die_code "$PLT_EXIT_OPERATION_FAILED" 'status must be run inside a Git checkout'
   fi
 
   git_dir=$(git -C "$root" rev-parse --git-dir)
-  case "$git_dir" in
-    /*) ;;
-    *) git_dir="$root/$git_dir" ;;
-  esac
+  case "$git_dir" in /*) ;; *) git_dir="$root/$git_dir" ;; esac
   state="$git_dir/pantheon-local-tools/state"
 
-  if [ -f "$state" ]; then
-    managed=yes
-  else
-    managed=no
-  fi
+  if [ -f "$state" ]; then managed=yes; else managed=no; fi
 
   if ! branch=$(git -C "$root" symbolic-ref --quiet --short HEAD 2>/dev/null); then
     branch="detached@$(git -C "$root" rev-parse --short HEAD)"
   fi
-
   if ! tracking=$(git -C "$root" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then
     tracking='(none)'
   fi
 
   dirty=$(git -C "$root" status --porcelain --untracked-files=normal)
-  if [ -n "$dirty" ]; then
-    git_state=modified
-  else
-    git_state=clean
-  fi
+  if [ -n "$dirty" ]; then git_state=modified; else git_state=clean; fi
 
   site=$(state_get "$state" pantheon.site || true)
   env=$(state_get "$state" pantheon.environment || true)
@@ -120,13 +186,16 @@ status_command() {
   bootstrap_status=$(state_get "$state" bootstrap.status || true)
   bootstrap_step=$(state_get "$state" bootstrap.step || true)
   bootstrap_updated=$(state_get "$state" bootstrap.updated-at || true)
+  workflow_schema=$(state_get "$state" workflow.setup.schema || true)
+  workflow_kind=$(state_get "$state" workflow.setup.kind || true)
+  workflow_phase=$(state_get "$state" workflow.setup.phase || true)
+  workflow_status=$(state_get "$state" workflow.setup.status || true)
+  workflow_step=$(state_get "$state" workflow.setup.step || true)
+  workflow_next=$(state_get "$state" workflow.setup.safe-next-action || true)
+  workflow_updated=$(state_get "$state" workflow.setup.updated-at || true)
 
-  if [ -z "$database_source" ] && [ -n "$legacy_data_source" ]; then
-    database_source=$legacy_data_source
-  fi
-  if [ -z "$files_source" ] && [ -n "$legacy_data_source" ]; then
-    files_source=$legacy_data_source
-  fi
+  if [ -z "$database_source" ] && [ -n "$legacy_data_source" ]; then database_source=$legacy_data_source; fi
+  if [ -z "$files_source" ] && [ -n "$legacy_data_source" ]; then files_source=$legacy_data_source; fi
 
   if [ -n "$site" ] && [ -n "$env" ]; then
     target="$site.$env"
@@ -138,39 +207,58 @@ status_command() {
 
   if [ -z "$provider" ]; then
     provider_base=$(detect_provider_status "$root")
-    provider=$provider_base
+    provider_source=detected
     case "$provider_base" in
       ddev|lando) provider="$provider_base (detected)" ;;
+      ambiguous) provider=ambiguous; provider_source=ambiguous ;;
+      *) provider=unknown; provider_source=unknown ;;
     esac
   else
     provider_base=$provider
+    provider_source=recorded
   fi
 
   provider_config=$(provider_config_status "$root" "$provider_base")
 
-  # Runtime discovery is intentionally best-effort and read-only. It never
-  # starts/rebuilds a provider and never makes status depend on provider tools.
   if [ -x "$PROVIDER_URL" ]; then
     case "$provider_base" in
-      ddev|lando)
-        runtime_url=$("$PROVIDER_URL" "$provider_base" "$root" 2>/dev/null || true)
-        ;;
+      ddev|lando) runtime_url=$("$PROVIDER_URL" "$provider_base" "$root" 2>/dev/null || true) ;;
     esac
   fi
 
   if [ -n "$runtime_url" ]; then
     local_url=$runtime_url
-    url_source='provider runtime'
+    url_source='provider-runtime'
   elif [ -n "$recorded_url" ]; then
     local_url=$recorded_url
-    url_source='recorded fallback'
+    url_source='recorded-fallback'
   else
-    local_url='(not available)'
-    url_source='not available'
+    local_url=''
+    url_source='not-available'
+  fi
+
+  json=$(build_status_json "$root" "$managed" "$site" "$env" "$tag" "$provider_base" "$provider_source" "$provider_config" "$local_name" "$local_url" "$url_source" "$branch" "$tracking" "$git_state" "$database_source" "$files_source" "$bootstrap_status" "$bootstrap_step" "$bootstrap_updated" "$workflow_schema" "$workflow_kind" "$workflow_phase" "$workflow_status" "$workflow_step" "$workflow_next" "$workflow_updated")
+
+  if [ -n "$record_file" ]; then
+    record_rc=0
+    plt_write_record "$record_file" "$json" || record_rc=$?
+    case "$record_rc" in
+      0) ;;
+      "$PLT_EXIT_UNSAFE_LOCAL_STATE") die_code "$record_rc" "refusing to overwrite operation record: $record_file" ;;
+      "$PLT_EXIT_USAGE") die_code "$record_rc" 'invalid operation record path' ;;
+      *) die_code "$PLT_EXIT_OPERATION_FAILED" "could not write operation record: $record_file" ;;
+    esac
+  fi
+
+  if [ "$format" = json ]; then
+    printf '%s\n' "$json"
+    return "$PLT_EXIT_SUCCESS"
   fi
 
   [ -n "$tag" ] || tag='(not recorded)'
   [ -n "$local_name" ] || local_name='(not recorded)'
+  [ -n "$local_url" ] || local_url='(not available)'
+  case "$url_source" in provider-runtime) url_source='provider runtime' ;; recorded-fallback) url_source='recorded fallback' ;; not-available) url_source='not available' ;; esac
   [ -n "$database_source" ] || database_source='(not recorded)'
   [ -n "$files_source" ] || files_source='(not recorded)'
   [ -n "$bootstrap_status" ] || bootstrap_status='(not recorded)'
@@ -195,17 +283,7 @@ status_command() {
   printf 'Bootstrap status:  %s\n' "$bootstrap_status"
   printf 'Bootstrap step:    %s\n' "$bootstrap_step"
   printf 'Bootstrap updated: %s\n' "$bootstrap_updated"
+  if [ -n "$record_file" ]; then printf 'Operation record: %s\n' "$record_file"; fi
 }
 
-case "${1:-}" in
-  -h|--help|help)
-    [ "$#" -eq 1 ] || die 'usage: pantheon-local status'
-    usage
-    ;;
-  '')
-    status_command
-    ;;
-  *)
-    die 'usage: pantheon-local status'
-    ;;
-esac
+status_command "$@"

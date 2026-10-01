@@ -5,65 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#02060b">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="Pantheon Local Tools is a free, provider-neutral CLI for safer Pantheon local development with DDEV and Lando.">
+  <meta name="description" content="Pantheon Local Tools is a free CLI for repeatable Pantheon Multidev checkouts, data pulls, Drupal setup, and configuration checks across DDEV and Lando.">
   <meta name="google-site-verification" content="2Mf5s5Svt4s8KUgXUoFKFgyF2uiW03wVTzRezjFJBFk">
   <link rel="canonical" href="https://zevarix.github.io/pantheon-local-tools/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Pantheon Local Tools">
-  <meta property="og:title" content="Pantheon Local Tools — Safer Pantheon local development">
-  <meta property="og:description" content="Pantheon Local Tools is a free, provider-neutral CLI for safer Pantheon local development with DDEV and Lando.">
+  <meta property="og:title" content="Pantheon Local Tools — Pantheon workflows for DDEV and Lando">
+  <meta property="og:description" content="A free CLI for repeatable Pantheon Multidev checkouts, data pulls, Drupal setup, and configuration checks across DDEV and Lando.">
   <meta property="og:url" content="https://zevarix.github.io/pantheon-local-tools/">
   <meta name="twitter:card" content="summary">
   <!-- IndexNow verification is published as a sibling key file by the APT repository builder. -->
-  <title>Pantheon Local Tools — Safer Pantheon local development</title>
+  <title>Pantheon Local Tools — Pantheon workflows for DDEV and Lando</title>
   <link rel="stylesheet" href="apt-index.css">
-  <style>
-    /* Product-specific terminal prompt motif. */
-    .hero-copy::after {
-      content: ">";
-      right: 2.6rem;
-      letter-spacing: 0;
-      transform: rotate(-3deg);
-    }
-
-    .hero-copy::before {
-      content: "_";
-      position: absolute;
-      z-index: -1;
-      right: -2.4rem;
-      top: -5.5rem;
-      color: rgba(84, 214, 233, .16);
-      font: 500 clamp(8rem, 18vw, 15rem)/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      text-shadow: 0 0 3rem rgba(47, 193, 249, .22);
-      transform: rotate(-3deg);
-      pointer-events: none;
-      animation: hero-terminal-cursor 1.15s steps(1, end) infinite;
-    }
-
-    @keyframes hero-terminal-cursor {
-      0%, 48% { opacity: 1; }
-      49%, 100% { opacity: .08; }
-    }
-
-    @media (max-width: 48rem) {
-      .hero-copy::after {
-        right: 1.1rem;
-      }
-
-      .hero-copy::before {
-        right: -1.6rem;
-        top: -2.7rem;
-        font-size: 8rem;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .hero-copy::before {
-        animation: none;
-        opacity: 1;
-      }
-    }
-  </style>
 </head>
 <body>
   <header class="site-header">
@@ -73,33 +26,40 @@
         <a href="#workflow">Workflow</a>
         <a href="#install">Install</a>
         <a href="#safety">Safety</a>
+        <a href="#faq">FAQ</a>
         <a class="nav-cta" href="https://github.com/zevarix/pantheon-local-tools">GitHub →</a>
       </nav>
     </div>
   </header>
 
   <main id="top">
-    <section class="shell hero">
+    <section class="shell hero" data-hero-motion>
       <div class="hero-copy">
+        <span class="hero-terminal-motif" aria-hidden="true"><span class="hero-terminal-motif-prompt">$</span><span class="hero-terminal-motif-command"> pantheon-local</span><span class="hero-terminal-motif-cursor">_</span></span>
         <h1>Pantheon work, locally. <span>Without the glue scripts.</span></h1>
-        <p class="lede">Pantheon Local Tools is a free, open-source CLI that makes common Pantheon local-development workflows safer and repeatable across DDEV and Lando — without hard-coding your machine, organization, directory layout, or local stack.</p>
+        <p class="lede">A small CLI for the Pantheon jobs that otherwise turn into shell history: Multidev checkouts, local data pulls, Drupal setup, config checks, and provider-aware status. It works with DDEV or Lando without taking over either one.</p>
         <div class="actions">
           <a class="button" href="#install">Install</a>
           <a class="button button--quiet" href="https://github.com/zevarix/pantheon-local-tools/blob/main/README.md">Read the docs</a>
         </div>
-        <p class="hero-meta">MIT licensed · macOS · Linux · Windows via WSL/WSL2</p>
+        <p class="hero-meta">DDEV + Lando · macOS + Linux + WSL/WSL2 · MIT licensed</p>
       </div>
 
-      <div class="terminal terminal--hero" aria-label="Pantheon Local Tools command examples">
-        <div class="terminal-bar" aria-hidden="true">
-          <span></span><span></span><span></span>
-          <strong>pantheon-local</strong>
+      <div class="terminal terminal--hero" aria-label="Pantheon Local Tools command example">
+        <div class="terminal-bar">
+          <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+          <strong aria-hidden="true">pantheon-local</strong>
+          <button class="terminal-motion-toggle" type="button" aria-label="Pause hero animation" hidden>Pause</button>
         </div>
-        <pre><code><i>&gt;</i> pantheon-local multidev SITE.ENV --dry-run
-<i>&gt;</i> pantheon-local multidev SITE.ENV --provider ddev --start
-
-<i>&gt;</i> pantheon-local pull live --database-only
-<i>&gt;</i> pantheon-local status</code></pre>
+        <pre><code><span class="terminal-session" aria-hidden="true"><span class="terminal-line terminal-line--command-1"><i>$</i> <span class="terminal-type-1">pantheon-local multidev example-site.feature1 --dry-run</span><span class="terminal-cursor terminal-cursor--1">_</span></span><span class="terminal-line terminal-line--out-1">Pantheon multidev dry-run</span><span class="terminal-line terminal-line--out-2">Pantheon:    example-site.feature1</span><span class="terminal-line terminal-line--out-3">Provider:    lando</span><span class="terminal-line terminal-line--out-4">Git branch:  feature1</span><span class="terminal-line terminal-line--command-2"><i>$</i> <span class="terminal-type-2">pantheon-local multidev example-site.feature1 --provider lando</span><span class="terminal-cursor terminal-cursor--2">_</span></span><span class="terminal-line terminal-line--out-5">Cloning into 'example-site-feature1'...</span><span class="terminal-line terminal-line--out-6">Created Pantheon multidev checkout</span><span class="terminal-line terminal-line--ready"><i>$</i> <span class="terminal-ready-cursor">_</span></span></span><span class="terminal-session-fallback"><i>$</i> pantheon-local multidev example-site.feature1 --dry-run
+Pantheon multidev dry-run
+Pantheon:    example-site.feature1
+Provider:    lando
+Git branch:  feature1
+<i>$</i> pantheon-local multidev example-site.feature1 --provider lando
+Cloning into 'example-site-feature1'...
+Created Pantheon multidev checkout
+<i>$</i> _</span></code></pre>
       </div>
     </section>
 
@@ -114,6 +74,17 @@
             <div><strong>Configuration-driven</strong><span>Choose your root, provider, and optional Pantheon Tag routing instead of editing the script.</span></div>
             <div><strong>Fail closed</strong><span>Ambiguous providers, unsafe overrides, and occupied destinations stop instead of guessing.</span></div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--audience">
+      <div class="shell section-grid">
+        <div class="section-title">Who it's for</div>
+        <div class="section-copy">
+          <h2>For developers already doing Pantheon work.</h2>
+          <p>If your day involves Terminus, Git, DDEV or Lando, and more shell history than you'd like, that's the use case. PLT gives the repeatable parts a stable command without hiding or replacing the tools underneath.</p>
+          <p class="audience-note">If you manage one site and already have a local workflow you like, you may not need it.</p>
         </div>
       </div>
     </section>
@@ -137,9 +108,9 @@
           </div>
           <div class="terminal">
             <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-            <pre><code><i>&gt;</i> pantheon-local multidev SITE.ENV --dry-run
-<i>&gt;</i> pantheon-local multidev SITE.ENV --provider lando --group migration
-<i>&gt;</i> pantheon-local multidev SITE.ENV --provider ddev --start</code></pre>
+            <pre><code><i>$</i> pantheon-local multidev SITE.ENV --dry-run
+<i>$</i> pantheon-local multidev SITE.ENV --provider lando --group migration
+<i>$</i> pantheon-local multidev SITE.ENV --provider ddev --start</code></pre>
           </div>
         </article>
 
@@ -152,9 +123,9 @@
           </div>
           <div class="terminal">
             <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-            <pre><code><i>&gt;</i> pantheon-local pull live
-<i>&gt;</i> pantheon-local pull test --database-only
-<i>&gt;</i> pantheon-local pull live --files-only</code></pre>
+            <pre><code><i>$</i> pantheon-local pull live
+<i>$</i> pantheon-local pull test --database-only
+<i>$</i> pantheon-local pull live --files-only</code></pre>
           </div>
         </article>
 
@@ -167,9 +138,9 @@
           </div>
           <div class="terminal">
             <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-            <pre><code><i>&gt;</i> pantheon-local status
-<i>&gt;</i> pantheon-local config list
-<i>&gt;</i> pantheon-local --version</code></pre>
+            <pre><code><i>$</i> pantheon-local status
+<i>$</i> pantheon-local config list
+<i>$</i> pantheon-local --version</code></pre>
           </div>
         </article>
       </div>
@@ -238,6 +209,37 @@
       </div>
     </section>
 
+    <section class="section" id="faq">
+      <div class="shell section-grid">
+        <div class="section-title">FAQ</div>
+        <div class="section-copy">
+          <h2>A few things to know before you install it.</h2>
+          <div class="faq-list">
+            <details>
+              <summary>Does PLT replace Terminus, DDEV, or Lando?</summary>
+              <p>No. Pantheon and Terminus remain authoritative for Pantheon operations, and DDEV or Lando still owns the local runtime. PLT coordinates their supported interfaces and adds safety checks around the workflow.</p>
+            </details>
+            <details>
+              <summary>Can it create a Pantheon Multidev?</summary>
+              <p>Yes, but only through the explicit <code>pantheon-local multidev create</code> command. The normal <code>pantheon-local multidev SITE.ENV</code> command remains clone-only and will not create a missing environment.</p>
+            </details>
+            <details>
+              <summary>Where does it keep Pantheon credentials?</summary>
+              <p>It doesn't collect or persist Pantheon machine tokens. Authentication stays with Terminus and the supported provider flows.</p>
+            </details>
+            <details>
+              <summary>Will it rewrite my DDEV or Lando project configuration?</summary>
+              <p>No. Project-owned provider configuration stays authoritative. PLT uses additive local overrides where it can do so safely and stops when it cannot.</p>
+            </details>
+            <details>
+              <summary>Does it run on Windows?</summary>
+              <p>Through WSL or WSL2 using Linux paths. Native PowerShell and Command Prompt are not part of the current supported host contract.</p>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="section section--repository" id="repository">
       <div class="shell section-grid">
         <div class="section-title">Repository trust</div>
@@ -267,5 +269,26 @@
       </div>
     </div>
   </footer>
+  <script>
+    (() => {
+      const hero = document.querySelector('[data-hero-motion]');
+      if (!hero) {
+        return;
+      }
+
+      const toggle = hero.querySelector('.terminal-motion-toggle');
+      if (!toggle) {
+        return;
+      }
+
+      toggle.hidden = false;
+
+      toggle.addEventListener('click', () => {
+        const paused = hero.classList.toggle('hero--motion-paused');
+        toggle.textContent = paused ? 'Play' : 'Pause';
+        toggle.setAttribute('aria-label', paused ? 'Play hero animation' : 'Pause hero animation');
+      });
+    })();
+  </script>
 </body>
 </html>

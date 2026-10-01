@@ -8,6 +8,7 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ### Added
 
+- Added `pantheon-local estate status` for read-only site/estate drift views joining Terminus-backed Dev/Test/Live code identity with canonical local Git/provider state.
 - Added `pantheon-local checkout` for canonical Pantheon Dev source checkouts, deterministic `--all`/Tag-selected estate population, structured plans/results, safe reruns, and explicit fast-forward-only `checkout sync`.
 - Added a stable structured-output foundation with schema-versioned JSON, centrally defined exit categories, explicit durable operation records, and `pantheon-local status --format json` as the first reference consumer.
 - Added `pantheon-local status --record FILE`, which atomically writes the same bounded JSON result to a new file and refuses to overwrite existing evidence.

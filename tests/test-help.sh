@@ -33,6 +33,7 @@ for expected in \
   'pantheon-local checkout SITE.dev [--dry-run] [--format default|json] [--record FILE]' \
   'pantheon-local checkout dev (--all | --tag TAG [--tag TAG ...]) [OPTIONS]' \
   'pantheon-local checkout sync SITE.dev [OPTIONS]' \
+  'pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]' \
   'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]' \
   'pantheon-local multidev create SITE.SOURCE NEW_ENV' \
   '[--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]' \
@@ -100,6 +101,14 @@ assert_contains "$checkout_help" 'canonical Pantheon Dev Git checkouts'
 assert_contains "$checkout_help" 'Normal checkout never updates an existing checkout'
 assert_contains "$checkout_help" '--format default|json'
 assert_contains "$checkout_help" '--record FILE'
+
+estate_help=$(bash "$CLI" estate status --help)
+assert_contains "$estate_help" 'pantheon-local estate status SITE'
+assert_contains "$estate_help" 'pantheon-local estate status --all'
+assert_contains "$estate_help" 'Dev/Test/Live code identities'
+assert_contains "$estate_help" 'inspection-only'
+assert_contains "$estate_help" '--format default|json'
+assert_contains "$estate_help" '--record FILE'
 
 multidev_help=$(bash "$CLI" multidev --help)
 assert_contains "$multidev_help" 'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]'

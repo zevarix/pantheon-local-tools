@@ -114,6 +114,16 @@ pantheon-local checkout sync --tag 'Example Group'
 
 See [`docs/checkout.md`](docs/checkout.md) for routing, classification, structured results, and fast-forward safety.
 
+Inspect local/Pantheon drift across one site, all accessible sites, or configured Tag-selected subsets without mutating anything:
+
+```bash
+pantheon-local estate status SITE
+pantheon-local estate status --all
+pantheon-local estate status --tag 'Example Group'
+```
+
+The overview joins canonical local Git/provider state with Terminus-backed Dev/Test/Live code identities. See [`docs/estate-status.md`](docs/estate-status.md).
+
 Resolve a real existing Pantheon Multidev without changing the filesystem:
 
 ```bash
@@ -199,6 +209,8 @@ pantheon-local checkout dev (--all | --tag TAG [--tag TAG ...]) [OPTIONS]
 pantheon-local checkout sync SITE.dev [OPTIONS]
 pantheon-local checkout sync (--all | --tag TAG [--tag TAG ...]) [OPTIONS]
 
+pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]
+
 pantheon-local multidev SITE.ENV
   --provider ddev|lando
   --group NAME
@@ -229,7 +241,7 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local checkout --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
+Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local checkout --help`, `pantheon-local estate status --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
 
 ## Core workflows
 
@@ -240,6 +252,12 @@ Focused help remains available for nontrivial commands, for example `pantheon-lo
 Normal checkout creates only missing destinations. Existing clean behind checkouts are never moved implicitly; `pantheon-local checkout sync ...` is the explicit fast-forward-only update boundary. Dirty, occupied, wrong-origin, wrong-branch, ahead, or diverged state is preserved and reported rather than reset.
 
 Checkout/sync never starts a provider, pulls data, runs Composer/Drush, exports config, commits/pushes Git, or mutates Pantheon. JSON plans/results and no-overwrite operation records use the shared structured-output contract. See [`docs/checkout.md`](docs/checkout.md).
+
+### Estate status and drift overview
+
+`pantheon-local estate status` is a read-only built-in view that joins Terminus-owned Pantheon environment/code facts with canonical local checkout Git/provider state. It supports one site, `--all`, or repeatable configured `--tag` selection and reports current/missing/behind/ahead/diverged/dirty/review/unavailable states without starting a provider or changing a checkout.
+
+Dev/Test/Live code identity comes from Terminus `env:code-log`; canonical Dev repository comparison uses the Terminus-provided Git URL plus isolated Git inspection. Drift is information and can still exit successfully; nonzero categories are reserved for incomplete authority/routing/inspection state. JSON and no-overwrite operation records use the shared structured-output contract. See [`docs/estate-status.md`](docs/estate-status.md).
 
 ### Multidev checkouts and guarded remote creation
 
@@ -446,6 +464,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 
 - [`docs/workflows.md`](docs/workflows.md) — shared primitive/built-in/downstream workflow model and Terminus authority boundary
 - [`docs/checkout.md`](docs/checkout.md) — canonical Pantheon Dev checkout, estate population, and explicit fast-forward sync
+- [`docs/estate-status.md`](docs/estate-status.md) — read-only estate drift overview joining Terminus environment code with local Git/provider state
 - [`docs/structured-output.md`](docs/structured-output.md) — stable JSON schema, exit categories, and durable operation-record contract
 - [`docs/configuration.md`](docs/configuration.md) — Git-compatible user configuration and Pantheon Tag profile strategies
 - [`docs/multidev.md`](docs/multidev.md) — existing Multidev checkout plus guarded remote creation behavior and safety

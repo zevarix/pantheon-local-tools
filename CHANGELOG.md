@@ -6,6 +6,12 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+### Added
+
+- Added a shared workflow lifecycle model that distinguishes primitives, built-in workflows, downstream workflows, and concrete workflow runs while keeping purpose-specific CLI commands intact.
+- Added an internal atomic workflow-state helper and migrated `pantheon-local setup` to record the shared lifecycle alongside its existing `bootstrap.*` compatibility state.
+- Documented the authority boundary that keeps Pantheon-owned reads and mutations in Terminus while PLT owns orchestration, local/provider/Drupal safety, verification, and reconciliation.
+
 ## 0.1.2 — 2026-09-04
 
 Patch release after v0.1.1, focused on provider-aware Drupal bootstrap and configuration workflows plus explicit guarded Pantheon Multidev creation while preserving the established 0.1.x safety and compatibility contracts.

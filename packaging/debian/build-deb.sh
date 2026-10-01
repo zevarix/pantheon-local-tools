@@ -48,6 +48,7 @@ install -m 0755 "$REPO_ROOT/libexec/pantheon-local-pull" "$APP_ROOT/libexec/pant
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-readiness" "$APP_ROOT/libexec/pantheon-local-readiness"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-setup" "$APP_ROOT/libexec/pantheon-local-setup"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-status" "$APP_ROOT/libexec/pantheon-local-status"
+install -m 0755 "$REPO_ROOT/libexec/pantheon-local-workflow-state" "$APP_ROOT/libexec/pantheon-local-workflow-state"
 install -m 0644 "$VERSION_FILE" "$APP_ROOT/VERSION"
 install -m 0644 "$REPO_ROOT/LICENSE" "$DOC_ROOT/copyright"
 install -m 0644 "$REPO_ROOT/README.md" "$DOC_ROOT/README.md"

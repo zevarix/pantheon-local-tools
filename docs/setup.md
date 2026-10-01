@@ -131,6 +131,12 @@ No later phase runs after a failure. In particular:
 
 Fix the reported problem and rerun `pantheon-local setup`. The command deliberately starts from phase 1 again rather than trying to infer that a previously successful mutating phase is safe to skip.
 
+## Shared workflow lifecycle
+
+Setup is a built-in PLT workflow. Real runs record the shared `workflow.setup.*` lifecycle alongside the established `bootstrap.*` compatibility fields. The shared record identifies the workflow kind, phase, current step/status, update time, and bounded safe next action. Dry-run remains read-only and records no workflow lifecycle state.
+
+The shared lifecycle is orchestration state, not an operation log or permission to skip safety checks on a rerun. Setup retains its existing safe retry behavior.
+
 ## Status and provenance
 
 Successful database provenance continues to be owned by `pantheon-local pull`, which records `data.database-source` only after provider success and Git-integrity verification.

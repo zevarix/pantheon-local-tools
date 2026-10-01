@@ -115,6 +115,7 @@ assert_contains "$dry_output" 'pantheon-local pull phase1 --database-only --prov
 assert_contains "$dry_output" 'Dry-run only:'
 [ ! -e "$MOCK_LOG" ] || fail 'dry-run executed a provider command'
 assert_config_missing "$DRY_STATE" bootstrap.status
+assert_config_missing "$DRY_STATE" workflow.setup.status
 assert_config_missing "$DRY_STATE" data.database-source
 
 # Lando happy path follows the required order and pulls the recorded environment, not the branch.
@@ -137,6 +138,13 @@ assert_config "$LANDO_STATE" bootstrap.step complete
 assert_config "$LANDO_STATE" bootstrap.environment phase1
 assert_config "$LANDO_STATE" bootstrap.provider lando
 [ -n "$(git config --file "$LANDO_STATE" --get bootstrap.updated-at)" ] || fail 'bootstrap timestamp was not recorded'
+assert_config "$LANDO_STATE" workflow.setup.schema 1
+assert_config "$LANDO_STATE" workflow.setup.kind built-in
+assert_config "$LANDO_STATE" workflow.setup.phase complete
+assert_config "$LANDO_STATE" workflow.setup.status complete
+assert_config "$LANDO_STATE" workflow.setup.step complete
+assert_config "$LANDO_STATE" workflow.setup.safe-next-action none
+[ -n "$(git config --file "$LANDO_STATE" --get workflow.setup.updated-at)" ] || fail 'workflow timestamp was not recorded'
 status_output=$(cd "$LANDO" && bash "$CLI" status)
 assert_contains "$status_output" 'Bootstrap status:  complete'
 assert_contains "$status_output" 'Bootstrap step:    complete'
@@ -196,6 +204,11 @@ assert_line "$MOCK_LOG" 1 'lando|start'
 assert_file_not_contains "$MOCK_LOG" 'lando|composer|install'
 assert_config "$START_STATE" bootstrap.status failed
 assert_config "$START_STATE" bootstrap.step provider-start
+assert_config "$START_STATE" workflow.setup.kind built-in
+assert_config "$START_STATE" workflow.setup.phase apply
+assert_config "$START_STATE" workflow.setup.status failed
+assert_config "$START_STATE" workflow.setup.step provider-start
+assert_config "$START_STATE" workflow.setup.safe-next-action 'rerun pantheon-local setup after resolving the reported failure'
 assert_config_missing "$START_STATE" data.database-source
 
 COMPOSER_FAIL="$TMP_ROOT/composer-fail"

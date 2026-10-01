@@ -77,7 +77,7 @@ The project website and hosted APT repository are separate concerns published fr
 https://zevarix.github.io/pantheon-local-tools/
 ```
 
-The root is the human-facing product page. APT consumes the signed repository files beneath that same origin.
+The root is the browser-facing product page. APT consumes the signed repository files beneath that same origin.
 
 Normal Debian/Ubuntu/WSL onboarding uses the repository-root [`install-apt.sh`](../../install-apt.sh) helper, which verifies the canonical primary fingerprint before installing the dedicated keyring/source and package. The complete manual setup, key verification, `/etc/apt/keyrings` installation, deb822 `Signed-By` setup, removal, signing-key rotation, revocation, and recovery procedures remain documented in [`docs/apt-repository.md`](../../docs/apt-repository.md).
 

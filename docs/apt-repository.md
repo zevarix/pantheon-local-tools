@@ -6,7 +6,7 @@ Pantheon Local Tools publishes its project website and signed Debian/Ubuntu/WSL 
 https://zevarix.github.io/pantheon-local-tools/
 ```
 
-The root URL is the human-facing product page. APT clients consume signed metadata, package indexes, the public archive keyring, and package files beneath that same origin.
+The root URL is the browser-facing product page. APT clients consume signed metadata, package indexes, the public archive keyring, and package files beneath that same origin.
 
 The repository uses the `stable` suite and `main` component. Client trust is scoped to a dedicated keyring through APT's `Signed-By` mechanism; `apt-key` is not used. The package is architecture-independent (`Architecture: all`), so the client source explicitly requests only the published `binary-all` index instead of probing for host-specific indexes such as `binary-amd64`.
 

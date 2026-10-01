@@ -13,7 +13,7 @@ OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
 usage() {
   cat <<'USAGE'
 Usage:
-  pantheon-local status [--format human|json] [--record FILE]
+  pantheon-local status [--format default|json] [--record FILE]
 
 Shows local checkout metadata without contacting Pantheon or starting a provider.
 When the selected provider is already running, status may query its read-only
@@ -22,7 +22,7 @@ For PLT-managed checkouts, Drupal bootstrap state is reported from local state;
 JSON also includes the shared workflow lifecycle when present.
 
 Output:
-  --format human  Human-readable output (default).
+  --format default  Normal terminal output (default).
   --format json   Stable structured schema for automation.
   --record FILE   Atomically write the same JSON result to a new FILE. Existing
                   paths are never overwritten. Recording is the only status
@@ -122,7 +122,7 @@ build_status_json() {
 }
 
 status_command() {
-  local format=human record_file='' root git_dir state branch tracking git_state dirty managed
+  local format=default record_file='' root git_dir state branch tracking git_state dirty managed
   local site env target tag provider provider_base provider_source local_name recorded_url local_url url_source provider_config
   local legacy_data_source database_source files_source runtime_url=''
   local bootstrap_status bootstrap_step bootstrap_updated
@@ -132,9 +132,9 @@ status_command() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --format)
-        [ "$#" -ge 2 ] || usage_error '--format requires human or json'
+        [ "$#" -ge 2 ] || usage_error '--format requires default or json'
         format=$2
-        case "$format" in human|json) ;; *) usage_error '--format must be human or json' ;; esac
+        case "$format" in default|json) ;; *) usage_error '--format must be default or json' ;; esac
         shift 2
         ;;
       --record)
@@ -144,11 +144,11 @@ status_command() {
         shift 2
         ;;
       -h|--help|help)
-        [ "$#" -eq 1 ] || usage_error 'usage: pantheon-local status [--format human|json] [--record FILE]'
+        [ "$#" -eq 1 ] || usage_error 'usage: pantheon-local status [--format default|json] [--record FILE]'
         usage
         return
         ;;
-      *) usage_error 'usage: pantheon-local status [--format human|json] [--record FILE]' ;;
+      *) usage_error 'usage: pantheon-local status [--format default|json] [--record FILE]' ;;
     esac
   done
 

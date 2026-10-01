@@ -98,7 +98,7 @@ tag.Example Group.config-strategy=full-export
 tag.Example Group.config-path=config/sync
 ```
 
-Human-readable output may gain labeled fields; it is not a structured/porcelain API.
+Default terminal output may gain labeled fields; it is not a structured/porcelain API.
 
 ## `full-export`
 

@@ -148,7 +148,7 @@ help_output=$(bash "$CLI" multidev create --help)
 assert_contains "$help_output" 'THIS COMMAND PERFORMS AN EXPLICIT REMOTE PANTHEON WRITE'
 assert_contains "$help_output" 'at most 11 characters'
 assert_contains "$help_output" '--yes'
-assert_contains "$help_output" '--format human|json'
+assert_contains "$help_output" '--format default|json'
 assert_contains "$help_output" '--record FILE'
 assert_contains "$help_output" 'JSON is currently supported for --dry-run planning only.'
 assert_contains "$help_output" 'If remote creation succeeds but local checkout/start fails'
@@ -168,6 +168,16 @@ assert_contains "$dry_output" 'Local checkout:        not performed (--dry-run)'
 assert_env_absent feature1
 assert_file_not_contains "$MOCK_TERMINUS_LOG" 'multidev:create'
 [ ! -e "$LOCAL_ROOT/multidev/migration/example-site-feature1" ] || fail 'dry-run created a local checkout'
+
+: > "$MOCK_TERMINUS_LOG"
+default_dry_output=$(bash "$CLI" multidev create example-site.live feature1 --provider lando --group migration --dry-run --format default)
+[ "$default_dry_output" = "$dry_output" ] || fail '--format default did not match omitted-format dry-run output'
+assert_file_not_contains "$MOCK_TERMINUS_LOG" 'multidev:create'
+set +e
+bash "$CLI" multidev create example-site.live feature1 --dry-run --format human >/dev/null 2>&1
+human_format_status=$?
+set -e
+[ "$human_format_status" -ne 0 ] || fail 'legacy format alias was unexpectedly accepted'
 
 # Structured dry-run exposes the exact sanitized Terminus primitive without mutating.
 export TERMINUS_MACHINE_TOKEN='super-secret-terminus-token'

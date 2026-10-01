@@ -81,7 +81,7 @@ Not every workflow uses every phase, but consequential operations remain separab
 2. `plan` — validate inputs and show intended operations;
 3. `apply` — perform explicitly authorized mutations;
 4. `verify` — re-read authoritative state after mutation;
-5. `review` — expose resulting changes/evidence to a human or caller;
+5. `review` — expose resulting changes/evidence to a reviewer or caller;
 6. `commit` — explicit Git commit boundary when a workflow supports it;
 7. `push` — explicit Git push boundary when a workflow supports it;
 8. `complete` — record a finished/no-further-action state.

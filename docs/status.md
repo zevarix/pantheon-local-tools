@@ -38,7 +38,7 @@ Bootstrap updated: 2026-09-04T14:30:00Z
 
 ## Structured output and records
 
-Human-readable output remains the default. `pantheon-local status --format json` emits schema-versioned JSON using the shared [`structured-output`](structured-output.md) contract instead of human placeholders or spacing.
+Default terminal output remains the default presentation. `pantheon-local status --format json` emits schema-versioned JSON using the shared [`structured-output`](structured-output.md) contract instead of terminal placeholders or spacing.
 
 The structured result includes:
 

@@ -1,15 +1,15 @@
 # Structured output and operation records
 
-Pantheon Local Tools keeps human terminal presentation separate from its machine-readable contract.
+Pantheon Local Tools keeps its default terminal presentation separate from its machine-readable contract.
 
 Commands that advertise structured output use:
 
 ```text
---format human
+--format default
 --format json
 ```
 
-`human` remains the default. JSON is the supported automation surface; scripts should not scrape spacing or labels from human output.
+`default` selects the normal terminal presentation and is also the behavior when `--format` is omitted. JSON is the supported automation surface; scripts should not scrape spacing or labels from terminal output.
 
 ## Schema version
 
@@ -17,7 +17,7 @@ The initial structured schema version is `1`.
 
 Every JSON result has a top-level `schema_version`. Additive fields may be introduced without changing the version. Removing a field, changing its type or meaning, or otherwise making an incompatible machine-contract change requires a new schema version.
 
-Structured output is versioned independently from incidental human formatting and independently from the PLT package version.
+Structured output is versioned independently from incidental terminal formatting and independently from the PLT package version.
 
 ## Common result envelope
 
@@ -44,7 +44,7 @@ Structured commands use a common envelope where applicable:
 }
 ```
 
-Command-specific objects may add Git, provider, Pantheon, Drupal, workflow, plan, verification, or other bounded facts. Fields that are unknown or not applicable use JSON `null` rather than human placeholders such as `(not recorded)`.
+Command-specific objects may add Git, provider, Pantheon, Drupal, workflow, plan, verification, or other bounded facts. Fields that are unknown or not applicable use JSON `null` rather than terminal placeholders such as `(not recorded)`.
 
 Target arrays are ordered. A command must preserve explicit caller order when that order is meaningful or use a documented deterministic ordering for discovered sets. The common JSON helper preserves the order supplied by the caller.
 
@@ -141,4 +141,4 @@ After the normal Terminus authentication and `env:list` preflight succeeds, the 
 terminus multidev:create example-site.live feature1 --yes
 ```
 
-The structured dry-run never invokes that mutation. Real Multidev creation remains on its established human result surface until a later shared workflow-run/result consumer adopts the full mutation lifecycle.
+The structured dry-run never invokes that mutation. Real Multidev creation remains on its established default result surface until a later shared workflow-run/result consumer adopts the full mutation lifecycle.

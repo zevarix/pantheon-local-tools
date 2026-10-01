@@ -281,7 +281,7 @@ See [`docs/status.md`](docs/status.md) for the status contract.
 
 User configuration is managed through `pantheon-local config`; hand-editing is not required.
 
-For a human first run, `pantheon-local config init` guides root/provider selection and writes only after all selected values validate and you confirm the summary. Supplying `--root` and/or `--provider` makes the same command non-interactive; omitted values remain unchanged. The existing `config get/set/unset/list` commands remain the granular scriptable interface.
+For an interactive first run, `pantheon-local config init` guides root/provider selection and writes only after all selected values validate and you confirm the summary. Supplying `--root` and/or `--provider` makes the same command non-interactive; omitted values remain unchanged. The existing `config get/set/unset/list` commands remain the granular scriptable interface.
 
 By default configuration lives at:
 
@@ -382,7 +382,7 @@ Pantheon Local Tools ships through several equivalent distribution paths built f
 - downloadable architecture-independent `.deb` release artifacts; and
 - the [signed APT repository](docs/apt-repository.md) for Debian, Ubuntu, and WSL.
 
-The **[project website](https://zevarix.github.io/pantheon-local-tools/)** and signed APT repository intentionally share one GitHub Pages origin. Humans get the product page at `/`; APT consumes the signed repository metadata and package indexes beneath that same origin.
+The **[project website](https://zevarix.github.io/pantheon-local-tools/)** and signed APT repository intentionally share one GitHub Pages origin. Browser visitors get the product page at `/`; APT consumes the signed repository metadata and package indexes beneath that same origin.
 
 Release artifacts and package metadata are tied to immutable tagged releases. See [`docs/releasing.md`](docs/releasing.md) for the maintainer procedure.
 

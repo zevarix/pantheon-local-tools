@@ -136,6 +136,8 @@ clone_local() {
   dest="$LOCAL_ROOT/$route/$site"
   mkdir -p "${dest%/*}"
   git clone -q "$MOCK_DATA/$site.git" "$dest"
+  git -C "$dest" config user.name 'Test User'
+  git -C "$dest" config user.email 'test@example.com'
   printf '%s\n' "$dest"
 }
 

@@ -147,3 +147,6 @@ The structured dry-run never invokes that mutation. Real Multidev creation remai
 `pantheon-local checkout ... --format json` uses the common schema for both read-only plans and sequential checkout/sync results. Per-site records expose CLONE/CURRENT/UPDATE/SKIP/BLOCKED (or completed CLONED/UPDATED) state, reason codes, canonical destination, matched route Tag, remote branch/SHA, safe next action, and Terminus/Git authority.
 
 A safe dry-run with missing/behind sites remains exit `0` and reports aggregate semantic state `planned`; a real run that clones or fast-forwards returns the stable `changed` category (`10`). Unsafe/ambiguous/unavailable/verification failures use the corresponding shared categories.
+### Estate status inspection
+
+`pantheon-local estate status ... --format json` emits read-only cross-system inspection records. Per-site results include assessment/reason/failure source, route/destination facts, local Git/provider facts, canonical remote Git identity when available, and independent Dev/Test/Live code-log status/full SHA. Ordinary drift such as missing/behind/ahead/diverged/dirty remains a successful complete inspection; nonzero categories represent incomplete routing or authority.

@@ -5,12 +5,16 @@ PROGRAM_NAME='pantheon-local'
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 CORE="$SCRIPT_DIR/pantheon-local-core"
 OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+ESTATE_COMMON="$SCRIPT_DIR/pantheon-local-estate-common"
 PLAN_DIR=''
 
 [ -x "$CORE" ] || { printf '%s: core module is missing or not executable: %s\n' "$PROGRAM_NAME" "$CORE" >&2; exit 40; }
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
-# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+[ -r "$ESTATE_COMMON" ] || { printf '%s: estate discovery module is missing: %s\n' "$PROGRAM_NAME" "$ESTATE_COMMON" >&2; exit 40; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared libraries; CI checks files independently.
 . "$OUTPUT_LIB"
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$ESTATE_COMMON"
 
 usage() {
   cat <<'USAGE'
@@ -77,19 +81,6 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die_code "$PLT_EXIT_OPERATION_FAILED" "required command not found: $1"
 }
 
-terminus_preflight() {
-  require_command terminus
-  if ! terminus auth:whoami >/dev/null 2>&1; then
-    die_code "$PLT_EXIT_AUTHORITY_UNAVAILABLE" 'Terminus is not authenticated. Run terminus auth:login first.'
-  fi
-}
-
-validate_site() {
-  local site=$1
-  [ -n "$site" ] || usage_error 'site cannot be empty'
-  printf '%s\n' "$site" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]*$' || usage_error "site contains unsupported characters: $site"
-}
-
 parse_dev_target() {
   local target=$1 site env remainder
   case "$target" in *.*) ;; *) usage_error 'single checkout target must use SITE.dev syntax' ;; esac
@@ -102,103 +93,6 @@ parse_dev_target() {
   printf '%s\n' "$site"
 }
 
-config_root() { "$CORE" config get root; }
-config_tags() { "$CORE" config tag list; }
-
-tag_is_configured() {
-  local wanted=$1 mappings=$2 line tag
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    tag=${line%%=*}
-    [ "$tag" = "$wanted" ] && return 0
-  done <<EOF
-$mappings
-EOF
-  return 1
-}
-
-remote_tag_contains() {
-  local wanted=$1 remote_tags=$2 line
-  while IFS= read -r line; do
-    [ "$line" = "$wanted" ] && return 0
-  done <<EOF
-$remote_tags
-EOF
-  return 1
-}
-
-selected_by_tags() {
-  local selectors_file=$1 remote_tags=$2 wanted
-  [ -s "$selectors_file" ] || return 0
-  while IFS= read -r wanted; do
-    [ -n "$wanted" ] || continue
-    remote_tag_contains "$wanted" "$remote_tags" && return 0
-  done < "$selectors_file"
-  return 1
-}
-
-site_environment_list() {
-  local site=$1 output
-  if ! output=$(terminus env:list "$site" --format=list --field=id 2>/dev/null); then
-    return 1
-  fi
-  printf '%s\n' "$output"
-}
-
-env_list_has_dev() {
-  local envs=$1 line
-  while IFS= read -r line; do [ "$line" = dev ] && return 0; done <<EOF
-$envs
-EOF
-  return 1
-}
-
-site_remote_tags() {
-  local site=$1 org output
-  if ! org=$(terminus site:info "$site" --field=organization 2>/dev/null); then return 1; fi
-  [ -n "$org" ] || return 1
-  if ! output=$(terminus tag:list "$site" "$org" --format=list 2>/dev/null); then return 1; fi
-  printf '%s\n' "$output"
-}
-
-site_git_url() {
-  local site=$1 output
-  if ! output=$(terminus connection:info "$site.dev" --field=git_url 2>/dev/null); then return 1; fi
-  [ -n "$output" ] || return 1
-  printf '%s\n' "$output"
-}
-
-remote_head_info() {
-  local git_url=$1 output branch sha
-  if ! output=$(git ls-remote --symref "$git_url" HEAD 2>/dev/null); then return 1; fi
-  branch=$(printf '%s\n' "$output" | sed -n 's/^ref: refs\/heads\/\([^[:space:]]*\)[[:space:]]HEAD$/\1/p' | head -n 1)
-  sha=$(printf '%s\n' "$output" | awk '$2 == "HEAD" && $1 != "ref:" {print $1; exit}')
-  [ -n "$branch" ] && [ -n "$sha" ] || return 1
-  printf '%s\n%s\n' "$branch" "$sha"
-}
-
-resolve_route() {
-  local site=$1 mappings=$2 remote_tags=$3 line configured_tag route_dir
-  local matches=0 matched_tag='' matched_dir=''
-  if [ -z "$mappings" ]; then printf '\n\n'; return 0; fi
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    configured_tag=${line%%=*}
-    route_dir=${line#*=}
-    if remote_tag_contains "$configured_tag" "$remote_tags"; then
-      matches=$((matches + 1))
-      matched_tag=$configured_tag
-      matched_dir=$route_dir
-    fi
-  done <<EOF
-$mappings
-EOF
-  case "$matches" in
-    1) printf '%s\n%s\n' "$matched_tag" "$matched_dir" ;;
-    0) return 10 ;;
-    *) return 11 ;;
-  esac
-}
 
 plan_file_for() { printf '%s/%s.plan\n' "$PLAN_DIR" "$1"; }
 
@@ -229,23 +123,6 @@ plan_skip() {
   plan_set "$file" reason "$reason"
   plan_set "$file" exit-category unsafe-local-state
   plan_set "$file" next-action "$next"
-}
-
-git_relation() {
-  local destination=$1 git_url=$2 tmp local_sha remote_sha relation
-  local_sha=$(git -C "$destination" rev-parse HEAD 2>/dev/null) || return 1
-  tmp=$(mktemp -d "$PLAN_DIR/relation.XXXXXX") || return 1
-  if ! git -C "$tmp" init --bare -q; then rm -rf "$tmp"; return 1; fi
-  if ! git -C "$tmp" fetch -q "$git_url" HEAD:refs/heads/remote-head; then rm -rf "$tmp"; return 1; fi
-  if ! git -C "$tmp" fetch -q "$destination" HEAD:refs/heads/local-head; then rm -rf "$tmp"; return 1; fi
-  remote_sha=$(git -C "$tmp" rev-parse refs/heads/remote-head) || { rm -rf "$tmp"; return 1; }
-  if [ "$local_sha" = "$remote_sha" ]; then relation=current
-  elif git -C "$tmp" merge-base --is-ancestor refs/heads/local-head refs/heads/remote-head; then relation=behind
-  elif git -C "$tmp" merge-base --is-ancestor refs/heads/remote-head refs/heads/local-head; then relation=ahead
-  else relation=diverged
-  fi
-  rm -rf "$tmp"
-  printf '%s\n' "$relation"
 }
 
 plan_site() {
@@ -281,7 +158,7 @@ plan_site() {
   fi
 
   route_rc=0
-  route=$(resolve_route "$site" "$mappings" "$remote_tags") || route_rc=$?
+  route=$(resolve_route "$mappings" "$remote_tags") || route_rc=$?
   case "$route_rc" in
     0) ;;
     10)
@@ -378,7 +255,7 @@ plan_site() {
     return
   fi
 
-  if ! relation=$(git_relation "$destination" "$git_url"); then
+  if ! relation=$(git_relation "$destination" "$git_url" "$PLAN_DIR"); then
     plan_blocked "$file" git-relation-unavailable authority-unavailable 'verify Git access and retry'
     printf '%s\n' "$site" >> "$order_file"
     return

@@ -1,0 +1,516 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME='pantheon-local'
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+CORE="$SCRIPT_DIR/pantheon-local-core"
+OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+ESTATE_COMMON="$SCRIPT_DIR/pantheon-local-estate-common"
+STATUS_DIR=''
+
+[ -x "$CORE" ] || { printf '%s: core module is missing or not executable: %s\n' "$PROGRAM_NAME" "$CORE" >&2; exit 40; }
+[ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
+[ -r "$ESTATE_COMMON" ] || { printf '%s: estate discovery module is missing: %s\n' "$PROGRAM_NAME" "$ESTATE_COMMON" >&2; exit 40; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$OUTPUT_LIB"
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$ESTATE_COMMON"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local estate status SITE [--format default|json] [--record FILE]
+  pantheon-local estate status --all [--format default|json] [--record FILE]
+  pantheon-local estate status --tag TAG [--tag TAG ...]
+    [--format default|json] [--record FILE]
+
+Read-only cross-system overview of Pantheon environments and canonical local Dev checkouts.
+
+Selection:
+  SITE        Inspect one exact accessible Pantheon site.
+  --all       Inspect every accessible site.
+  --tag TAG   Inspect sites carrying any selected configured Pantheon Tag.
+              Repeat for OR selection.
+
+Reported facts include:
+  * configured Tag routing and canonical local destination;
+  * local checkout presence, branch, clean/dirty state, provider, and Git relation;
+  * current Dev/Test/Live code identities from Terminus env:code-log;
+  * whether the canonical local checkout is current, missing, behind, ahead,
+    diverged, dirty, or needs review.
+
+Safety:
+  * This command is inspection-only except for an explicitly requested record file.
+  * It never starts/rebuilds a provider, clones/pulls/deploys code or data,
+    exports config, commits/pushes Git, or mutates Pantheon.
+  * Pantheon facts come from supported Terminus reads; Git owns local/remote
+    repository identity and history.
+
+Output:
+  --format default  Focused terminal table (default).
+  --format json     Stable structured result.
+  --record FILE     Write the same JSON result to a new file; never overwrite.
+USAGE
+}
+
+cleanup() { [ -z "$STATUS_DIR" ] || rm -rf "$STATUS_DIR"; }
+
+die_code() {
+  local code=$1
+  shift
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit "$code"
+}
+
+usage_error() { die_code "$PLT_EXIT_USAGE" "$*"; }
+require_command() { command -v "$1" >/dev/null 2>&1 || die_code "$PLT_EXIT_OPERATION_FAILED" "required command not found: $1"; }
+
+status_file_for() { printf '%s/%s.status\n' "$STATUS_DIR" "$1"; }
+status_set() { git config --file "$1" --replace-all "status.$2" "$3"; }
+status_get() { git config --file "$1" --get "status.$2" 2>/dev/null || true; }
+
+detect_local_provider() {
+  local destination=$1 state provider has_ddev=false has_lando=false
+  state="$destination/.git/pantheon-local-tools/state"
+  provider=$(git config --file "$state" --get local.provider 2>/dev/null || true)
+  if [ -n "$provider" ]; then printf '%s\n%s\n' "$provider" recorded; return; fi
+  [ -f "$destination/.ddev/config.yaml" ] && has_ddev=true
+  [ -f "$destination/.lando.yml" ] && has_lando=true
+  case "$has_ddev:$has_lando" in
+    true:false) printf '%s\n%s\n' ddev detected ;;
+    false:true) printf '%s\n%s\n' lando detected ;;
+    true:true) printf '%s\n%s\n' ambiguous ambiguous ;;
+    false:false) printf '%s\n%s\n' unknown unknown ;;
+  esac
+}
+
+short_sha() {
+  local sha=$1
+  if [ -n "$sha" ]; then printf '%.8s' "$sha"; else printf '-'; fi
+}
+
+collect_code_hash() {
+  local file=$1 site=$2 env=$3 envs=$4 hash
+  if ! env_list_has "$env" "$envs"; then
+    status_set "$file" "$env-code-status" absent
+    return
+  fi
+  if hash=$(site_code_hash "$site" "$env") && [ -n "$hash" ]; then
+    status_set "$file" "$env-code-status" available
+    status_set "$file" "$env-sha" "$hash"
+  else
+    status_set "$file" "$env-code-status" unavailable
+  fi
+}
+
+set_review() {
+  local file=$1 assessment=$2 reason=$3 next=$4
+  status_set "$file" assessment "$assessment"
+  status_set "$file" reason "$reason"
+  status_set "$file" next-action "$next"
+}
+
+inspect_site() {
+  local site=$1 mappings=$2 selectors_file=$3 root=$4 order_file=$5
+  local file envs remote_tags='' route route_rc tag='' route_dir='' destination=''
+  local git_url='' provider_info provider='' provider_source='' origin branch clean relation local_sha remote_info remote_branch remote_git_sha
+  local state_site state_env
+
+  file=$(status_file_for "$site")
+  : > "$file"
+  chmod 600 "$file"
+  status_set "$file" site "$site"
+
+  if ! envs=$(site_environment_list "$site"); then
+    status_set "$file" inspection-status unavailable
+    status_set "$file" inspection-reason environment-authority-unavailable
+    status_set "$file" failure-source terminus
+    set_review "$file" unavailable environment-authority-unavailable 'verify Terminus access to this site'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  collect_code_hash "$file" "$site" dev "$envs"
+  collect_code_hash "$file" "$site" test "$envs"
+  collect_code_hash "$file" "$site" live "$envs"
+
+  if [ -n "$mappings" ] || [ -s "$selectors_file" ]; then
+    if ! remote_tags=$(site_remote_tags "$site"); then
+      status_set "$file" inspection-status unavailable
+      status_set "$file" inspection-reason tag-authority-unavailable
+      status_set "$file" failure-source terminus
+      set_review "$file" unavailable tag-authority-unavailable 'verify Terminus access to the site organization and Tags'
+      printf '%s\n' "$site" >> "$order_file"
+      return
+    fi
+  fi
+
+  if ! selected_by_tags "$selectors_file" "$remote_tags"; then
+    rm -f "$file"
+    return
+  fi
+
+  route_rc=0
+  route=$(resolve_route "$mappings" "$remote_tags") || route_rc=$?
+  case "$route_rc" in
+    0)
+      tag=$(printf '%s\n' "$route" | sed -n '1p')
+      route_dir=$(printf '%s\n' "$route" | sed -n '2p')
+      status_set "$file" tag "$tag"
+      status_set "$file" route-status resolved
+      ;;
+    10)
+      status_set "$file" route-status unmapped
+      status_set "$file" inspection-status ambiguous
+      status_set "$file" inspection-reason unmapped-tag-route
+      status_set "$file" failure-source plt-orchestration
+      set_review "$file" review unmapped-tag-route 'configure one local route matching a Pantheon Tag on this site'
+      ;;
+    11)
+      status_set "$file" route-status ambiguous
+      status_set "$file" inspection-status ambiguous
+      status_set "$file" inspection-reason ambiguous-tag-route
+      status_set "$file" failure-source plt-orchestration
+      set_review "$file" review ambiguous-tag-route 'leave exactly one configured local Tag route matching this site'
+      ;;
+    *)
+      status_set "$file" inspection-status failed
+      status_set "$file" inspection-reason route-resolution-failed
+      status_set "$file" failure-source plt-orchestration
+      set_review "$file" unavailable route-resolution-failed 'review local Tag routing'
+      ;;
+  esac
+
+  if [ "$route_rc" -eq 0 ]; then
+    if [ -n "$route_dir" ]; then destination="$root/$route_dir/$site"; else destination="$root/$site"; fi
+    status_set "$file" destination "$destination"
+  fi
+
+  if [ -z "$destination" ]; then
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  if [ ! -e "$destination" ]; then
+    status_set "$file" local-present false
+    status_set "$file" destination-state missing
+    status_set "$file" local-clean unknown
+    status_set "$file" local-relation missing
+    status_set "$file" provider ''
+    status_set "$file" provider-source ''
+    if [ -z "$(status_get "$file" inspection-status)" ]; then
+      status_set "$file" inspection-status complete
+      set_review "$file" missing checkout-missing "run pantheon-local checkout $site.dev to create the canonical checkout"
+    fi
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  if [ ! -d "$destination/.git" ]; then
+    status_set "$file" local-present false
+    status_set "$file" destination-state occupied
+    status_set "$file" local-clean unknown
+    status_set "$file" local-relation review
+    status_set "$file" inspection-status complete
+    set_review "$file" review occupied-destination 'review the occupied canonical destination'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  status_set "$file" local-present true
+  status_set "$file" destination-state checkout
+  local_sha=$(git -C "$destination" rev-parse HEAD 2>/dev/null || true)
+  branch=$(git -C "$destination" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  if [ -z "$branch" ]; then branch="detached@$(git -C "$destination" rev-parse --short HEAD 2>/dev/null || printf unknown)"; fi
+  status_set "$file" local-sha "$local_sha"
+  status_set "$file" local-branch "$branch"
+
+  if [ -n "$(git -C "$destination" status --porcelain --untracked-files=normal 2>/dev/null || true)" ]; then
+    clean=false
+  else
+    clean=true
+  fi
+  status_set "$file" local-clean "$clean"
+
+  provider_info=$(detect_local_provider "$destination")
+  provider=$(printf '%s\n' "$provider_info" | sed -n '1p')
+  provider_source=$(printf '%s\n' "$provider_info" | sed -n '2p')
+  status_set "$file" provider "$provider"
+  status_set "$file" provider-source "$provider_source"
+
+  state_site=$(git config --file "$destination/.git/pantheon-local-tools/state" --get pantheon.site 2>/dev/null || true)
+  state_env=$(git config --file "$destination/.git/pantheon-local-tools/state" --get pantheon.environment 2>/dev/null || true)
+  if [ -n "$state_site" ] && [ "$state_site" != "$site" ]; then
+    status_set "$file" local-relation review
+    status_set "$file" inspection-status complete
+    set_review "$file" review checkout-identity-mismatch 'review the existing PLT checkout identity'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+  if [ -n "$state_env" ] && [ "$state_env" != dev ]; then
+    status_set "$file" local-relation review
+    status_set "$file" inspection-status complete
+    set_review "$file" review checkout-environment-mismatch 'review the existing PLT checkout environment identity'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  if ! git_url=$(site_git_url "$site"); then
+    status_set "$file" local-relation unknown
+    status_set "$file" inspection-status unavailable
+    status_set "$file" inspection-reason git-authority-unavailable
+    status_set "$file" failure-source terminus
+    set_review "$file" unavailable git-authority-unavailable 'verify Terminus connection information for the Dev environment'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  remote_info=$(remote_head_info "$git_url" 2>/dev/null || true)
+  remote_branch=$(printf '%s\n' "$remote_info" | sed -n '1p')
+  remote_git_sha=$(printf '%s\n' "$remote_info" | sed -n '2p')
+  if [ -z "$remote_branch" ] || [ -z "$remote_git_sha" ]; then
+    status_set "$file" local-relation unknown
+    status_set "$file" inspection-status unavailable
+    status_set "$file" inspection-reason git-remote-unavailable
+    status_set "$file" failure-source git
+    set_review "$file" unavailable git-remote-unavailable 'verify Git access to the canonical Dev repository'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+  status_set "$file" remote-branch "$remote_branch"
+  status_set "$file" remote-git-sha "$remote_git_sha"
+
+  origin=$(git -C "$destination" remote get-url origin 2>/dev/null || true)
+  if [ "$origin" != "$git_url" ]; then
+    status_set "$file" local-relation review
+    status_set "$file" inspection-status complete
+    set_review "$file" review origin-mismatch 'review the canonical checkout origin'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  if ! relation=$(git_relation "$destination" "$git_url" "$STATUS_DIR"); then
+    status_set "$file" local-relation unknown
+    status_set "$file" inspection-status unavailable
+    status_set "$file" inspection-reason git-relation-unavailable
+    status_set "$file" failure-source git
+    set_review "$file" unavailable git-relation-unavailable 'verify Git access to the canonical Dev repository'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+  status_set "$file" local-relation "$relation"
+  status_set "$file" inspection-status complete
+
+  if [ "$clean" = false ]; then
+    set_review "$file" dirty dirty-working-tree 'review local working-tree changes'
+  elif [ "$branch" != "$remote_branch" ]; then
+    set_review "$file" review branch-mismatch "review the canonical branch; Pantheon Dev currently reports $remote_branch"
+  elif [ "$provider" = ambiguous ]; then
+    set_review "$file" review provider-ambiguous 'choose which local provider owns this checkout'
+  else
+    case "$relation" in
+      current) set_review "$file" current dev-current '' ;;
+      behind) set_review "$file" behind dev-behind "run pantheon-local checkout sync $site.dev to fast-forward" ;;
+      ahead) set_review "$file" ahead local-ahead 'review local commits before synchronization' ;;
+      diverged) set_review "$file" diverged local-diverged 'review divergent local/Dev history' ;;
+      *) set_review "$file" review git-relation-unknown 'review local Git state' ;;
+    esac
+  fi
+
+  printf '%s\n' "$site" >> "$order_file"
+}
+
+aggregate_exit_code() {
+  local order_file=$1 any=false any_ambiguous=false any_unavailable=false any_failed=false site file inspection
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    any=true
+    file=$(status_file_for "$site")
+    inspection=$(status_get "$file" inspection-status)
+    case "$inspection" in
+      ambiguous) any_ambiguous=true ;;
+      unavailable) any_unavailable=true ;;
+      failed) any_failed=true ;;
+    esac
+  done < "$order_file"
+  [ "$any" = true ] || { printf '%s\n' "$PLT_EXIT_NO_TARGETS"; return; }
+  [ "$any_failed" = false ] || { printf '%s\n' "$PLT_EXIT_OPERATION_FAILED"; return; }
+  [ "$any_unavailable" = false ] || { printf '%s\n' "$PLT_EXIT_AUTHORITY_UNAVAILABLE"; return; }
+  [ "$any_ambiguous" = false ] || { printf '%s\n' "$PLT_EXIT_AMBIGUOUS_CONFIGURATION"; return; }
+  printf '%s\n' "$PLT_EXIT_SUCCESS"
+}
+
+aggregate_semantics() {
+  local order_file=$1 site file assessment all_current=true any_review=false
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    file=$(status_file_for "$site")
+    assessment=$(status_get "$file" assessment)
+    [ "$assessment" = current ] || all_current=false
+    case "$assessment" in missing|behind|ahead|diverged|dirty|review) any_review=true ;; esac
+  done < "$order_file"
+  if [ "$all_current" = true ]; then printf '%s\n%s\n' current estate-current
+  elif [ "$any_review" = true ]; then printf '%s\n%s\n' complete estate-review-needed
+  else printf '%s\n%s\n' complete estate-inspection-complete
+  fi
+}
+
+print_default() {
+  local order_file=$1 site file tag local_present branch clean relation provider dev test live assessment
+  printf 'Pantheon estate status\n\n'
+  printf '%-20s %-14s %-6s %-12s %-5s %-10s %-9s %-8s %-8s %-8s %s\n' SITE TAG LOCAL BRANCH CLEAN RELATION PROVIDER DEV TEST LIVE STATUS
+  printf '%-20s %-14s %-6s %-12s %-5s %-10s %-9s %-8s %-8s %-8s %s\n' '--------------------' '--------------' '------' '------------' '-----' '----------' '---------' '--------' '--------' '--------' '----------'
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    file=$(status_file_for "$site")
+    tag=$(status_get "$file" tag); [ -n "$tag" ] || tag='-'
+    local_present=$(status_get "$file" local-present); [ -n "$local_present" ] || local_present='-'
+    branch=$(status_get "$file" local-branch); [ -n "$branch" ] || branch='-'
+    clean=$(status_get "$file" local-clean); [ -n "$clean" ] || clean='-'
+    relation=$(status_get "$file" local-relation); [ -n "$relation" ] || relation='-'
+    provider=$(status_get "$file" provider); [ -n "$provider" ] || provider='-'
+    dev=$(short_sha "$(status_get "$file" dev-sha)")
+    test=$(short_sha "$(status_get "$file" test-sha)")
+    live=$(short_sha "$(status_get "$file" live-sha)")
+    assessment=$(status_get "$file" assessment); [ -n "$assessment" ] || assessment='unavailable'
+    printf '%-20s %-14s %-6s %-12s %-5s %-10s %-9s %-8s %-8s %-8s %s\n' "$site" "$tag" "$local_present" "$branch" "$clean" "$relation" "$provider" "$dev" "$test" "$live" "$assessment"
+  done < "$order_file"
+}
+
+json_bool_or_null() {
+  case "${1:-}" in
+    true|false) printf '%s' "$1" ;;
+    *) printf 'null' ;;
+  esac
+}
+
+json_code_env() {
+  local file=$1 env=$2 status sha
+  status=$(status_get "$file" "$env-code-status")
+  sha=$(status_get "$file" "$env-sha")
+  printf '{"status":%s,"sha":%s}' "$(plt_json_nullable_string "$status")" "$(plt_json_nullable_string "$sha")"
+}
+
+build_json() {
+  local order_file=$1 exit_code=$2 semantic=$3 reason=$4 first=true site file inspection assessment destination tag local_present clean branch local_sha relation provider provider_source next route_status destination_state site_failure remote_branch remote_git_sha
+  local failure_source
+  case "$exit_code" in
+    0|20) failure_source=null ;;
+    31) failure_source='"plt-orchestration"' ;;
+    32) failure_source='"terminus"' ;;
+    *) failure_source='"plt-orchestration"' ;;
+  esac
+  printf '{'
+  printf '"schema_version":%s,' "$PLT_STRUCTURED_SCHEMA_VERSION"
+  printf '"record_type":"inspection",'
+  printf '"command":"estate-status",'
+  printf '"primitive":"estate-status-inspection",'
+  printf '"operation_id":null,'
+  printf '"read_only":true,'
+  printf '"workflow":{"schema_version":1,"name":"estate-status","kind":"built-in","phase":"verify","status":%s,"step":"estate-inspection","safe_next_action":null},' "$(if [ "$exit_code" -eq 0 ]; then plt_json_string complete; else plt_json_string blocked; fi)"
+  printf '"result":{"state":%s,"reason_code":%s,"exit_code":%s,"exit_category":%s,"failure_source":%s,"next_action":null},' "$(plt_json_string "$semantic")" "$(plt_json_string "$reason")" "$exit_code" "$(plt_json_string "$(plt_exit_category "$exit_code")")" "$failure_source"
+  printf '"authority":{"pantheon":"terminus","git":"git","provider":"local-config-only","terminus_primitives":["site:list","site:info","tag:list","env:list","env:code-log","connection:info"]},'
+  printf '"results":['
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    file=$(status_file_for "$site")
+    inspection=$(status_get "$file" inspection-status); assessment=$(status_get "$file" assessment); destination=$(status_get "$file" destination); tag=$(status_get "$file" tag)
+    local_present=$(status_get "$file" local-present); clean=$(status_get "$file" local-clean); branch=$(status_get "$file" local-branch); local_sha=$(status_get "$file" local-sha); relation=$(status_get "$file" local-relation)
+    provider=$(status_get "$file" provider); provider_source=$(status_get "$file" provider-source); next=$(status_get "$file" next-action); route_status=$(status_get "$file" route-status); destination_state=$(status_get "$file" destination-state)
+    site_failure=$(status_get "$file" failure-source); remote_branch=$(status_get "$file" remote-branch); remote_git_sha=$(status_get "$file" remote-git-sha)
+    [ "$first" = true ] || printf ','; first=false
+    printf '{"site":%s,"assessment":%s,"inspection_status":%s,"reason_code":%s,"failure_source":%s,"safe_next_action":%s,"route":{"status":%s,"tag":%s,"destination":%s},"local":{"present":%s,"destination_state":%s,"branch":%s,"sha":%s,"clean":%s,"relation":%s,"provider":%s,"provider_source":%s},"remote_git":{"branch":%s,"sha":%s},"code":{"dev":%s,"test":%s,"live":%s}}' \
+      "$(plt_json_string "$site")" "$(plt_json_nullable_string "$assessment")" "$(plt_json_nullable_string "$inspection")" "$(plt_json_nullable_string "$(status_get "$file" reason)")" "$(plt_json_nullable_string "$site_failure")" "$(plt_json_nullable_string "$next")" \
+      "$(plt_json_nullable_string "$route_status")" "$(plt_json_nullable_string "$tag")" "$(plt_json_nullable_string "$destination")" \
+      "$(json_bool_or_null "$local_present")" "$(plt_json_nullable_string "$destination_state")" "$(plt_json_nullable_string "$branch")" "$(plt_json_nullable_string "$local_sha")" "$(json_bool_or_null "$clean")" "$(plt_json_nullable_string "$relation")" "$(plt_json_nullable_string "$provider")" "$(plt_json_nullable_string "$provider_source")" \
+      "$(plt_json_nullable_string "$remote_branch")" "$(plt_json_nullable_string "$remote_git_sha")" "$(json_code_env "$file" dev)" "$(json_code_env "$file" test)" "$(json_code_env "$file" live)"
+  done < "$order_file"
+  printf ']}'
+}
+
+estate_status_command() {
+  local target='' all=false format=default record_file='' root mappings selectors_file order_file sites site selector exit_code semantic_info semantic reason json record_rc
+
+  STATUS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pantheon-local-estate-status.XXXXXX") || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not create temporary status directory'
+  trap cleanup EXIT HUP INT TERM
+  selectors_file="$STATUS_DIR/selectors"
+  order_file="$STATUS_DIR/order"
+  : > "$selectors_file"; : > "$order_file"
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --all) all=true; shift ;;
+      --tag)
+        [ "$#" -ge 2 ] || usage_error '--tag requires a configured Pantheon Tag'
+        printf '%s\n' "$2" >> "$selectors_file"
+        shift 2
+        ;;
+      --format)
+        [ "$#" -ge 2 ] || usage_error '--format requires default or json'
+        format=$2; case "$format" in default|json) ;; *) usage_error '--format must be default or json' ;; esac
+        shift 2
+        ;;
+      --record)
+        [ "$#" -ge 2 ] || usage_error '--record requires a file path'
+        record_file=$2; [ -n "$record_file" ] || usage_error '--record requires a non-empty file path'
+        shift 2
+        ;;
+      -h|--help|help) usage; return 0 ;;
+      --*) usage_error "unknown estate status option: $1" ;;
+      *) [ -z "$target" ] || usage_error 'estate status accepts one SITE or an estate selector'; target=$1; shift ;;
+    esac
+  done
+
+  [ "$all" = false ] || [ ! -s "$selectors_file" ] || usage_error '--all cannot be combined with --tag'
+  if [ -n "$target" ]; then
+    [ "$all" = false ] && [ ! -s "$selectors_file" ] || usage_error 'SITE cannot be combined with --all or --tag'
+    validate_site "$target"
+  else
+    [ "$all" = true ] || [ -s "$selectors_file" ] || usage_error 'estate status requires SITE, --all, or at least one --tag'
+  fi
+
+  require_command git; require_command sed; require_command awk; require_command sort
+  root=$(config_root) || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not resolve configured checkout root'
+  mappings=$(config_tags) || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not resolve configured Tag routes'
+  while IFS= read -r selector; do
+    [ -n "$selector" ] || continue
+    tag_is_configured "$selector" "$mappings" || die_code "$PLT_EXIT_AMBIGUOUS_CONFIGURATION" "--tag must name a configured Pantheon Tag route: $selector"
+  done < "$selectors_file"
+
+  terminus_preflight
+
+  if [ -n "$target" ]; then
+    inspect_site "$target" "$mappings" "$selectors_file" "$root" "$order_file"
+  else
+    if ! sites=$(terminus site:list --format=list --field=name 2>/dev/null); then die_code "$PLT_EXIT_AUTHORITY_UNAVAILABLE" 'Terminus failed while listing accessible sites'; fi
+    printf '%s\n' "$sites" | sed '/^$/d' | LC_ALL=C sort -u | while IFS= read -r site; do
+      validate_site "$site"
+      inspect_site "$site" "$mappings" "$selectors_file" "$root" "$order_file"
+    done
+  fi
+
+  exit_code=$(aggregate_exit_code "$order_file")
+  if [ "$exit_code" -eq "$PLT_EXIT_NO_TARGETS" ]; then semantic=excluded; reason=no-targets
+  elif [ "$exit_code" -eq 0 ]; then
+    semantic_info=$(aggregate_semantics "$order_file")
+    semantic=$(printf '%s\n' "$semantic_info" | sed -n '1p')
+    reason=$(printf '%s\n' "$semantic_info" | sed -n '2p')
+  else semantic=blocked; reason=$(plt_exit_category "$exit_code")
+  fi
+  json=$(build_json "$order_file" "$exit_code" "$semantic" "$reason")
+
+  if [ -n "$record_file" ]; then
+    record_rc=0; plt_write_record "$record_file" "$json" || record_rc=$?
+    case "$record_rc" in
+      0) ;;
+      "$PLT_EXIT_UNSAFE_LOCAL_STATE") die_code "$record_rc" "refusing to overwrite operation record: $record_file" ;;
+      "$PLT_EXIT_USAGE") die_code "$record_rc" 'invalid operation record path' ;;
+      *) die_code "$PLT_EXIT_OPERATION_FAILED" "could not write operation record: $record_file" ;;
+    esac
+  fi
+
+  if [ "$format" = json ]; then printf '%s\n' "$json"; else print_default "$order_file"; [ -z "$record_file" ] || printf '\nOperation record: %s\n' "$record_file"; fi
+  return "$exit_code"
+}
+
+estate_status_command "$@"

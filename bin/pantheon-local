@@ -69,6 +69,10 @@ Commands:
       Populate or explicitly fast-forward canonical Pantheon Dev checkouts.
       Checkout never starts providers or pulls data; sync is the only update path.
 
+  pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]
+      Read-only cross-system estate overview combining Terminus environment code
+      identity with canonical local checkout Git/provider state.
+
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
       Clone an already-existing Pantheon Multidev into an isolated local
       checkout. Missing remote environments are never created implicitly.
@@ -125,6 +129,7 @@ Examples:
   pantheon-local config export --yes
   pantheon-local checkout example-site.dev --dry-run
   pantheon-local checkout dev --tag 'Example Group' --dry-run
+  pantheon-local estate status --all
   pantheon-local multidev example.feature --dry-run
   pantheon-local multidev create example.live feature1 --dry-run
   pantheon-local setup --dry-run
@@ -140,6 +145,7 @@ Help:
   pantheon-local config tag profile --help
   pantheon-local config export --help
   pantheon-local checkout --help
+  pantheon-local estate status --help
   pantheon-local multidev --help
   pantheon-local multidev create --help
   pantheon-local setup --help
@@ -190,6 +196,7 @@ CORE="$LIBEXEC_DIR/pantheon-local-core"
 PROFILE="$LIBEXEC_DIR/pantheon-local-config-profile"
 CONFIG_EXPORT="$LIBEXEC_DIR/pantheon-local-config-export"
 CHECKOUT="$LIBEXEC_DIR/pantheon-local-checkout"
+ESTATE_STATUS="$LIBEXEC_DIR/pantheon-local-estate-status"
 MULTIDEV_CREATE="$LIBEXEC_DIR/pantheon-local-multidev-create"
 PULL="$LIBEXEC_DIR/pantheon-local-pull"
 READINESS="$LIBEXEC_DIR/pantheon-local-readiness"
@@ -284,6 +291,12 @@ case "$command" in
     [ -x "$CHECKOUT" ] || die "checkout module is missing or not executable: $CHECKOUT"
     shift
     exec "$CHECKOUT" "$@"
+    ;;
+  estate)
+    [ "${2:-}" = status ] || die 'usage: pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]'
+    [ -x "$ESTATE_STATUS" ] || die "estate-status module is missing or not executable: $ESTATE_STATUS"
+    shift 2
+    exec "$ESTATE_STATUS" "$@"
     ;;
   multidev)
     if [ "${2:-}" = 'create' ]; then

@@ -4,6 +4,7 @@ set -euo pipefail
 PROGRAM_NAME="pantheon-local"
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 PULL="$SCRIPT_DIR/pantheon-local-pull"
+WORKFLOW_STATE="$SCRIPT_DIR/pantheon-local-workflow-state"
 
 usage() {
   cat <<'USAGE'
@@ -143,7 +144,20 @@ utc_now() {
 }
 
 record_bootstrap() {
-  local state=$1 status=$2 step=$3 env=$4 provider=$5
+  local state=$1 status=$2 step=$3 env=$4 provider=$5 phase next_action
+
+  case "$status" in
+    complete)
+      phase=complete
+      next_action=none
+      ;;
+    *)
+      phase=apply
+      next_action='rerun pantheon-local setup after resolving the reported failure'
+      ;;
+  esac
+
+  "$WORKFLOW_STATE" record "$state" setup built-in "$phase" "$status" "$step" "$next_action"
   git config --file "$state" --replace-all bootstrap.status "$status"
   git config --file "$state" --replace-all bootstrap.step "$step"
   git config --file "$state" --replace-all bootstrap.environment "$env"
@@ -233,6 +247,7 @@ setup_command() {
 
   [ -f "$root/composer.json" ] || die 'setup requires composer.json at the checkout root'
   [ -x "$PULL" ] || die "pull module is missing or not executable: $PULL"
+  [ -x "$WORKFLOW_STATE" ] || die "workflow-state module is missing or not executable: $WORKFLOW_STATE"
   if [ "$provider" = ddev ]; then
     [ -f "$root/.ddev/providers/pantheon.yaml" ] || \
       die 'DDEV Pantheon provider is missing: .ddev/providers/pantheon.yaml'

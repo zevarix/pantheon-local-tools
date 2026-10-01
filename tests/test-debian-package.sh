@@ -44,6 +44,7 @@ dpkg-deb -x "$PACKAGE" "$EXTRACT"
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-readiness" ] || fail 'packaged readiness module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-setup" ] || fail 'packaged setup module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-status" ] || fail 'packaged status module is missing or not executable'
+[ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-workflow-state" ] || fail 'packaged workflow-state module is missing or not executable'
 [ -f "$EXTRACT/usr/lib/pantheon-local-tools/VERSION" ] || fail 'packaged VERSION is missing'
 [ -L "$EXTRACT/usr/bin/pantheon-local" ] || fail 'packaged command link is missing'
 assert_eq "$(readlink "$EXTRACT/usr/bin/pantheon-local")" '../lib/pantheon-local-tools/bin/pantheon-local'

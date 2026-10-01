@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME='pantheon-local-tools workflow state'
+
+die() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'USAGE'
+Internal Pantheon Local Tools workflow-state helper.
+
+Usage:
+  pantheon-local-workflow-state record STATE WORKFLOW KIND PHASE STATUS STEP SAFE_NEXT_ACTION
+  pantheon-local-workflow-state get STATE WORKFLOW PROPERTY
+
+KIND:
+  built-in | downstream
+
+PHASE:
+  select | plan | apply | verify | review | commit | push | complete
+
+STATUS:
+  planned | in-progress | current | changed | partial | blocked | failed | complete
+
+PROPERTY:
+  schema | kind | phase | status | step | safe-next-action | updated-at
+USAGE
+}
+
+validate_id() {
+  label=$1
+  value=$2
+
+  [ -n "$value" ] || die "$label cannot be empty"
+  printf '%s\n' "$value" | LC_ALL=C grep -Eq '^[a-z0-9][a-z0-9-]*$' ||
+    die "$label must use lowercase letters, numbers, and hyphens"
+}
+
+validate_single_line() {
+  label=$1
+  value=$2
+
+  case "$value" in
+    *$'\n'*|*$'\r'*) die "$label must be a single line" ;;
+  esac
+}
+
+workflow_key() {
+  workflow=$1
+  property=$2
+  printf 'workflow.%s.%s\n' "$workflow" "$property"
+}
+
+record_state() {
+  [ "$#" -eq 7 ] ||
+    die 'record requires STATE WORKFLOW KIND PHASE STATUS STEP SAFE_NEXT_ACTION'
+
+  state=$1
+  workflow=$2
+  kind=$3
+  phase=$4
+  status=$5
+  step=$6
+  next_action=$7
+
+  validate_id workflow "$workflow"
+  validate_id step "$step"
+  validate_single_line safe-next-action "$next_action"
+  [ -n "$next_action" ] || die 'safe-next-action cannot be empty'
+
+  case "$kind" in
+    built-in|downstream) ;;
+    *) die 'kind must be built-in or downstream' ;;
+  esac
+
+  case "$phase" in
+    select|plan|apply|verify|review|commit|push|complete) ;;
+    *) die 'unsupported workflow phase' ;;
+  esac
+
+  case "$status" in
+    planned|in-progress|current|changed|partial|blocked|failed|complete) ;;
+    *) die 'unsupported workflow status' ;;
+  esac
+
+  state_dir=${state%/*}
+  [ "$state_dir" != "$state" ] || state_dir='.'
+  mkdir -p "$state_dir"
+
+  umask 077
+  tmp="${state}.workflow.$$"
+  trap 'rm -f "$tmp"' EXIT HUP INT TERM
+
+  if [ -f "$state" ]; then
+    cp "$state" "$tmp"
+  else
+    : > "$tmp"
+  fi
+
+  git config --file "$tmp" --replace-all "$(workflow_key "$workflow" schema)" '1'
+  git config --file "$tmp" --replace-all "$(workflow_key "$workflow" kind)" "$kind"
+  git config --file "$tmp" --replace-all "$(workflow_key "$workflow" phase)" "$phase"
+  git config --file "$tmp" --replace-all "$(workflow_key "$workflow" status)" "$status"
+  git config --file "$tmp" --replace-all "$(workflow_key "$workflow" step)" "$step"
+  git config --file "$tmp" --replace-all "$(workflow_key "$workflow" safe-next-action)" "$next_action"
+  git config --file "$tmp" --replace-all "$(workflow_key "$workflow" updated-at)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+  mv "$tmp" "$state"
+  trap - EXIT HUP INT TERM
+}
+
+get_state() {
+  [ "$#" -eq 3 ] || die 'get requires STATE WORKFLOW PROPERTY'
+
+  state=$1
+  workflow=$2
+  property=$3
+
+  validate_id workflow "$workflow"
+  case "$property" in
+    schema|kind|phase|status|step|safe-next-action|updated-at) ;;
+    *) die 'unsupported workflow property' ;;
+  esac
+
+  [ -f "$state" ] || return 1
+  git config --file "$state" --get "$(workflow_key "$workflow" "$property")"
+}
+
+command=${1:-}
+case "$command" in
+  record)
+    shift
+    record_state "$@"
+    ;;
+  get)
+    shift
+    get_state "$@"
+    ;;
+  -h|--help|help|'')
+    usage
+    ;;
+  *)
+    die "unknown command: $command"
+    ;;
+esac

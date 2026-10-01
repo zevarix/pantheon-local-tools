@@ -56,6 +56,7 @@ This project interacts with developer environments and Pantheon sites. Changes m
 - Do not embed credentials, tokens, machine-specific paths, organization-specific Pantheon Tags, private naming conventions, or other internal identifiers.
 - Treat remote writes, destructive local operations, and environment start/rebuild operations as explicit actions rather than hidden side effects.
 - Prefer documented Terminus, DDEV, and Lando interfaces over scraping or guessing implementation details.
+- Treat documented Terminus commands as the owning interface for Pantheon reads and mutations; PLT may orchestrate and verify them, but must not add a parallel direct Pantheon API implementation for capabilities Terminus owns.
 - Do not make shared Pantheon logic depend directly on one local provider.
 - If provider detection or Pantheon Tag routing is ambiguous, fail and require an explicit choice instead of guessing.
 

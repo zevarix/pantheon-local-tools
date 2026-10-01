@@ -95,6 +95,7 @@ FORMULA_CLI="$PREFIX/bin/pantheon-local"
 [ -x "$PREFIX/libexec/libexec/pantheon-local-readiness" ] || fail 'Homebrew readiness module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-setup" ] || fail 'Homebrew setup module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-status" ] || fail 'Homebrew status module is missing'
+[ -x "$PREFIX/libexec/libexec/pantheon-local-workflow-state" ] || fail 'Homebrew workflow-state module is missing'
 [ -f "$PREFIX/libexec/VERSION" ] || fail 'Homebrew VERSION is missing'
 
 expected="pantheon-local $VERSION"

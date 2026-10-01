@@ -89,6 +89,7 @@ FORMULA_CLI="$PREFIX/bin/pantheon-local"
 [ -x "$PREFIX/libexec/libexec/pantheon-local-core" ] || fail 'Homebrew core module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-config-profile" ] || fail 'Homebrew tag-profile module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-config-export" ] || fail 'Homebrew config-export module is missing'
+[ -x "$PREFIX/libexec/libexec/pantheon-local-checkout" ] || fail 'Homebrew checkout module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-multidev-create" ] || fail 'Homebrew multidev-create module is missing'
 [ -r "$PREFIX/libexec/libexec/pantheon-local-output" ] || fail 'Homebrew output-contract module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-provider-url" ] || fail 'Homebrew provider URL module is missing'
@@ -103,6 +104,7 @@ expected="pantheon-local $VERSION"
 assert_eq "$("$FORMULA_CLI" --version)" "$expected"
 assert_eq "$("$FORMULA_CLI" version)" "$expected"
 "$FORMULA_CLI" config export --help | grep -F 'MUTATES PROJECT CONFIGURATION FILES' >/dev/null 2>&1 || fail 'Homebrew config export help is unavailable'
+"$FORMULA_CLI" checkout --help | grep -F 'canonical Pantheon Dev Git checkouts' >/dev/null 2>&1 || fail 'Homebrew checkout help is unavailable'
 "$FORMULA_CLI" multidev create --help | grep -F 'EXPLICIT REMOTE PANTHEON WRITE' >/dev/null 2>&1 || fail 'Homebrew multidev create help is unavailable'
 "$FORMULA_CLI" setup --help | grep -F 'pantheon-local setup' >/dev/null 2>&1 || fail 'Homebrew setup help is unavailable'
 "$FORMULA_CLI" readiness --help | grep -F 'pantheon-local readiness' >/dev/null 2>&1 || fail 'Homebrew readiness help is unavailable'

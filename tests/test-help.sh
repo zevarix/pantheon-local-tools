@@ -30,6 +30,9 @@ for expected in \
   'pantheon-local config export [--provider ddev|lando] [--yes]' \
   'config-strategy  full-export or overlay-delta' \
   'config-path      Relative project configuration path such as config/sync' \
+  'pantheon-local checkout SITE.dev [--dry-run] [--format default|json] [--record FILE]' \
+  'pantheon-local checkout dev (--all | --tag TAG [--tag TAG ...]) [OPTIONS]' \
+  'pantheon-local checkout sync SITE.dev [OPTIONS]' \
   'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]' \
   'pantheon-local multidev create SITE.SOURCE NEW_ENV' \
   '[--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]' \
@@ -88,6 +91,15 @@ assert_contains "$export_help" 'Required for non-interactive use.'
 assert_contains "$export_help" 'PLT does not pass Drush --add or --commit'
 assert_contains "$export_help" 'does not modify remote Pantheon environments'
 assert_contains "$export_help" 'reports the resulting Git state'
+
+checkout_help=$(bash "$CLI" checkout --help)
+assert_contains "$checkout_help" 'pantheon-local checkout SITE.dev'
+assert_contains "$checkout_help" 'pantheon-local checkout dev (--all | --tag TAG'
+assert_contains "$checkout_help" 'pantheon-local checkout sync SITE.dev'
+assert_contains "$checkout_help" 'canonical Pantheon Dev Git checkouts'
+assert_contains "$checkout_help" 'Normal checkout never updates an existing checkout'
+assert_contains "$checkout_help" '--format default|json'
+assert_contains "$checkout_help" '--record FILE'
 
 multidev_help=$(bash "$CLI" multidev --help)
 assert_contains "$multidev_help" 'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]'

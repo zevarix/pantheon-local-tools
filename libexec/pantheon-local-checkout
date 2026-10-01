@@ -1,0 +1,698 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME='pantheon-local'
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+CORE="$SCRIPT_DIR/pantheon-local-core"
+OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+PLAN_DIR=''
+
+[ -x "$CORE" ] || { printf '%s: core module is missing or not executable: %s\n' "$PROGRAM_NAME" "$CORE" >&2; exit 40; }
+[ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$OUTPUT_LIB"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local checkout SITE.dev [--dry-run] [--format default|json] [--record FILE]
+  pantheon-local checkout dev (--all | --tag TAG [--tag TAG ...])
+    [--dry-run] [--format default|json] [--record FILE]
+  pantheon-local checkout sync SITE.dev [--dry-run] [--format default|json] [--record FILE]
+  pantheon-local checkout sync (--all | --tag TAG [--tag TAG ...])
+    [--dry-run] [--format default|json] [--record FILE]
+
+Populate or synchronize canonical Pantheon Dev Git checkouts.
+
+Selection:
+  SITE.dev    One exact canonical Dev checkout.
+  dev --all   Every site accessible through Terminus.
+  dev --tag   Sites carrying any selected configured Pantheon Tag. Repeatable.
+  sync ...    Explicit update mode for existing clean canonical checkouts.
+
+Behavior:
+  CLONE    Destination is missing. Normal checkout clones it transactionally.
+  CURRENT  Existing canonical checkout already matches Pantheon Dev.
+  UPDATE   Existing clean checkout is behind Pantheon Dev. Only sync may move it.
+  SKIP     Checkout is dirty or missing in sync mode; preserved unchanged.
+  BLOCKED  Destination/routing/origin/branch state is unsafe or ambiguous.
+
+Safety:
+  * Pantheon site/environment/Tag/Git discovery uses supported Terminus commands.
+  * Planning never mutates a checkout, provider runtime, or Pantheon environment.
+  * Normal checkout never updates an existing checkout; use checkout sync.
+  * Sync uses Git fetch plus ff-only merge and refuses dirty/ahead/diverged state.
+  * No database/files pull, provider start, Composer, Drush, config export,
+    Git commit/push, or Pantheon mutation is performed.
+
+Output:
+  --format default  Normal terminal output (default).
+  --format json     Stable structured result/plan.
+  --record FILE     Write the same JSON result to a new file; never overwrite.
+
+Examples:
+  pantheon-local checkout example-site.dev --dry-run
+  pantheon-local checkout example-site.dev
+  pantheon-local checkout dev --tag 'Example Group' --dry-run --format json
+  pantheon-local checkout dev --all
+  pantheon-local checkout sync example-site.dev
+  pantheon-local checkout sync --tag 'Example Group'
+USAGE
+}
+
+cleanup() {
+  [ -z "$PLAN_DIR" ] || rm -rf "$PLAN_DIR"
+}
+
+die_code() {
+  local code=$1
+  shift
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit "$code"
+}
+
+usage_error() { die_code "$PLT_EXIT_USAGE" "$*"; }
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die_code "$PLT_EXIT_OPERATION_FAILED" "required command not found: $1"
+}
+
+terminus_preflight() {
+  require_command terminus
+  if ! terminus auth:whoami >/dev/null 2>&1; then
+    die_code "$PLT_EXIT_AUTHORITY_UNAVAILABLE" 'Terminus is not authenticated. Run terminus auth:login first.'
+  fi
+}
+
+validate_site() {
+  local site=$1
+  [ -n "$site" ] || usage_error 'site cannot be empty'
+  printf '%s\n' "$site" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]*$' || usage_error "site contains unsupported characters: $site"
+}
+
+parse_dev_target() {
+  local target=$1 site env remainder
+  case "$target" in *.*) ;; *) usage_error 'single checkout target must use SITE.dev syntax' ;; esac
+  site=${target%%.*}
+  remainder=${target#*.}
+  case "$remainder" in *.*) usage_error 'checkout target must contain exactly one dot between site and dev' ;; esac
+  env=$remainder
+  validate_site "$site"
+  [ "$env" = dev ] || usage_error 'canonical checkout supports only the Pantheon dev environment'
+  printf '%s\n' "$site"
+}
+
+config_root() { "$CORE" config get root; }
+config_tags() { "$CORE" config tag list; }
+
+tag_is_configured() {
+  local wanted=$1 mappings=$2 line tag
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    tag=${line%%=*}
+    [ "$tag" = "$wanted" ] && return 0
+  done <<EOF
+$mappings
+EOF
+  return 1
+}
+
+remote_tag_contains() {
+  local wanted=$1 remote_tags=$2 line
+  while IFS= read -r line; do
+    [ "$line" = "$wanted" ] && return 0
+  done <<EOF
+$remote_tags
+EOF
+  return 1
+}
+
+selected_by_tags() {
+  local selectors_file=$1 remote_tags=$2 wanted
+  [ -s "$selectors_file" ] || return 0
+  while IFS= read -r wanted; do
+    [ -n "$wanted" ] || continue
+    remote_tag_contains "$wanted" "$remote_tags" && return 0
+  done < "$selectors_file"
+  return 1
+}
+
+site_environment_list() {
+  local site=$1 output
+  if ! output=$(terminus env:list "$site" --format=list --field=id 2>/dev/null); then
+    return 1
+  fi
+  printf '%s\n' "$output"
+}
+
+env_list_has_dev() {
+  local envs=$1 line
+  while IFS= read -r line; do [ "$line" = dev ] && return 0; done <<EOF
+$envs
+EOF
+  return 1
+}
+
+site_remote_tags() {
+  local site=$1 org output
+  if ! org=$(terminus site:info "$site" --field=organization 2>/dev/null); then return 1; fi
+  [ -n "$org" ] || return 1
+  if ! output=$(terminus tag:list "$site" "$org" --format=list 2>/dev/null); then return 1; fi
+  printf '%s\n' "$output"
+}
+
+site_git_url() {
+  local site=$1 output
+  if ! output=$(terminus connection:info "$site.dev" --field=git_url 2>/dev/null); then return 1; fi
+  [ -n "$output" ] || return 1
+  printf '%s\n' "$output"
+}
+
+remote_head_info() {
+  local git_url=$1 output branch sha
+  if ! output=$(git ls-remote --symref "$git_url" HEAD 2>/dev/null); then return 1; fi
+  branch=$(printf '%s\n' "$output" | sed -n 's/^ref: refs\/heads\/\([^[:space:]]*\)[[:space:]]HEAD$/\1/p' | head -n 1)
+  sha=$(printf '%s\n' "$output" | awk '$2 == "HEAD" && $1 != "ref:" {print $1; exit}')
+  [ -n "$branch" ] && [ -n "$sha" ] || return 1
+  printf '%s\n%s\n' "$branch" "$sha"
+}
+
+resolve_route() {
+  local site=$1 mappings=$2 remote_tags=$3 line configured_tag route_dir
+  local matches=0 matched_tag='' matched_dir=''
+  if [ -z "$mappings" ]; then printf '\n\n'; return 0; fi
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    configured_tag=${line%%=*}
+    route_dir=${line#*=}
+    if remote_tag_contains "$configured_tag" "$remote_tags"; then
+      matches=$((matches + 1))
+      matched_tag=$configured_tag
+      matched_dir=$route_dir
+    fi
+  done <<EOF
+$mappings
+EOF
+  case "$matches" in
+    1) printf '%s\n%s\n' "$matched_tag" "$matched_dir" ;;
+    0) return 10 ;;
+    *) return 11 ;;
+  esac
+}
+
+plan_file_for() { printf '%s/%s.plan\n' "$PLAN_DIR" "$1"; }
+
+plan_set() { git config --file "$1" --replace-all "plan.$2" "$3"; }
+plan_get() { git config --file "$1" --get "plan.$2" 2>/dev/null || true; }
+
+write_plan_base() {
+  local file=$1 site=$2
+  : > "$file"
+  chmod 600 "$file"
+  plan_set "$file" site "$site"
+  plan_set "$file" environment dev
+}
+
+plan_blocked() {
+  local file=$1 reason=$2 category=$3 next=$4
+  plan_set "$file" action BLOCKED
+  plan_set "$file" state blocked
+  plan_set "$file" reason "$reason"
+  plan_set "$file" exit-category "$category"
+  plan_set "$file" next-action "$next"
+}
+
+plan_skip() {
+  local file=$1 reason=$2 next=$3
+  plan_set "$file" action SKIP
+  plan_set "$file" state skipped
+  plan_set "$file" reason "$reason"
+  plan_set "$file" exit-category unsafe-local-state
+  plan_set "$file" next-action "$next"
+}
+
+git_relation() {
+  local destination=$1 git_url=$2 tmp local_sha remote_sha relation
+  local_sha=$(git -C "$destination" rev-parse HEAD 2>/dev/null) || return 1
+  tmp=$(mktemp -d "$PLAN_DIR/relation.XXXXXX") || return 1
+  if ! git -C "$tmp" init --bare -q; then rm -rf "$tmp"; return 1; fi
+  if ! git -C "$tmp" fetch -q "$git_url" HEAD:refs/heads/remote-head; then rm -rf "$tmp"; return 1; fi
+  if ! git -C "$tmp" fetch -q "$destination" HEAD:refs/heads/local-head; then rm -rf "$tmp"; return 1; fi
+  remote_sha=$(git -C "$tmp" rev-parse refs/heads/remote-head) || { rm -rf "$tmp"; return 1; }
+  if [ "$local_sha" = "$remote_sha" ]; then relation=current
+  elif git -C "$tmp" merge-base --is-ancestor refs/heads/local-head refs/heads/remote-head; then relation=behind
+  elif git -C "$tmp" merge-base --is-ancestor refs/heads/remote-head refs/heads/local-head; then relation=ahead
+  else relation=diverged
+  fi
+  rm -rf "$tmp"
+  printf '%s\n' "$relation"
+}
+
+plan_site() {
+  local site=$1 mode=$2 mappings=$3 selectors_file=$4 root=$5 order_file=$6
+  local file envs remote_tags route route_rc tag route_dir git_url head_info remote_branch remote_sha
+  local destination origin branch dirty relation state_site state_env
+  file=$(plan_file_for "$site")
+  write_plan_base "$file" "$site"
+
+  if ! envs=$(site_environment_list "$site"); then
+    plan_blocked "$file" authority-unavailable authority-unavailable 'verify Terminus access to the site environments'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+  if ! env_list_has_dev "$envs"; then
+    plan_blocked "$file" dev-unavailable authority-unavailable 'verify that the Pantheon Dev environment is available'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  remote_tags=''
+  if [ -n "$mappings" ] || [ -s "$selectors_file" ]; then
+    if ! remote_tags=$(site_remote_tags "$site"); then
+      plan_blocked "$file" tag-authority-unavailable authority-unavailable 'verify Terminus access to the site organization and Tags'
+      printf '%s\n' "$site" >> "$order_file"
+      return
+    fi
+  fi
+
+  if ! selected_by_tags "$selectors_file" "$remote_tags"; then
+    rm -f "$file"
+    return
+  fi
+
+  route_rc=0
+  route=$(resolve_route "$site" "$mappings" "$remote_tags") || route_rc=$?
+  case "$route_rc" in
+    0) ;;
+    10)
+      plan_blocked "$file" unmapped-tag-route ambiguous-configuration 'configure one local route matching a Pantheon Tag on this site'
+      printf '%s\n' "$site" >> "$order_file"
+      return
+      ;;
+    11)
+      plan_blocked "$file" ambiguous-tag-route ambiguous-configuration 'leave exactly one configured local Tag route matching this site'
+      printf '%s\n' "$site" >> "$order_file"
+      return
+      ;;
+    *)
+      plan_blocked "$file" route-resolution-failed operation-failed 'review local Tag routing'
+      printf '%s\n' "$site" >> "$order_file"
+      return
+      ;;
+  esac
+  tag=$(printf '%s\n' "$route" | sed -n '1p')
+  route_dir=$(printf '%s\n' "$route" | sed -n '2p')
+  plan_set "$file" tag "$tag"
+  plan_set "$file" route-directory "$route_dir"
+
+  if ! git_url=$(site_git_url "$site"); then
+    plan_blocked "$file" git-authority-unavailable authority-unavailable 'verify Terminus connection information for the Dev environment'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+  plan_set "$file" git-url "$git_url"
+  if ! head_info=$(remote_head_info "$git_url"); then
+    plan_blocked "$file" git-remote-unavailable authority-unavailable 'verify Git access to the Pantheon Dev repository'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+  remote_branch=$(printf '%s\n' "$head_info" | sed -n '1p')
+  remote_sha=$(printf '%s\n' "$head_info" | sed -n '2p')
+  plan_set "$file" remote-branch "$remote_branch"
+  plan_set "$file" remote-sha "$remote_sha"
+
+  if [ -n "$route_dir" ]; then destination="$root/$route_dir/$site"; else destination="$root/$site"; fi
+  plan_set "$file" destination "$destination"
+
+  if [ ! -e "$destination" ]; then
+    if [ "$mode" = sync ]; then
+      plan_skip "$file" missing-checkout "run pantheon-local checkout $site.dev to create it"
+    else
+      plan_set "$file" action CLONE
+      plan_set "$file" state missing
+      plan_set "$file" reason destination-missing
+      plan_set "$file" exit-category changed
+      plan_set "$file" next-action 'clone the canonical Dev repository'
+    fi
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  if [ ! -d "$destination/.git" ]; then
+    plan_blocked "$file" occupied-destination unsafe-local-state 'move or remove the occupied destination before retrying'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  dirty=$(git -C "$destination" status --porcelain --untracked-files=normal 2>/dev/null || true)
+  if [ -n "$dirty" ]; then
+    plan_skip "$file" dirty-working-tree 'review or clean the checkout before retrying'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  state_site=$(git config --file "$destination/.git/pantheon-local-tools/state" --get pantheon.site 2>/dev/null || true)
+  state_env=$(git config --file "$destination/.git/pantheon-local-tools/state" --get pantheon.environment 2>/dev/null || true)
+  if [ -n "$state_site" ] && [ "$state_site" != "$site" ]; then
+    plan_blocked "$file" checkout-identity-mismatch unsafe-local-state 'review the existing PLT checkout identity'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+  if [ -n "$state_env" ] && [ "$state_env" != dev ]; then
+    plan_blocked "$file" checkout-environment-mismatch unsafe-local-state 'review the existing PLT checkout environment identity'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  origin=$(git -C "$destination" remote get-url origin 2>/dev/null || true)
+  if [ "$origin" != "$git_url" ]; then
+    plan_blocked "$file" origin-mismatch unsafe-local-state 'review the checkout origin before retrying'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  branch=$(git -C "$destination" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  if [ "$branch" != "$remote_branch" ]; then
+    plan_blocked "$file" branch-mismatch unsafe-local-state "checkout the canonical remote branch $remote_branch before retrying"
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+
+  if ! relation=$(git_relation "$destination" "$git_url"); then
+    plan_blocked "$file" git-relation-unavailable authority-unavailable 'verify Git access and retry'
+    printf '%s\n' "$site" >> "$order_file"
+    return
+  fi
+  case "$relation" in
+    current)
+      plan_set "$file" action CURRENT
+      plan_set "$file" state current
+      plan_set "$file" reason dev-current
+      plan_set "$file" exit-category success
+      plan_set "$file" next-action ''
+      ;;
+    behind)
+      plan_set "$file" action UPDATE
+      plan_set "$file" state behind
+      plan_set "$file" reason dev-behind
+      plan_set "$file" exit-category changed
+      if [ "$mode" = sync ]; then plan_set "$file" next-action 'fast-forward to Pantheon Dev'; else plan_set "$file" next-action "run pantheon-local checkout sync $site.dev"; fi
+      ;;
+    ahead)
+      plan_blocked "$file" local-ahead unsafe-local-state 'review local commits; automatic sync is refused'
+      ;;
+    diverged)
+      plan_blocked "$file" local-diverged unsafe-local-state 'review the divergent history; automatic sync is refused'
+      ;;
+    *) plan_blocked "$file" git-relation-unknown authority-unavailable 'verify Git state and retry' ;;
+  esac
+  printf '%s\n' "$site" >> "$order_file"
+}
+
+write_checkout_state() {
+  local destination=$1 site=$2 tag=$3 state
+  state="$destination/.git/pantheon-local-tools/state"
+  mkdir -p "${state%/*}"
+  git config --file "$state" --replace-all pantheon.site "$site"
+  git config --file "$state" --replace-all pantheon.environment dev
+  git config --file "$state" --replace-all checkout.kind canonical-dev
+  if [ -n "$tag" ]; then git config --file "$state" --replace-all pantheon.tag "$tag"; else git config --file "$state" --unset-all pantheon.tag >/dev/null 2>&1 || true; fi
+}
+
+execute_clone() {
+  local file=$1 site git_url destination tag parent tmp expected_branch expected_sha actual_branch actual_sha
+  site=$(plan_get "$file" site)
+  git_url=$(plan_get "$file" git-url)
+  destination=$(plan_get "$file" destination)
+  tag=$(plan_get "$file" tag)
+  expected_branch=$(plan_get "$file" remote-branch)
+  expected_sha=$(plan_get "$file" remote-sha)
+  [ ! -e "$destination" ] || return 30
+  parent=${destination%/*}
+  mkdir -p "$parent" || return 40
+  tmp=$(mktemp -d "$parent/.${site}-dev.tmp.XXXXXX") || return 40
+  if ! git clone --single-branch "$git_url" "$tmp" >/dev/null 2>&1; then rm -rf "$tmp"; return 40; fi
+  actual_branch=$(git -C "$tmp" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  actual_sha=$(git -C "$tmp" rev-parse HEAD 2>/dev/null || true)
+  if [ "$actual_branch" != "$expected_branch" ] || [ "$actual_sha" != "$expected_sha" ]; then rm -rf "$tmp"; return 30; fi
+  write_checkout_state "$tmp" "$site" "$tag"
+  if ! mv "$tmp" "$destination"; then rm -rf "$tmp"; return 40; fi
+  plan_set "$file" action CLONED
+  plan_set "$file" state changed
+  plan_set "$file" reason checkout-created
+  plan_set "$file" next-action "run pantheon-local setup from $destination when runtime bootstrap is desired"
+}
+
+execute_update() {
+  local file=$1 destination branch expected_sha current_sha git_url origin_url live_sha
+  destination=$(plan_get "$file" destination)
+  branch=$(plan_get "$file" remote-branch)
+  expected_sha=$(plan_get "$file" remote-sha)
+  git_url=$(plan_get "$file" git-url)
+  [ -d "$destination/.git" ] || return 30
+  [ -z "$(git -C "$destination" status --porcelain --untracked-files=normal)" ] || return 30
+  [ "$(git -C "$destination" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = "$branch" ] || return 30
+  origin_url=$(git -C "$destination" remote get-url origin 2>/dev/null || true)
+  [ "$origin_url" = "$git_url" ] || return 30
+  live_sha=$(git ls-remote "$git_url" "refs/heads/$branch" 2>/dev/null | awk 'NR == 1 {print $1}')
+  [ -n "$live_sha" ] || return 32
+  [ "$live_sha" = "$expected_sha" ] || return 30
+  if ! git -C "$destination" fetch -q origin "$branch"; then return 40; fi
+  [ "$(git -C "$destination" rev-parse "origin/$branch" 2>/dev/null || true)" = "$expected_sha" ] || return 30
+  if ! git -C "$destination" merge-base --is-ancestor HEAD "origin/$branch"; then return 30; fi
+  if ! git -C "$destination" merge --ff-only -q "origin/$branch"; then return 40; fi
+  current_sha=$(git -C "$destination" rev-parse HEAD) || return 40
+  [ "$current_sha" = "$expected_sha" ] || return 33
+  plan_set "$file" action UPDATED
+  plan_set "$file" state changed
+  plan_set "$file" reason checkout-fast-forwarded
+  plan_set "$file" next-action ''
+}
+
+execute_plan() {
+  local mode=$1 order_file=$2 site file action rc
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    file=$(plan_file_for "$site")
+    action=$(plan_get "$file" action)
+    rc=0
+    case "$action" in
+      CLONE)
+        [ "$mode" = checkout ] || continue
+        execute_clone "$file" || rc=$?
+        ;;
+      UPDATE)
+        [ "$mode" = sync ] || continue
+        execute_update "$file" || rc=$?
+        ;;
+      *) continue ;;
+    esac
+    case "$rc" in
+      0) ;;
+      30) plan_blocked "$file" execution-state-changed unsafe-local-state 're-run planning against current local state' ;;
+      32) plan_blocked "$file" git-authority-unavailable authority-unavailable 'verify Git remote access and retry planning' ;;
+      33) plan_blocked "$file" update-verification-failed verification-failed 'reconcile local Git state with Pantheon Dev before retrying' ;;
+      *) plan_blocked "$file" git-operation-failed operation-failed 'review the Git failure and retry safely' ;;
+    esac
+  done < "$order_file"
+}
+
+print_default_results() {
+  local mode=$1 dry_run=$2 order_file=$3 site file action reason destination
+  if [ "$dry_run" = true ]; then printf 'Pantheon canonical Dev checkout plan\n\n'; else printf 'Pantheon canonical Dev checkout results\n\n'; fi
+  printf '%-9s %-28s %s\n' ACTION SITE REASON
+  printf '%-9s %-28s %s\n' '---------' '----------------------------' '------------------------------'
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    file=$(plan_file_for "$site")
+    action=$(plan_get "$file" action)
+    reason=$(plan_get "$file" reason)
+    printf '%-9s %-28s %s\n' "$action" "$site" "$reason"
+  done < "$order_file"
+  printf '\nMode: %s\n' "$mode"
+}
+
+result_exit_code() {
+  local order_file=$1 any_changed=false any_unsafe=false any_ambiguous=false any_authority=false any_failed=false any_verify=false any=false
+  local site file action category
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    any=true
+    file=$(plan_file_for "$site")
+    action=$(plan_get "$file" action)
+    category=$(plan_get "$file" exit-category)
+    case "$action" in CLONED|UPDATED) any_changed=true ;; esac
+    case "$category" in
+      unsafe-local-state) any_unsafe=true ;;
+      ambiguous-configuration) any_ambiguous=true ;;
+      authority-unavailable) any_authority=true ;;
+      verification-failed) any_verify=true ;;
+      operation-failed) any_failed=true ;;
+    esac
+  done < "$order_file"
+  [ "$any" = true ] || { printf '%s\n' "$PLT_EXIT_NO_TARGETS"; return; }
+  [ "$any_failed" = false ] || { printf '%s\n' "$PLT_EXIT_OPERATION_FAILED"; return; }
+  [ "$any_verify" = false ] || { printf '%s\n' "$PLT_EXIT_VERIFICATION_FAILED"; return; }
+  [ "$any_authority" = false ] || { printf '%s\n' "$PLT_EXIT_AUTHORITY_UNAVAILABLE"; return; }
+  [ "$any_ambiguous" = false ] || { printf '%s\n' "$PLT_EXIT_AMBIGUOUS_CONFIGURATION"; return; }
+  [ "$any_unsafe" = false ] || { printf '%s\n' "$PLT_EXIT_UNSAFE_LOCAL_STATE"; return; }
+  [ "$any_changed" = false ] || { printf '%s\n' "$PLT_EXIT_CHANGED"; return; }
+  printf '%s\n' "$PLT_EXIT_SUCCESS"
+}
+
+summary_success_state() {
+  local mode=$1 dry_run=$2 order_file=$3 site file action has_work=false has_update=false
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    file=$(plan_file_for "$site")
+    action=$(plan_get "$file" action)
+    case "$action" in
+      CLONE|UPDATE) has_work=true ;;
+    esac
+    [ "$action" != UPDATE ] || has_update=true
+  done < "$order_file"
+
+  if [ "$dry_run" = true ] && [ "$has_work" = true ]; then
+    printf '%s\n%s\n' planned checkout-plan-ready
+  elif [ "$mode" = checkout ] && [ "$has_update" = true ]; then
+    printf '%s\n%s\n' complete update-available
+  else
+    printf '%s\n%s\n' current checkout-state-current
+  fi
+}
+
+build_json_results() {
+  local mode=$1 dry_run=$2 order_file=$3 exit_code=$4 first=true site file action state reason next destination tag branch sha category
+  local global_state global_reason failure_source success_summary workflow_status
+  case "$exit_code" in
+    0)
+      success_summary=$(summary_success_state "$mode" "$dry_run" "$order_file")
+      global_state=$(printf '%s\n' "$success_summary" | sed -n '1p')
+      global_reason=$(printf '%s\n' "$success_summary" | sed -n '2p')
+      failure_source=null
+      ;;
+    10) global_state=changed; global_reason=checkout-state-changed; failure_source=null ;;
+    20) global_state=excluded; global_reason=no-targets; failure_source=null ;;
+    30) global_state=blocked; global_reason=unsafe-local-state; failure_source='"git"' ;;
+    31) global_state=blocked; global_reason=ambiguous-configuration; failure_source='"plt-orchestration"' ;;
+    32) global_state=blocked; global_reason=authority-unavailable; failure_source='"terminus"' ;;
+    33) global_state=failed; global_reason=verification-failed; failure_source='"plt-verification"' ;;
+    *) global_state=failed; global_reason=operation-failed; failure_source='"git"' ;;
+  esac
+  printf '{'
+  printf '"schema_version":%s,' "$PLT_STRUCTURED_SCHEMA_VERSION"
+  printf '"record_type":%s,' "$(if [ "$dry_run" = true ]; then plt_json_string plan; else plt_json_string result; fi)"
+  printf '"command":"checkout",'
+  printf '"primitive":"canonical-dev-checkout",'
+  printf '"operation_id":null,'
+  printf '"read_only":%s,' "$(if [ "$dry_run" = true ]; then printf true; else printf false; fi)"
+  if [ "$dry_run" = true ]; then workflow_status=planned; elif [ "$global_state" = blocked ] || [ "$global_state" = failed ]; then workflow_status=$global_state; else workflow_status=complete; fi
+  printf '"workflow":{"schema_version":1,"name":"canonical-dev-checkout","kind":"built-in","phase":%s,"status":%s,"step":"site-sequence","safe_next_action":null},' "$(if [ "$dry_run" = true ]; then plt_json_string plan; else plt_json_string complete; fi)" "$(plt_json_string "$workflow_status")"
+  printf '"result":{"state":%s,"reason_code":%s,"exit_code":%s,"exit_category":%s,"failure_source":%s,"next_action":null},' "$(plt_json_string "$global_state")" "$(plt_json_string "$global_reason")" "$exit_code" "$(plt_json_string "$(plt_exit_category "$exit_code")")" "$failure_source"
+  printf '"mode":%s,' "$(plt_json_string "$mode")"
+  printf '"authority":{"pantheon":"terminus","git":"git","terminus_primitives":["site:list","site:info","tag:list","env:list","connection:info"]},'
+  printf '"results":['
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    file=$(plan_file_for "$site")
+    action=$(plan_get "$file" action); state=$(plan_get "$file" state); reason=$(plan_get "$file" reason); next=$(plan_get "$file" next-action)
+    destination=$(plan_get "$file" destination); tag=$(plan_get "$file" tag); branch=$(plan_get "$file" remote-branch); sha=$(plan_get "$file" remote-sha); category=$(plan_get "$file" exit-category)
+    [ "$first" = true ] || printf ','; first=false
+    printf '{"site":%s,"environment":"dev","action":%s,"state":%s,"reason_code":%s,"exit_category":%s,"destination":%s,"tag":%s,"remote_branch":%s,"remote_sha":%s,"safe_next_action":%s}' \
+      "$(plt_json_string "$site")" "$(plt_json_string "$action")" "$(plt_json_string "$state")" "$(plt_json_string "$reason")" "$(plt_json_string "$category")" \
+      "$(plt_json_nullable_string "$destination")" "$(plt_json_nullable_string "$tag")" "$(plt_json_nullable_string "$branch")" "$(plt_json_nullable_string "$sha")" "$(plt_json_nullable_string "$next")"
+  done < "$order_file"
+  printf ']}'
+}
+
+checkout_command() {
+  local mode=checkout target='' estate=false all=false dry_run=false format=default record_file='' root mappings selectors_file order_file
+  local selector site sites json exit_code record_rc
+
+  if [ "${1:-}" = sync ]; then mode=sync; shift; fi
+
+  PLAN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pantheon-local-checkout.XXXXXX") || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not create temporary planning directory'
+  trap cleanup EXIT HUP INT TERM
+  selectors_file="$PLAN_DIR/selectors"
+  order_file="$PLAN_DIR/order"
+  : > "$selectors_file"; : > "$order_file"
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --all) all=true; estate=true; shift ;;
+      --tag)
+        [ "$#" -ge 2 ] || usage_error '--tag requires a configured Pantheon Tag'
+        printf '%s\n' "$2" >> "$selectors_file"
+        estate=true
+        shift 2
+        ;;
+      --dry-run) dry_run=true; shift ;;
+      --format)
+        [ "$#" -ge 2 ] || usage_error '--format requires default or json'
+        format=$2; case "$format" in default|json) ;; *) usage_error '--format must be default or json' ;; esac
+        shift 2
+        ;;
+      --record)
+        [ "$#" -ge 2 ] || usage_error '--record requires a file path'
+        record_file=$2; [ -n "$record_file" ] || usage_error '--record requires a non-empty file path'
+        shift 2
+        ;;
+      -h|--help|help) usage; return 0 ;;
+      --*) usage_error "unknown checkout option: $1" ;;
+      *)
+        [ -z "$target" ] || usage_error 'checkout accepts one SITE.dev target or the dev estate selector'
+        target=$1; shift
+        ;;
+    esac
+  done
+
+  require_command git; require_command sed; require_command awk; require_command sort
+  root=$(config_root)
+  mappings=$(config_tags)
+
+  [ "$all" = false ] || [ ! -s "$selectors_file" ] || usage_error '--all cannot be combined with --tag'
+
+  while IFS= read -r selector; do
+    [ -n "$selector" ] || continue
+    tag_is_configured "$selector" "$mappings" || die_code "$PLT_EXIT_AMBIGUOUS_CONFIGURATION" "--tag must name a configured Pantheon Tag route: $selector"
+  done < "$selectors_file"
+
+  terminus_preflight
+
+  if [ "$estate" = true ]; then
+    if [ "$mode" = checkout ]; then
+      [ "$target" = dev ] || usage_error 'estate checkout requires the dev selector before --all/--tag'
+    else
+      [ -z "$target" ] || usage_error 'estate sync uses checkout sync --all/--tag without a positional target'
+    fi
+    [ "$all" = true ] || [ -s "$selectors_file" ] || usage_error 'estate checkout requires --all or at least one --tag'
+    if ! sites=$(terminus site:list --format=list --field=name 2>/dev/null); then die_code "$PLT_EXIT_AUTHORITY_UNAVAILABLE" 'Terminus failed while listing accessible sites'; fi
+    printf '%s\n' "$sites" | sed '/^$/d' | LC_ALL=C sort -u | while IFS= read -r site; do
+      validate_site "$site"
+      plan_site "$site" "$mode" "$mappings" "$selectors_file" "$root" "$order_file"
+    done
+  else
+    [ -n "$target" ] || usage_error 'checkout requires SITE.dev, dev --all/--tag, or sync with one of those selectors'
+    site=$(parse_dev_target "$target")
+    plan_site "$site" "$mode" "$mappings" "$selectors_file" "$root" "$order_file"
+  fi
+
+  if [ "$dry_run" = false ]; then execute_plan "$mode" "$order_file"; fi
+  exit_code=$(result_exit_code "$order_file")
+  json=$(build_json_results "$mode" "$dry_run" "$order_file" "$exit_code")
+
+  if [ -n "$record_file" ]; then
+    record_rc=0; plt_write_record "$record_file" "$json" || record_rc=$?
+    case "$record_rc" in
+      0) ;;
+      "$PLT_EXIT_UNSAFE_LOCAL_STATE") die_code "$record_rc" "refusing to overwrite operation record: $record_file" ;;
+      "$PLT_EXIT_USAGE") die_code "$record_rc" 'invalid operation record path' ;;
+      *) die_code "$PLT_EXIT_OPERATION_FAILED" "could not write operation record: $record_file" ;;
+    esac
+  fi
+
+  if [ "$format" = json ]; then printf '%s\n' "$json"; else print_default_results "$mode" "$dry_run" "$order_file"; [ -z "$record_file" ] || printf 'Operation record: %s\n' "$record_file"; fi
+  return "$exit_code"
+}
+
+checkout_command "$@"

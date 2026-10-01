@@ -8,6 +8,7 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ### Added
 
+- Added `pantheon-local checkout` for canonical Pantheon Dev source checkouts, deterministic `--all`/Tag-selected estate population, structured plans/results, safe reruns, and explicit fast-forward-only `checkout sync`.
 - Added a stable structured-output foundation with schema-versioned JSON, centrally defined exit categories, explicit durable operation records, and `pantheon-local status --format json` as the first reference consumer.
 - Added `pantheon-local status --record FILE`, which atomically writes the same bounded JSON result to a new file and refuses to overwrite existing evidence.
 - Added structured `multidev create --dry-run` planning with the exact sanitized Terminus `multidev:create` preview and optional no-overwrite plan records.

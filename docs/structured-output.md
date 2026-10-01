@@ -142,3 +142,8 @@ terminus multidev:create example-site.live feature1 --yes
 ```
 
 The structured dry-run never invokes that mutation. Real Multidev creation remains on its established default result surface until a later shared workflow-run/result consumer adopts the full mutation lifecycle.
+### Canonical Dev checkout results
+
+`pantheon-local checkout ... --format json` uses the common schema for both read-only plans and sequential checkout/sync results. Per-site records expose CLONE/CURRENT/UPDATE/SKIP/BLOCKED (or completed CLONED/UPDATED) state, reason codes, canonical destination, matched route Tag, remote branch/SHA, safe next action, and Terminus/Git authority.
+
+A safe dry-run with missing/behind sites remains exit `0` and reports aggregate semantic state `planned`; a real run that clones or fast-forwards returns the stable `changed` category (`10`). Unsafe/ambiguous/unavailable/verification failures use the corresponding shared categories.

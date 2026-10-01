@@ -158,7 +158,7 @@ The project website and signed hosted APT repository share this GitHub Pages ori
 https://zevarix.github.io/pantheon-local-tools/
 ```
 
-The root serves the human-facing product page while APT consumes the signed repository files beneath the same origin.
+The root serves the browser-facing product page while APT consumes the signed repository files beneath the same origin.
 
 `.github/workflows/publish-apt-repository.yml` assembles every stable published Debian package up to the target version, verifies each against its release `SHA256SUMS`, signs the resulting multiversion repository, validates it with an isolated APT client, and deploys the static tree to GitHub Pages. Pull requests exercise the same assembly/sign/validation path against the latest already-published stable release with an ephemeral key, but never deploy.
 

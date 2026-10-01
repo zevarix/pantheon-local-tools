@@ -68,7 +68,7 @@ Commands:
 
   pantheon-local multidev create SITE.SOURCE NEW_ENV
     [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]
-    [--format human|json] [--record FILE]
+    [--format default|json] [--record FILE]
       Explicitly create a remote Pantheon Multidev, verify it, then hand off to
       the existing local Multidev checkout path. --dry-run performs read-only
       planning and can emit/record the stable JSON plan; real creation confirms
@@ -89,7 +89,7 @@ Commands:
       Refresh local Pantheon database/files without changing checked-out Git
       code. By default both database and files are pulled.
 
-  pantheon-local status [--format human|json] [--record FILE]
+  pantheon-local status [--format default|json] [--record FILE]
       Show local checkout/provider/data-source/bootstrap status without
       contacting Pantheon or starting a provider. JSON is the stable machine
       format; --record writes the same JSON result to a new file.

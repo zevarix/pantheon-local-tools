@@ -136,7 +136,7 @@ It then prints the complete repository-wide short Git status so unrelated pre-ex
 
 PLT does not stage files. It does not auto-commit, auto-push, or modify a remote Pantheon environment.
 
-Git `HEAD` is captured before and after the export. The command fails if `HEAD` changed, because PLT did not request Drush's commit behavior and an unexpected commit requires human inspection.
+Git `HEAD` is captured before and after the export. The command fails if `HEAD` changed, because PLT did not request Drush's commit behavior and an unexpected commit requires manual inspection.
 
 ## Failure and retry behavior
 

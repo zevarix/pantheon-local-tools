@@ -207,7 +207,7 @@ Current readiness support validates and reports only facts PLT can establish gen
 
 While a reliable non-destructive owning validation mechanism is unavailable, overlay readiness must not infer drift from missing YAML, directory size, or file count; must not interpret the directory using full-export `config:status` semantics; and must not invoke DDEV, Lando, or Drush merely to manufacture a readiness result.
 
-The human-readable report includes `Owning validation: unavailable` and `Readiness: unavailable`, then exits nonzero. This is a fail-closed unsupported-readiness state, not evidence that the delta is incorrect.
+The default terminal report includes `Owning validation: unavailable` and `Readiness: unavailable`, then exits nonzero. This is a fail-closed unsupported-readiness state, not evidence that the delta is incorrect.
 
 A later compatible implementation may add a reliable generic or explicitly configured non-destructive owning-validation mechanism while preserving the partial-overlay interpretation and no-export boundary.
 
@@ -304,7 +304,7 @@ Readiness consumes the recorded Pantheon Tag and provider identity when applicab
 
 A successful `multidev create` handoff records the same checkout-local target environment/provider/name metadata as an ordinary clone-only checkout because it reuses that implementation. PLT does not create a second persistent configuration/state model for remote creation.
 
-## Human-readable output
+## Default terminal output
 
 Normal command output is designed for developers and may gain additional labeled fields in patch releases. Existing labels should not be casually renamed or removed within `0.1.x`.
 

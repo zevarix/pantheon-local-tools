@@ -15,7 +15,7 @@ usage() {
 Usage:
   pantheon-local multidev create SITE.SOURCE NEW_ENV
     [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]
-    [--format human|json] [--record FILE]
+    [--format default|json] [--record FILE]
 
 Create a new Pantheon Multidev from an existing source environment, then hand
 off to Pantheon Local Tools' existing local Multidev checkout command.
@@ -45,8 +45,8 @@ Options:
       print the remote-create and local-handoff plan. No remote Multidev, Git
       checkout, provider override, or provider runtime is created/started.
 
-  --format human|json
-      Select human plan output (default) or the stable structured JSON plan.
+  --format default|json
+      Select normal terminal plan output (default) or the stable structured JSON plan.
       JSON is currently supported for --dry-run planning only.
 
   --record FILE
@@ -265,7 +265,7 @@ print_retry() {
 }
 
 multidev_create_command() {
-  local source='' new_env='' provider='' group='' dry_run=false start=false assume_yes=false format=human record_file=''
+  local source='' new_env='' provider='' group='' dry_run=false start=false assume_yes=false format=default record_file=''
   local parsed site source_env target environments after_create plan_json record_rc
 
   while [ "$#" -gt 0 ]; do
@@ -295,9 +295,9 @@ multidev_create_command() {
         shift
         ;;
       --format)
-        [ "$#" -ge 2 ] || die '--format requires human or json'
+        [ "$#" -ge 2 ] || die '--format requires default or json'
         format=$2
-        case "$format" in human|json) ;; *) die '--format must be human or json' ;; esac
+        case "$format" in default|json) ;; *) die '--format must be default or json' ;; esac
         shift 2
         ;;
       --record)

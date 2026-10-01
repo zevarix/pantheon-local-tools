@@ -124,6 +124,15 @@ WORKFLOW_HELPER="$REPO_ROOT/libexec/pantheon-local-workflow-state"
 git config --file "$STATE" local.name 'example-"quoted"\\name'
 export TERMINUS_MACHINE_TOKEN='super-secret-terminus-token'
 export PANTHEON_MACHINE_TOKEN='super-secret-pantheon-token'
+current_default_baseline=$(cd "$MANAGED/subdir" && bash "$CLI" status)
+default_output=$(cd "$MANAGED/subdir" && bash "$CLI" status --format default)
+assert_eq "$default_output" "$current_default_baseline"
+set +e
+(cd "$MANAGED" && bash "$CLI" status --format human >/dev/null 2>&1)
+human_format_rc=$?
+set -e
+assert_eq "$human_format_rc" '64'
+
 json_output=$(cd "$MANAGED/subdir" && bash "$CLI" status --format json)
 assert_contains "$json_output" '"schema_version":1'
 assert_contains "$json_output" '"record_type":"inspection"'
@@ -137,7 +146,7 @@ assert_contains "$json_output" '"provider":{"name":"lando","source":"recorded","
 assert_contains "$json_output" '"workflow":{"schema_version":1,"name":"setup","kind":"built-in","phase":"apply","status":"failed","step":"drush-updb"'
 assert_contains "$json_output" '"authority":{"git":"git","provider":"lando","pantheon":"not-contacted","terminus_primitive":null}'
 case "$json_output" in
-  *'(not recorded)'*) fail 'structured status leaked a human placeholder' ;;
+  *'(not recorded)'*) fail 'structured status leaked a terminal-output placeholder' ;;
   *'super-secret-'*) fail 'structured status emitted an unrelated secret-bearing environment value' ;;
 esac
 

@@ -35,7 +35,7 @@ pantheon-local multidev create SITE.SOURCE NEW_ENV \
   [--dry-run] \
   [--start] \
   [--yes] \
-  [--format human|json] \
+  [--format default|json] \
   [--record FILE]
 ```
 
@@ -129,7 +129,7 @@ The structured plan is emitted only after the same Terminus authentication and a
 terminus multidev:create SITE.SOURCE NEW_ENV --yes
 ```
 
-No machine token or secret-bearing Terminus output is included. `--format json` and `--record FILE` are intentionally limited to `--dry-run` at this stage; real remote creation keeps the established human result surface until the shared workflow runner/result model owns that mutation lifecycle.
+No machine token or secret-bearing Terminus output is included. `--format json` and `--record FILE` are intentionally limited to `--dry-run` at this stage; real remote creation keeps the established default result surface until the shared workflow runner/result model owns that mutation lifecycle.
 
 Dry-run identifies the local handoff options rather than pretending the not-yet-created target has a resolvable Pantheon Git endpoint. The existing clone path performs the authoritative remote Tag/Git/destination checks only after creation has been verified.
 

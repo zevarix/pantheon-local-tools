@@ -179,7 +179,7 @@ Exit semantics distinguish **inspection results** from **unsupported readiness c
 - exit nonzero for `overlay-delta` while the owning validation mechanism is unavailable, even though the command prints the known boundary/Git state;
 - exit nonzero when PLT cannot inspect safely or completely, including incomplete/unsupported profile data, missing/escaping configured paths, provider/Drush failure, runtime config-path mismatch, or Git-visible mutation caused during full-export inspection.
 
-The human-readable output is not a stable porcelain/JSON API.
+The default terminal output is not a stable porcelain/JSON API.
 
 ## No export boundary
 

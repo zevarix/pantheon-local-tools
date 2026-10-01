@@ -1,0 +1,579 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME='pantheon-local'
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_ROOT="$SCRIPT_DIR/.."
+VERSION_FILE="$PROJECT_ROOT/VERSION"
+CORE="$SCRIPT_DIR/pantheon-local-core"
+OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+ESTATE_COMMON="$SCRIPT_DIR/pantheon-local-estate-common"
+CHECK_DIR=''
+CHECK_SEQ=0
+
+[ -x "$CORE" ] || { printf '%s: core module is missing or not executable: %s\n' "$PROGRAM_NAME" "$CORE" >&2; exit 40; }
+[ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
+[ -r "$ESTATE_COMMON" ] || { printf '%s: estate discovery module is missing: %s\n' "$PROGRAM_NAME" "$ESTATE_COMMON" >&2; exit 40; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$OUTPUT_LIB"
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$ESTATE_COMMON"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local doctor [--format default|json] [--record FILE]
+
+Read-only first-run and troubleshooting diagnostics.
+
+Checks include:
+  * PLT version and effective configuration path;
+  * configured checkout root and provider prerequisites;
+  * Git and Terminus availability/authentication;
+  * configured Pantheon Tag routes plus accessible unmapped Tags;
+  * canonical Dev checkout presence/identity/origin/branch/provider readiness;
+  * obvious checkout-local PLT metadata inconsistencies.
+
+Diagnostic statuses:
+  PASS  Ready/healthy.
+  INFO  Valid informational state; no repair required.
+  WARN  Action recommended, but the diagnostic itself completed safely.
+  FAIL  A tool/configuration/authority condition prevents a safe workflow.
+
+Safety:
+  * Doctor never starts/rebuilds a provider.
+  * Doctor never clones/pulls/fetches into/merges a checkout.
+  * Doctor never pulls data, exports config, creates credentials, edits config,
+    commits/pushes Git, or mutates Pantheon.
+
+Output:
+  --format default  Diagnostic checklist (default).
+  --format json     Stable structured result.
+  --record FILE     Write the same JSON result to a new file; never overwrite.
+USAGE
+}
+
+cleanup() { [ -z "$CHECK_DIR" ] || rm -rf "$CHECK_DIR"; }
+
+die_code() {
+  local code=$1
+  shift
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit "$code"
+}
+
+usage_error() { die_code "$PLT_EXIT_USAGE" "$*"; }
+
+single_line() {
+  printf '%s' "$1" | tr '\r\n\t' '   '
+}
+
+check_add() {
+  local id=$1 status=$2 reason=$3 category=$4 source=$5 message=$6 next=$7 scope=$8 file
+  CHECK_SEQ=$((CHECK_SEQ + 1))
+  file=$(printf '%s/check-%04d' "$CHECK_DIR" "$CHECK_SEQ")
+  {
+    single_line "$id"; printf '\n'
+    single_line "$status"; printf '\n'
+    single_line "$reason"; printf '\n'
+    single_line "$category"; printf '\n'
+    single_line "$source"; printf '\n'
+    single_line "$message"; printf '\n'
+    single_line "$next"; printf '\n'
+    single_line "$scope"; printf '\n'
+  } > "$file"
+  printf '%s\n' "$file" >> "$CHECK_DIR/order"
+}
+
+check_get() { sed -n "${2}p" "$1"; }
+
+route_directory_valid() {
+  local directory=$1 wrapped
+  [ -n "$directory" ] || return 1
+  case "$directory" in
+    /*|*\\*|*$'\n'*|*$'\r'*|*'//'*) return 1 ;;
+  esac
+  wrapped="/$directory/"
+  case "$wrapped" in */./*|*/../*) return 1 ;; esac
+  return 0
+}
+
+configured_tag_exists() { tag_is_configured "$1" "$2"; }
+
+doctor_platform() {
+  local kernel=''
+  if command -v uname >/dev/null 2>&1; then kernel=$(uname -s 2>/dev/null || true); fi
+  case "$kernel" in
+    Darwin) printf '%s\n' macos ;;
+    Linux)
+      if [ -n "${WSL_DISTRO_NAME:-}" ] || { [ -r /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null; }; then
+        printf '%s\n' wsl
+      else
+        printf '%s\n' linux
+      fi
+      ;;
+    *) printf '%s\n' unknown ;;
+  esac
+}
+
+doctor_config_path() {
+  "$CORE" config path 2>/dev/null || true
+}
+
+doctor_config_value() {
+  "$CORE" config get "$1" 2>/dev/null || true
+}
+
+doctor_tag_mappings() {
+  "$CORE" config tag list 2>/dev/null || true
+}
+
+nearest_existing_parent() {
+  local parent=$1
+  while [ ! -e "$parent" ]; do
+    case "$parent" in
+      /) break ;;
+      *) parent=${parent%/*}; [ -n "$parent" ] || parent=/ ;;
+    esac
+  done
+  printf '%s\n' "$parent"
+}
+
+check_provider_command() {
+  local provider=$1 context=$2
+  if command -v "$provider" >/dev/null 2>&1; then
+    check_add "provider-$context-$provider-command" PASS provider-command-available '' "$provider" "$provider command is available" '' "$context"
+    return 0
+  fi
+  check_add "provider-$context-$provider-command" FAIL provider-command-unavailable operation-failed "$provider" "$provider command is not available" "install $provider or choose/configure an available provider" "$context"
+  return 1
+}
+
+inspect_checkout_provider() {
+  local site=$1 destination=$2 state recorded='' has_ddev=false has_lando=false provider=''
+  state="$destination/.git/pantheon-local-tools/state"
+  recorded=$(git config --file "$state" --get local.provider 2>/dev/null || true)
+  [ -f "$destination/.ddev/config.yaml" ] && has_ddev=true
+  [ -f "$destination/.lando.yml" ] && has_lando=true
+
+  if [ -n "$recorded" ]; then
+    case "$recorded" in
+      ddev)
+        if [ "$has_ddev" != true ]; then
+          check_add "checkout-$site-provider" FAIL recorded-provider-config-missing unsafe-local-state ddev "checkout $site records DDEV but .ddev/config.yaml is missing" 'restore the DDEV project configuration or correct checkout-local provider state' "site:$site"
+          return
+        fi
+        provider=ddev
+        ;;
+      lando)
+        if [ "$has_lando" != true ]; then
+          check_add "checkout-$site-provider" FAIL recorded-provider-config-missing unsafe-local-state lando "checkout $site records Lando but .lando.yml is missing" 'restore the Lando project configuration or correct checkout-local provider state' "site:$site"
+          return
+        fi
+        provider=lando
+        ;;
+      *)
+        check_add "checkout-$site-provider" FAIL recorded-provider-unsupported ambiguous-configuration plt-orchestration "checkout $site records unsupported provider: $recorded" 'correct checkout-local provider state' "site:$site"
+        return
+        ;;
+    esac
+  else
+    case "$has_ddev:$has_lando" in
+      true:false) provider=ddev ;;
+      false:true) provider=lando ;;
+      true:true)
+        check_add "checkout-$site-provider" FAIL provider-auto-ambiguous ambiguous-configuration plt-orchestration "checkout $site contains both DDEV and Lando project configuration" 'remove the unintended provider configuration or record the intended provider explicitly' "site:$site"
+        return
+        ;;
+      false:false)
+        check_add "checkout-$site-provider" FAIL provider-auto-undetermined ambiguous-configuration plt-orchestration "checkout $site contains neither DDEV nor Lando project configuration" 'add one supported provider project configuration' "site:$site"
+        return
+        ;;
+    esac
+  fi
+
+  check_add "checkout-$site-provider" PASS checkout-provider-resolved '' "$provider" "checkout $site resolves provider $provider" '' "site:$site"
+  check_provider_command "$provider" "site-$site" || true
+}
+
+inspect_checkout_structure() {
+  local site=$1 destination=$2 git_url=$3 remote_branch=$4 state state_site state_env kind origin branch
+  if [ ! -e "$destination" ]; then
+    check_add "checkout-$site" WARN checkout-missing '' git "canonical Dev checkout is missing for $site" "run pantheon-local checkout $site.dev" "site:$site"
+    return
+  fi
+  if [ ! -d "$destination/.git" ]; then
+    check_add "checkout-$site" FAIL occupied-checkout-destination unsafe-local-state git "canonical destination is occupied by a non-Git path: $destination" 'move or remove the occupied destination before checkout' "site:$site"
+    return
+  fi
+
+  state="$destination/.git/pantheon-local-tools/state"
+  state_site=$(git config --file "$state" --get pantheon.site 2>/dev/null || true)
+  state_env=$(git config --file "$state" --get pantheon.environment 2>/dev/null || true)
+  kind=$(git config --file "$state" --get checkout.kind 2>/dev/null || true)
+
+  if [ -n "$state_site" ] && [ "$state_site" != "$site" ]; then
+    check_add "checkout-$site-metadata-site" FAIL checkout-site-mismatch unsafe-local-state git "checkout-local site metadata is $state_site but destination is for $site" 'review checkout-local PLT metadata before using this checkout' "site:$site"
+  elif [ -n "$state_site" ]; then
+    check_add "checkout-$site-metadata-site" PASS checkout-site-matches '' git "checkout-local site metadata matches $site" '' "site:$site"
+  else
+    check_add "checkout-$site-metadata-site" INFO checkout-site-metadata-absent '' git "checkout $site has no recorded pantheon.site metadata" '' "site:$site"
+  fi
+
+  if [ -n "$state_env" ] && [ "$state_env" != dev ]; then
+    check_add "checkout-$site-metadata-env" FAIL checkout-environment-mismatch unsafe-local-state git "checkout-local environment metadata is $state_env, expected dev" 'review checkout-local PLT metadata before using this checkout' "site:$site"
+  elif [ -n "$state_env" ]; then
+    check_add "checkout-$site-metadata-env" PASS checkout-environment-matches '' git 'checkout-local environment metadata is dev' '' "site:$site"
+  else
+    check_add "checkout-$site-metadata-env" INFO checkout-environment-metadata-absent '' git "checkout $site has no recorded pantheon.environment metadata" '' "site:$site"
+  fi
+
+  if [ -n "$kind" ] && [ "$kind" != canonical-dev ]; then
+    check_add "checkout-$site-kind" FAIL checkout-kind-mismatch unsafe-local-state git "checkout.kind is $kind, expected canonical-dev" 'review checkout-local PLT metadata before using this checkout' "site:$site"
+  elif [ "$kind" = canonical-dev ]; then
+    check_add "checkout-$site-kind" PASS checkout-kind-valid '' git 'checkout.kind is canonical-dev' '' "site:$site"
+  else
+    check_add "checkout-$site-kind" INFO checkout-kind-metadata-absent '' git "checkout $site predates or lacks canonical checkout metadata" '' "site:$site"
+  fi
+
+  origin=$(git -C "$destination" remote get-url origin 2>/dev/null || true)
+  if [ "$origin" = "$git_url" ]; then
+    check_add "checkout-$site-origin" PASS checkout-origin-valid '' git 'canonical checkout origin matches Terminus connection information' '' "site:$site"
+  else
+    check_add "checkout-$site-origin" FAIL checkout-origin-mismatch unsafe-local-state git "checkout origin does not match canonical Pantheon Dev Git URL" 'review the checkout origin before synchronization or setup' "site:$site"
+  fi
+
+  branch=$(git -C "$destination" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  if [ "$branch" = "$remote_branch" ]; then
+    check_add "checkout-$site-branch" PASS checkout-branch-valid '' git "checkout is on canonical branch $remote_branch" '' "site:$site"
+  else
+    [ -n "$branch" ] || branch=detached
+    check_add "checkout-$site-branch" FAIL checkout-branch-mismatch unsafe-local-state git "checkout branch is $branch, canonical Dev branch is $remote_branch" "switch to the canonical branch $remote_branch after reviewing local work" "site:$site"
+  fi
+
+  inspect_checkout_provider "$site" "$destination"
+}
+
+doctor_command() {
+  local format=default record_file='' config_path='' version='' platform root='' provider='' mappings='' git_ok=false
+  local failure_rank failure_source_value category source rank candidate_code
+  local root_parent terminus_ok=false auth_ok=false sites='' site envs remote_tags route route_rc tag route_dir destination git_url remote_info remote_branch remote_sha
+  local tag_line mapped_tag mapped_dir tags_seen_file tags_unique_file line exit_code semantic reason failure_source json record_rc
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --format)
+        [ "$#" -ge 2 ] || usage_error '--format requires default or json'
+        format=$2; case "$format" in default|json) ;; *) usage_error '--format must be default or json' ;; esac
+        shift 2
+        ;;
+      --record)
+        [ "$#" -ge 2 ] || usage_error '--record requires a file path'
+        record_file=$2; [ -n "$record_file" ] || usage_error '--record requires a non-empty file path'
+        shift 2
+        ;;
+      -h|--help|help) usage; return 0 ;;
+      *) usage_error 'usage: pantheon-local doctor [--format default|json] [--record FILE]' ;;
+    esac
+  done
+
+  CHECK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pantheon-local-doctor.XXXXXX") || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not create temporary diagnostic directory'
+  trap cleanup EXIT HUP INT TERM
+  : > "$CHECK_DIR/order"
+  tags_seen_file="$CHECK_DIR/tags-seen"
+  tags_unique_file="$CHECK_DIR/tags-unique"
+  : > "$tags_seen_file"
+
+  platform=$(doctor_platform)
+  check_add platform PASS platform-detected '' plt "platform: $platform" '' global
+
+  if [ -f "$VERSION_FILE" ] && IFS= read -r version < "$VERSION_FILE" && [ -n "$version" ]; then
+    check_add version PASS version-available '' plt "Pantheon Local Tools version: $version" '' global
+  else
+    check_add version FAIL version-unavailable operation-failed plt 'Pantheon Local Tools VERSION file is missing or empty' 'reinstall Pantheon Local Tools from a complete package/release' global
+  fi
+
+  config_path=$(doctor_config_path)
+  if [ -n "$config_path" ]; then
+    if [ -f "$config_path" ]; then
+      check_add config-path PASS config-file-present '' plt "configuration path: $config_path" '' global
+    else
+      check_add config-path INFO config-file-absent '' plt "configuration path uses defaults until created: $config_path" '' global
+    fi
+  else
+    check_add config-path FAIL config-path-unavailable operation-failed plt 'effective configuration path could not be determined' 'set HOME or PANTHEON_LOCAL_CONFIG and retry' global
+  fi
+
+  if command -v git >/dev/null 2>&1; then
+    git_ok=true
+    check_add git PASS git-available '' git "Git is available: $(command -v git)" '' global
+  else
+    check_add git FAIL git-unavailable operation-failed git 'Git is not available' 'install Git and retry doctor' global
+  fi
+
+  if [ "$git_ok" = true ]; then
+    root=$(doctor_config_value root)
+    if [ -z "$root" ]; then
+      check_add root FAIL root-config-invalid ambiguous-configuration plt-orchestration 'configured checkout root is missing or invalid' 'run pantheon-local config init --root /absolute/path' global
+    elif [ -e "$root" ] && [ ! -d "$root" ]; then
+      check_add root FAIL root-not-directory unsafe-local-state git "configured checkout root is not a directory: $root" 'choose an empty/directory checkout root with pantheon-local config init --root PATH' global
+    elif [ -d "$root" ]; then
+      check_add root PASS root-ready '' git "checkout root is a directory: $root" '' global
+    else
+      root_parent=$(nearest_existing_parent "$root")
+      if [ -d "$root_parent" ] && [ -w "$root_parent" ]; then
+        check_add root INFO root-not-created '' git "checkout root does not exist yet and can be created later: $root" '' global
+      else
+        check_add root FAIL root-parent-unwritable unsafe-local-state git "checkout root cannot be created from existing parent: $root_parent" 'choose a writable checkout root' global
+      fi
+    fi
+
+    provider=$(doctor_config_value provider)
+    case "$provider" in
+      ddev|lando)
+        check_add provider PASS provider-configured '' plt "configured provider: $provider" '' global
+        check_provider_command "$provider" global || true
+        ;;
+      auto)
+        check_add provider PASS provider-auto-configured '' plt 'configured provider: auto (resolved per checkout)' '' global
+        if command -v ddev >/dev/null 2>&1 || command -v lando >/dev/null 2>&1; then
+          command -v ddev >/dev/null 2>&1 && check_add provider-global-ddev INFO provider-command-available '' ddev "DDEV command is available: $(command -v ddev)" '' global
+          command -v lando >/dev/null 2>&1 && check_add provider-global-lando INFO provider-command-available '' lando "Lando command is available: $(command -v lando)" '' global
+        else
+          check_add provider-tools FAIL provider-tools-unavailable operation-failed plt-orchestration 'provider=auto but neither ddev nor lando command is available' 'install DDEV or Lando before provider-aware workflows' global
+        fi
+        ;;
+      *)
+        check_add provider FAIL provider-config-invalid ambiguous-configuration plt-orchestration "configured provider is missing or invalid: ${provider:-<empty>}" 'run pantheon-local config init --provider auto|ddev|lando' global
+        ;;
+    esac
+
+    mappings=$(doctor_tag_mappings)
+    if [ -n "$mappings" ]; then
+      while IFS= read -r tag_line; do
+        [ -n "$tag_line" ] || continue
+        mapped_tag=${tag_line%%=*}
+        mapped_dir=${tag_line#*=}
+        if route_directory_valid "$mapped_dir"; then
+          check_add "tag-route-$mapped_tag" PASS tag-route-valid '' plt "configured Tag route: $mapped_tag -> $mapped_dir" '' "tag:$mapped_tag"
+        else
+          check_add "tag-route-$mapped_tag" FAIL tag-route-invalid ambiguous-configuration plt-orchestration "configured Tag route has an unsafe/invalid directory: $mapped_tag -> $mapped_dir" "reset the route with pantheon-local config tag set '$mapped_tag' DIRECTORY" "tag:$mapped_tag"
+        fi
+      done <<EOF
+$mappings
+EOF
+    else
+      check_add tag-routes INFO tag-routes-empty '' plt 'no Pantheon Tag directory routes are configured; canonical sites use the root directly' '' global
+    fi
+  else
+    check_add config-values FAIL config-unreadable-without-git operation-failed git 'root/provider/Tag configuration cannot be evaluated without Git' 'install Git and retry doctor' global
+  fi
+
+  if command -v terminus >/dev/null 2>&1; then
+    terminus_ok=true
+    check_add terminus PASS terminus-available '' terminus "Terminus is available: $(command -v terminus)" '' global
+  else
+    check_add terminus FAIL terminus-unavailable operation-failed terminus 'Terminus is not available' 'install Terminus and retry doctor' global
+  fi
+
+  if [ "$terminus_ok" = true ]; then
+    if terminus auth:whoami >/dev/null 2>&1; then
+      auth_ok=true
+      check_add terminus-auth PASS terminus-authenticated '' terminus 'Terminus authentication is valid' '' global
+    else
+      check_add terminus-auth FAIL terminus-unauthenticated authority-unavailable terminus 'Terminus is installed but not authenticated' 'run terminus auth:login and retry doctor' global
+    fi
+  fi
+
+  if [ "$auth_ok" = true ] && [ "$git_ok" = true ] && [ -n "$root" ]; then
+    if sites=$(terminus site:list --format=list --field=name 2>/dev/null); then
+      sites=$(printf '%s\n' "$sites" | sed '/^$/d' | LC_ALL=C sort -u)
+      if [ -n "$sites" ]; then
+        check_add pantheon-sites PASS pantheon-sites-readable '' terminus 'accessible Pantheon site inventory is readable' '' global
+      else
+        check_add pantheon-sites WARN pantheon-sites-empty '' terminus 'Terminus returned no accessible Pantheon sites' 'verify Pantheon account/team access if sites were expected' global
+      fi
+    else
+      sites=''
+      check_add pantheon-sites FAIL pantheon-site-list-unavailable authority-unavailable terminus 'Terminus could not list accessible Pantheon sites' 'verify Terminus/Pantheon access and retry doctor' global
+    fi
+
+    while IFS= read -r site; do
+      [ -n "$site" ] || continue
+      validate_site "$site"
+      if ! envs=$(site_environment_list "$site"); then
+        check_add "site-$site-envs" FAIL site-environments-unavailable authority-unavailable terminus "cannot read environments for $site" 'verify Pantheon site access and retry doctor' "site:$site"
+        continue
+      fi
+      if env_list_has_dev "$envs"; then
+        check_add "site-$site-dev" PASS dev-environment-available '' terminus "Pantheon Dev environment is available for $site" '' "site:$site"
+      else
+        check_add "site-$site-dev" FAIL dev-environment-unavailable operation-failed terminus "Pantheon Dev environment is unavailable for $site" 'initialize/restore the site Dev environment before canonical checkout workflows' "site:$site"
+        continue
+      fi
+
+      if remote_tags=$(site_remote_tags "$site"); then
+        while IFS= read -r line; do [ -n "$line" ] && printf '%s\n' "$line" >> "$tags_seen_file"; done <<EOF
+$remote_tags
+EOF
+      else
+        check_add "site-$site-tags" FAIL site-tags-unavailable authority-unavailable terminus "cannot read Pantheon Tags for $site" 'verify organization/Tag access in Terminus and retry doctor' "site:$site"
+        continue
+      fi
+
+      route_rc=0
+      route=$(resolve_route "$mappings" "$remote_tags") || route_rc=$?
+      tag=''; route_dir=''; destination=''
+      case "$route_rc" in
+        0)
+          tag=$(printf '%s\n' "$route" | sed -n '1p')
+          route_dir=$(printf '%s\n' "$route" | sed -n '2p')
+          if [ -n "$route_dir" ] && ! route_directory_valid "$route_dir"; then
+            check_add "site-$site-route" FAIL tag-route-invalid ambiguous-configuration plt-orchestration "site $site resolves to invalid Tag route directory: $route_dir" 'repair the configured Tag route before checkout' "site:$site"
+            continue
+          fi
+          check_add "site-$site-route" PASS site-route-resolved '' plt "canonical route resolved for $site${tag:+ via $tag}" '' "site:$site"
+          ;;
+        10)
+          check_add "site-$site-route" FAIL site-route-unmapped ambiguous-configuration plt-orchestration "site $site has no Pantheon Tag matching a configured local route" 'configure one local route matching this site or remove Tag routing if root-level routing is intended' "site:$site"
+          continue
+          ;;
+        11)
+          check_add "site-$site-route" FAIL site-route-ambiguous ambiguous-configuration plt-orchestration "site $site matches more than one configured local Tag route" 'leave exactly one configured local Tag route matching this site' "site:$site"
+          continue
+          ;;
+        *)
+          check_add "site-$site-route" FAIL site-route-failed operation-failed plt-orchestration "route resolution failed for $site" 'review PLT Tag routing configuration' "site:$site"
+          continue
+          ;;
+      esac
+
+      if [ -n "$route_dir" ]; then destination="$root/$route_dir/$site"; else destination="$root/$site"; fi
+
+      if ! git_url=$(site_git_url "$site"); then
+        check_add "site-$site-git-url" FAIL dev-git-url-unavailable authority-unavailable terminus "canonical Dev Git URL is unavailable for $site" 'verify Terminus connection information for this site' "site:$site"
+        continue
+      fi
+      remote_info=$(remote_head_info "$git_url" 2>/dev/null || true)
+      remote_branch=$(printf '%s\n' "$remote_info" | sed -n '1p')
+      remote_sha=$(printf '%s\n' "$remote_info" | sed -n '2p')
+      if [ -z "$remote_branch" ] || [ -z "$remote_sha" ]; then
+        check_add "site-$site-git-remote" FAIL dev-git-remote-unavailable authority-unavailable git "canonical Dev Git repository is not readable for $site" 'verify Git/SSH access to Pantheon and retry doctor' "site:$site"
+        continue
+      fi
+      check_add "site-$site-git-remote" PASS dev-git-remote-readable '' git "canonical Dev Git repository is readable for $site ($remote_branch @ $(printf '%.8s' "$remote_sha"))" '' "site:$site"
+
+      inspect_checkout_structure "$site" "$destination" "$git_url" "$remote_branch"
+    done <<EOF
+$sites
+EOF
+
+    if [ -s "$tags_seen_file" ]; then
+      LC_ALL=C sort -u "$tags_seen_file" > "$tags_unique_file"
+      while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        if configured_tag_exists "$line" "$mappings"; then
+          check_add "remote-tag-$line" PASS accessible-tag-routed '' terminus "accessible Pantheon Tag has a configured local route: $line" '' "tag:$line"
+        else
+          check_add "remote-tag-$line" WARN accessible-tag-unmapped '' terminus "accessible Pantheon Tag has no configured local route: $line" "optionally configure it with pantheon-local config tag set '$line' DIRECTORY" "tag:$line"
+        fi
+      done < "$tags_unique_file"
+    fi
+  fi
+
+  exit_code=0
+  semantic=current
+  reason=doctor-ready
+  failure_source=null
+  failure_rank=0
+  failure_source_value=''
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$(check_get "$line" 2)" in
+      WARN)
+        if [ "$semantic" = current ]; then
+          semantic=complete
+          reason=doctor-warnings
+        fi
+        ;;
+      FAIL)
+        semantic=blocked
+        reason=doctor-failed
+        category=$(check_get "$line" 4)
+        source=$(check_get "$line" 5)
+        case "$category" in
+          operation-failed) rank=4; candidate_code=$PLT_EXIT_OPERATION_FAILED ;;
+          authority-unavailable) rank=3; candidate_code=$PLT_EXIT_AUTHORITY_UNAVAILABLE ;;
+          ambiguous-configuration) rank=2; candidate_code=$PLT_EXIT_AMBIGUOUS_CONFIGURATION ;;
+          unsafe-local-state) rank=1; candidate_code=$PLT_EXIT_UNSAFE_LOCAL_STATE ;;
+          *) rank=4; candidate_code=$PLT_EXIT_OPERATION_FAILED ;;
+        esac
+        if [ "$rank" -gt "$failure_rank" ]; then
+          failure_rank=$rank
+          exit_code=$candidate_code
+          failure_source_value=$source
+        fi
+        ;;
+    esac
+  done < "$CHECK_DIR/order"
+
+  if [ -n "$failure_source_value" ]; then
+    failure_source=$(plt_json_string "$failure_source_value")
+  fi
+
+  json=$(build_doctor_json "$version" "$config_path" "$platform" "$root" "$provider" "$exit_code" "$semantic" "$reason" "$failure_source")
+  if [ -n "$record_file" ]; then
+    record_rc=0; plt_write_record "$record_file" "$json" || record_rc=$?
+    case "$record_rc" in
+      0) ;;
+      "$PLT_EXIT_UNSAFE_LOCAL_STATE") die_code "$record_rc" "refusing to overwrite operation record: $record_file" ;;
+      "$PLT_EXIT_USAGE") die_code "$record_rc" 'invalid operation record path' ;;
+      *) die_code "$PLT_EXIT_OPERATION_FAILED" "could not write operation record: $record_file" ;;
+    esac
+  fi
+
+  if [ "$format" = json ]; then printf '%s\n' "$json"; else print_doctor_default "$version" "$config_path" "$platform"; [ -z "$record_file" ] || printf '\nOperation record: %s\n' "$record_file"; fi
+  return "$exit_code"
+}
+
+print_doctor_default() {
+  local version=$1 config_path=$2 platform=$3 file id status message next
+  printf 'Pantheon Local Tools doctor\n\n'
+  printf 'Version:     %s\n' "${version:--}"
+  printf 'Platform:    %s\n' "${platform:--}"
+  printf 'Config path: %s\n\n' "${config_path:--}"
+  printf '%-5s %-36s %s\n' STATE CHECK MESSAGE
+  printf '%-5s %-36s %s\n' '-----' '------------------------------------' '----------------------------------------'
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    id=$(check_get "$file" 1); status=$(check_get "$file" 2); message=$(check_get "$file" 6); next=$(check_get "$file" 7)
+    printf '%-5s %-36s %s\n' "$status" "$id" "$message"
+    [ -z "$next" ] || printf '      %-36s Next: %s\n' '' "$next"
+  done < "$CHECK_DIR/order"
+}
+
+build_doctor_json() {
+  local version=$1 config_path=$2 platform=$3 root=$4 provider=$5 exit_code=$6 semantic=$7 reason=$8 failure_source=$9
+  local first=true file
+  printf '{'
+  printf '"schema_version":%s,' "$PLT_STRUCTURED_SCHEMA_VERSION"
+  printf '"record_type":"diagnostic",'
+  printf '"command":"doctor",'
+  printf '"primitive":"environment-diagnostics",'
+  printf '"operation_id":null,'
+  printf '"read_only":true,'
+  printf '"workflow":{"schema_version":1,"name":"doctor","kind":"built-in","phase":"verify","status":%s,"step":"diagnostics","safe_next_action":null},' "$(if [ "$exit_code" -eq 0 ]; then plt_json_string complete; else plt_json_string blocked; fi)"
+  printf '"result":{"state":%s,"reason_code":%s,"exit_code":%s,"exit_category":%s,"failure_source":%s,"next_action":null},' "$(plt_json_string "$semantic")" "$(plt_json_string "$reason")" "$exit_code" "$(plt_json_string "$(plt_exit_category "$exit_code")")" "$failure_source"
+  printf '"environment":{"version":%s,"platform":%s,"config_path":%s,"root":%s,"provider":%s},' "$(plt_json_nullable_string "$version")" "$(plt_json_nullable_string "$platform")" "$(plt_json_nullable_string "$config_path")" "$(plt_json_nullable_string "$root")" "$(plt_json_nullable_string "$provider")"
+  printf '"authority":{"pantheon":"terminus","git":"git","provider":"command-and-project-config-inspection","terminus_primitives":["auth:whoami","site:list","site:info","tag:list","env:list","connection:info"]},'
+  printf '"checks":['
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    [ "$first" = true ] || printf ','; first=false
+    printf '{"id":%s,"status":%s,"reason_code":%s,"exit_category":%s,"source":%s,"message":%s,"next_action":%s,"scope":%s}' \
+      "$(plt_json_string "$(check_get "$file" 1)")" "$(plt_json_string "$(check_get "$file" 2)")" "$(plt_json_string "$(check_get "$file" 3)")" "$(plt_json_nullable_string "$(check_get "$file" 4)")" "$(plt_json_nullable_string "$(check_get "$file" 5)")" "$(plt_json_string "$(check_get "$file" 6)")" "$(plt_json_nullable_string "$(check_get "$file" 7)")" "$(plt_json_string "$(check_get "$file" 8)")"
+  done < "$CHECK_DIR/order"
+  printf ']}'
+}
+
+doctor_command "$@"

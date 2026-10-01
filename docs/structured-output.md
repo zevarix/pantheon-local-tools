@@ -150,3 +150,6 @@ A safe dry-run with missing/behind sites remains exit `0` and reports aggregate 
 ### Estate status inspection
 
 `pantheon-local estate status ... --format json` emits read-only cross-system inspection records. Per-site results include assessment/reason/failure source, route/destination facts, local Git/provider facts, canonical remote Git identity when available, and independent Dev/Test/Live code-log status/full SHA. Ordinary drift such as missing/behind/ahead/diverged/dirty remains a successful complete inspection; nonzero categories represent incomplete routing or authority.
+### Doctor diagnostics
+
+`pantheon-local doctor --format json` emits a diagnostic record with PASS/INFO/WARN/FAIL checks. Each check has a stable id, reason code, optional exit category, source, message, scope, and smallest known next action. Warnings keep the aggregate exit code at `0`; failures map to the shared unsafe-local-state, ambiguous-configuration, authority-unavailable, or operation-failed categories.

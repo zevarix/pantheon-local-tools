@@ -45,6 +45,7 @@ install -m 0755 "$REPO_ROOT/libexec/pantheon-local-config-export" "$APP_ROOT/lib
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-checkout" "$APP_ROOT/libexec/pantheon-local-checkout"
 install -m 0644 "$REPO_ROOT/libexec/pantheon-local-estate-common" "$APP_ROOT/libexec/pantheon-local-estate-common"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-estate-status" "$APP_ROOT/libexec/pantheon-local-estate-status"
+install -m 0755 "$REPO_ROOT/libexec/pantheon-local-doctor" "$APP_ROOT/libexec/pantheon-local-doctor"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-multidev-create" "$APP_ROOT/libexec/pantheon-local-multidev-create"
 install -m 0644 "$REPO_ROOT/libexec/pantheon-local-output" "$APP_ROOT/libexec/pantheon-local-output"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-provider-url" "$APP_ROOT/libexec/pantheon-local-provider-url"

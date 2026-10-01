@@ -68,7 +68,15 @@ For guided first-run setup, run:
 pantheon-local config init
 ```
 
-The setup uses the current effective checkout root/provider values, lets you choose `auto`, DDEV, or Lando, summarizes the result, and confirms before writing. Experienced users and scripts can configure one or both values without prompts:
+The setup uses the current effective checkout root/provider values, lets you choose `auto`, DDEV, or Lando, summarizes the result, and confirms before writing. Before checkout/bootstrap work, run the read-only doctor to validate local tools, Terminus authentication, routing, provider prerequisites, and any existing canonical checkouts:
+
+```bash
+pantheon-local doctor
+```
+
+Doctor reports PASS/INFO/WARN/FAIL checks with the smallest known next action and never repairs automatically. See [`docs/doctor.md`](docs/doctor.md).
+
+Experienced users and scripts can configure one or both values without prompts:
 
 ```bash
 pantheon-local config init --root ~/sites/pantheon --provider ddev
@@ -211,6 +219,8 @@ pantheon-local checkout sync (--all | --tag TAG [--tag TAG ...]) [OPTIONS]
 
 pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]
 
+pantheon-local doctor [--format default|json] [--record FILE]
+
 pantheon-local multidev SITE.ENV
   --provider ddev|lando
   --group NAME
@@ -241,9 +251,15 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local checkout --help`, `pantheon-local estate status --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
+Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local checkout --help`, `pantheon-local estate status --help`, `pantheon-local doctor --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
 
 ## Core workflows
+
+### First-run doctor and diagnostics
+
+`pantheon-local doctor` is the read-only first-run/troubleshooting gate. It checks PLT version/config path, Git, checkout root, configured provider prerequisites, Terminus installation/authentication, accessible sites/Tags, route ambiguity, canonical Dev Git access, missing/invalid checkouts, and checkout-local provider/metadata consistency.
+
+PASS/INFO/WARN checks keep exit `0`; FAIL checks use the shared unsafe/ambiguous/authority/operation categories and retain per-check next actions/source metadata in JSON. Doctor never starts a provider, mutates Git/config, creates credentials, or writes to Pantheon; only an explicitly requested record file is written. See [`docs/doctor.md`](docs/doctor.md).
 
 ### Canonical Dev checkout and sync
 
@@ -465,6 +481,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 - [`docs/workflows.md`](docs/workflows.md) — shared primitive/built-in/downstream workflow model and Terminus authority boundary
 - [`docs/checkout.md`](docs/checkout.md) — canonical Pantheon Dev checkout, estate population, and explicit fast-forward sync
 - [`docs/estate-status.md`](docs/estate-status.md) — read-only estate drift overview joining Terminus environment code with local Git/provider state
+- [`docs/doctor.md`](docs/doctor.md) — read-only first-run and troubleshooting diagnostics for tools, config, routing, providers, and Pantheon authority
 - [`docs/structured-output.md`](docs/structured-output.md) — stable JSON schema, exit categories, and durable operation-record contract
 - [`docs/configuration.md`](docs/configuration.md) — Git-compatible user configuration and Pantheon Tag profile strategies
 - [`docs/multidev.md`](docs/multidev.md) — existing Multidev checkout plus guarded remote creation behavior and safety

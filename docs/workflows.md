@@ -46,6 +46,7 @@ Existing commands already fit this model:
 
 - `pantheon-local checkout` is a built-in canonical Dev estate workflow over Terminus discovery plus guarded local Git clone/sync primitives;
 - `pantheon-local estate status` is a read-only built-in estate view joining Terminus environment/code facts with local Git/provider state;
+- `pantheon-local doctor` is a read-only built-in diagnostic workflow over local prerequisites plus Terminus-owned Pantheon checks;
 - `pantheon-local setup` composes provider start, provider-owned Composer, guarded database pull, `drush updb`, and `drush cr`;
 - `pantheon-local multidev create` composes Terminus Multidev creation, authoritative readback, and local checkout handoff;
 - `pantheon-local config export` is a guarded composition of readiness, runtime inspection, explicit export, and Git verification.

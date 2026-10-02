@@ -74,8 +74,9 @@ Commands:
       identity with canonical local checkout Git/provider state.
 
   pantheon-local doctor [--format default|json] [--record FILE]
-      Read-only first-run/troubleshooting diagnostics for tools, config, routing,
-      Pantheon authority, provider prerequisites, and canonical Dev checkouts.
+      Read-only diagnosis for tools, config, routing, Pantheon authority,
+      provider prerequisites, and canonical Dev checkouts. Interactive use may
+      offer explicitly confirmed PLT-managed repairs after the report.
 
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
       Clone an already-existing Pantheon Multidev into an isolated local

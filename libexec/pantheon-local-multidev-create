@@ -6,13 +6,17 @@ SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 CORE="$SCRIPT_DIR/pantheon-local-core"
 OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
 TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
+INTERACTION_LIB="$SCRIPT_DIR/pantheon-local-interaction"
 
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
 [ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 40; }
+[ -r "$INTERACTION_LIB" ] || { printf '%s: interaction module is missing: %s\n' "$PROGRAM_NAME" "$INTERACTION_LIB" >&2; exit 40; }
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$OUTPUT_LIB"
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$TERMINAL_LIB"
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$INTERACTION_LIB"
 
 usage() {
   cat <<'USAGE'
@@ -251,7 +255,7 @@ print_plan() {
 }
 
 confirm_creation() {
-  local assume_yes=$1 source=$2 target=$3 answer=''
+  local assume_yes=$1 source=$2 target=$3 confirm_rc
   if [ "$assume_yes" = true ]; then
     plt_term_style 1 muted 'Confirmation:          '
     plt_term_style 1 success 'acknowledged by --yes'
@@ -259,13 +263,14 @@ confirm_creation() {
     return
   fi
 
-  [ -t 0 ] || die 'non-interactive Multidev creation requires --yes acknowledgement'
-  printf 'Create remote Pantheon Multidev %s from %s? [y/N] ' "$target" "$source" >&2
-  IFS= read -r answer || answer=''
-  case "$answer" in
-    y|Y|yes|YES|Yes) ;;
-    *) die 'Pantheon Multidev creation cancelled; no remote write was performed' ;;
-  esac
+  if plt_interact_confirm "Create remote Pantheon Multidev $target from $source?"; then
+    return 0
+  else
+    confirm_rc=$?
+  fi
+
+  [ "$confirm_rc" -ne 2 ] || die 'non-interactive Multidev creation requires --yes acknowledgement'
+  die 'Pantheon Multidev creation cancelled; no remote write was performed'
 }
 
 run_local_handoff() {

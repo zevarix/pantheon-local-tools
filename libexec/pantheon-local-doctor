@@ -8,6 +8,7 @@ VERSION_FILE="$PROJECT_ROOT/VERSION"
 CORE="$SCRIPT_DIR/pantheon-local-core"
 OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
 TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
+INTERACTION_LIB="$SCRIPT_DIR/pantheon-local-interaction"
 ESTATE_COMMON="$SCRIPT_DIR/pantheon-local-estate-common"
 CHECK_DIR=''
 CHECK_SEQ=0
@@ -37,11 +38,14 @@ CHECK_SCOPE=''
 [ -x "$CORE" ] || { printf '%s: core module is missing or not executable: %s\n' "$PROGRAM_NAME" "$CORE" >&2; exit 40; }
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
 [ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 40; }
+[ -r "$INTERACTION_LIB" ] || { printf '%s: interaction module is missing: %s\n' "$PROGRAM_NAME" "$INTERACTION_LIB" >&2; exit 40; }
 [ -r "$ESTATE_COMMON" ] || { printf '%s: estate discovery module is missing: %s\n' "$PROGRAM_NAME" "$ESTATE_COMMON" >&2; exit 40; }
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$OUTPUT_LIB"
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$TERMINAL_LIB"
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$INTERACTION_LIB"
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$ESTATE_COMMON"
 
@@ -354,6 +358,257 @@ check_load() {
     IFS= read -r CHECK_NEXT || CHECK_NEXT=''
     IFS= read -r CHECK_SCOPE || CHECK_SCOPE=''
   } < "$file"
+}
+
+doctor_remediation_class_loaded() {
+  if [ "$CHECK_STATUS" != WARN ] && [ "$CHECK_STATUS" != FAIL ]; then
+    printf '%s' none
+    return
+  fi
+  if [ -z "$CHECK_NEXT" ]; then
+    printf '%s' none
+    return
+  fi
+
+  case "$CHECK_REASON" in
+    checkout-missing)
+      printf '%s' plt-managed
+      ;;
+    root-config-invalid|root-not-directory|root-parent-unwritable|provider-config-invalid|tag-route-invalid|site-route-unmapped|site-route-ambiguous|provider-auto-ambiguous|provider-auto-undetermined|accessible-tag-unmapped)
+      printf '%s' user-choice
+      ;;
+    occupied-checkout-destination|checkout-site-mismatch|checkout-environment-mismatch|checkout-kind-mismatch|checkout-origin-mismatch|checkout-branch-mismatch|recorded-provider-config-missing|recorded-provider-unsupported)
+      printf '%s' manual-recovery
+      ;;
+    *)
+      case "$CHECK_CATEGORY" in
+        unsafe-local-state) printf '%s' manual-recovery ;;
+        ambiguous-configuration) printf '%s' user-choice ;;
+        *) printf '%s' external-action ;;
+      esac
+      ;;
+  esac
+}
+
+doctor_remediation_action_loaded() {
+  case "$CHECK_REASON" in
+    checkout-missing) printf '%s' checkout-create ;;
+    root-config-invalid|root-not-directory|root-parent-unwritable) printf '%s' config-root ;;
+    provider-config-invalid) printf '%s' config-provider ;;
+    tag-route-invalid|site-route-unmapped|site-route-ambiguous|accessible-tag-unmapped) printf '%s' config-tag-route ;;
+    provider-auto-ambiguous|provider-auto-undetermined) printf '%s' checkout-provider-choice ;;
+    terminus-unauthenticated) printf '%s' terminus-auth ;;
+    git-unavailable) printf '%s' install-git ;;
+    terminus-unavailable) printf '%s' install-terminus ;;
+    provider-command-unavailable|provider-tools-unavailable) printf '%s' install-provider ;;
+    occupied-checkout-destination|checkout-site-mismatch|checkout-environment-mismatch|checkout-kind-mismatch|checkout-origin-mismatch|checkout-branch-mismatch|recorded-provider-config-missing|recorded-provider-unsupported) printf '%s' manual-recovery ;;
+    *)
+      if [ -n "$CHECK_NEXT" ]; then printf '%s' follow-next-action; else printf '%s' none; fi
+      ;;
+  esac
+}
+
+doctor_remediation_label_loaded() {
+  case "$(doctor_remediation_action_loaded)" in
+    checkout-create)
+      printf 'Create canonical Dev checkout for %s' "${CHECK_SCOPE#site:}"
+      ;;
+    *)
+      printf '%s' "$CHECK_MESSAGE"
+      ;;
+  esac
+}
+
+doctor_remediation_counts() {
+  local file class managed=0 choice=0 external=0 manual=0
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    class=$(doctor_remediation_class_loaded)
+    case "$class" in
+      plt-managed) managed=$((managed + 1)) ;;
+      user-choice) choice=$((choice + 1)) ;;
+      external-action) external=$((external + 1)) ;;
+      manual-recovery) manual=$((manual + 1)) ;;
+    esac
+  done < "$CHECK_DIR/order"
+  printf '%s %s %s %s\n' "$managed" "$choice" "$external" "$manual"
+}
+
+doctor_remediation_count_text() {
+  local count=$1 singular=$2 plural=$3
+  if [ "$count" -eq 1 ]; then
+    printf '%s %s' "$count" "$singular"
+  else
+    printf '%s %s' "$count" "$plural"
+  fi
+}
+
+doctor_print_remediation_row() {
+  local status=$1 count=$2 singular=$3 plural=$4 glyph style
+  [ "$count" -gt 0 ] || return 0
+  glyph=$(plt_term_status_glyph "$status")
+  style=$(plt_term_status_style "$status")
+  printf '  '
+  plt_term_style 1 "$style" "$glyph"
+  printf ' %s\n' "$(doctor_remediation_count_text "$count" "$singular" "$plural")"
+}
+
+doctor_print_remediation_summary() {
+  local managed=$1 choice=$2 external=$3 manual=$4 total file class index=0
+  total=$((managed + choice + external + manual))
+
+  printf '\n'
+  if [ "$total" -eq 0 ]; then
+    if [ "${PANTHEON_LOCAL_DOCTOR_REASSESS:-0}" = 1 ]; then
+      plt_term_style 1 success 'Doctor: all checks passed.'
+      printf '\n'
+    fi
+    return 0
+  fi
+
+  if [ "$total" -eq 1 ]; then
+    plt_term_style 1 heading 'Doctor found 1 item that needs attention.'
+  else
+    plt_term_style 1 heading "Doctor found $total items that need attention."
+  fi
+  printf '\n\n'
+  doctor_print_remediation_row PASS "$managed" 'PLT-managed item' 'PLT-managed items'
+  doctor_print_remediation_row WARN "$choice" 'item needing your choice' 'items needing your choice'
+  doctor_print_remediation_row FAIL "$external" 'item requiring external action' 'items requiring external action'
+  doctor_print_remediation_row FAIL "$manual" 'item requiring manual recovery' 'items requiring manual recovery'
+
+  if [ "$managed" -gt 0 ]; then
+    printf '\n'
+    plt_term_style 1 heading 'PLT can fix now:'
+    printf '\n'
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      check_load "$file"
+      class=$(doctor_remediation_class_loaded)
+      [ "$class" = plt-managed ] || continue
+      index=$((index + 1))
+      printf '  %s. %s\n' "$index" "$(doctor_remediation_label_loaded)"
+    done < "$CHECK_DIR/order"
+  fi
+}
+
+doctor_reassess() {
+  printf '\n'
+  plt_term_style 1 heading 'Running doctor again...'
+  printf '\n\n'
+  cleanup
+  trap - EXIT HUP INT TERM
+  export PANTHEON_LOCAL_DOCTOR_REASSESS=1
+  exec "$PROJECT_ROOT/bin/pantheon-local" doctor
+}
+
+doctor_apply_managed_remediations() {
+  local managed=$1 file class action site index=0 confirm_rc preview_rc action_rc changed=0 completed=0 attempted=false
+
+  while IFS= read -r file <&3; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    class=$(doctor_remediation_class_loaded)
+    [ "$class" = plt-managed ] || continue
+    action=$(doctor_remediation_action_loaded)
+    index=$((index + 1))
+
+    case "$action" in
+      checkout-create)
+        site=${CHECK_SCOPE#site:}
+        printf '\n'
+        plt_term_style 1 heading "$index/$managed  Create canonical Dev checkout"
+        printf '\n'
+        printf '     %s\n\n' "$site"
+        plt_term_style 1 muted 'Preview:'
+        printf '\n  pantheon-local checkout %s.dev --dry-run\n\n' "$site"
+
+        preview_rc=0
+        "$PROJECT_ROOT/bin/pantheon-local" checkout "$site.dev" --dry-run || preview_rc=$?
+        case "$preview_rc" in
+          "$PLT_EXIT_SUCCESS"|"$PLT_EXIT_CHANGED")
+            ;;
+          *)
+            plt_term_style 1 failure 'Preview failed. No checkout was created.'
+            printf '\n'
+            return "$preview_rc"
+            ;;
+        esac
+
+        if plt_interact_confirm "Create the canonical Dev checkout for $site now?"; then
+          :
+        else
+          confirm_rc=$?
+          [ "$confirm_rc" -ne 2 ] || return 1
+          plt_term_style 1 muted 'Skipped by user.'
+          printf '\n'
+          continue
+        fi
+
+        attempted=true
+        action_rc=0
+        "$PROJECT_ROOT/bin/pantheon-local" checkout "$site.dev" || action_rc=$?
+        case "$action_rc" in
+          "$PLT_EXIT_CHANGED")
+            changed=$((changed + 1))
+            completed=$((completed + 1))
+            ;;
+          "$PLT_EXIT_SUCCESS")
+            completed=$((completed + 1))
+            ;;
+          *)
+            plt_term_style 1 failure 'Checkout creation failed. Stopping guided remediation.'
+            printf '\n'
+            doctor_reassess
+            ;;
+        esac
+        ;;
+    esac
+  done 3< "$CHECK_DIR/order"
+
+  if [ "$completed" -gt 0 ]; then
+    printf '\n'
+    if [ "$changed" -gt 0 ]; then
+      plt_term_style 1 success 'Repairs complete.'
+    else
+      plt_term_style 1 success 'Selected repairs are already current.'
+    fi
+    printf '\n'
+    doctor_reassess
+  fi
+
+  [ "$attempted" = false ] || return 0
+  return 0
+}
+
+doctor_offer_remediation() {
+  local counts managed choice external manual confirm_rc
+  counts=$(doctor_remediation_counts)
+  IFS=' ' read -r managed choice external manual <<EOF
+$counts
+EOF
+  managed=${managed:-0}
+  choice=${choice:-0}
+  external=${external:-0}
+  manual=${manual:-0}
+
+  doctor_print_remediation_summary "$managed" "$choice" "$external" "$manual"
+
+  [ "${PANTHEON_LOCAL_DOCTOR_REASSESS:-0}" != 1 ] || return 0
+  [ "$managed" -gt 0 ] || return 0
+
+  if plt_interact_confirm "Fix the $(doctor_remediation_count_text "$managed" 'PLT-managed item' 'PLT-managed items') now?"; then
+    doctor_apply_managed_remediations "$managed"
+    return $?
+  else
+    confirm_rc=$?
+  fi
+
+  [ "$confirm_rc" -ne 2 ] || return 0
+  plt_term_style 1 muted 'No repairs were performed.'
+  printf '\n'
+  return 0
 }
 
 route_directory_valid() {
@@ -871,7 +1126,15 @@ EOF
     esac
   fi
 
-  if [ "$format" = json ]; then printf '%s\n' "$json"; else print_doctor_default "$version" "$config_path" "$platform"; [ -z "$record_file" ] || printf '\nOperation record: %s\n' "$record_file"; fi
+  if [ "$format" = json ]; then
+    printf '%s\n' "$json"
+  else
+    print_doctor_default "$version" "$config_path" "$platform"
+    [ -z "$record_file" ] || printf '\nOperation record: %s\n' "$record_file"
+    if [ -z "$record_file" ] && plt_interact_can_prompt; then
+      doctor_offer_remediation
+    fi
+  fi
   return "$exit_code"
 }
 
@@ -1016,7 +1279,7 @@ EOF
 
 build_doctor_json() {
   local version=$1 config_path=$2 platform=$3 root=$4 provider=$5 exit_code=$6 semantic=$7 reason=$8 failure_source=$9
-  local first=true file
+  local first=true file remediation_class remediation_action
   printf '{'
   printf '"schema_version":%s,' "$PLT_STRUCTURED_SCHEMA_VERSION"
   printf '"record_type":"diagnostic",'
@@ -1040,6 +1303,10 @@ build_doctor_json() {
     printf ',"source":'; plt_json_nullable_string "$CHECK_SOURCE"
     printf ',"message":'; plt_json_string "$CHECK_MESSAGE"
     printf ',"next_action":'; plt_json_nullable_string "$CHECK_NEXT"
+    remediation_class=$(doctor_remediation_class_loaded)
+    remediation_action=$(doctor_remediation_action_loaded)
+    printf ',"remediation_class":'; plt_json_string "$remediation_class"
+    printf ',"remediation_action":'; plt_json_string "$remediation_action"
     printf ',"scope":'; plt_json_string "$CHECK_SCOPE"
     printf '}'
   done < "$CHECK_DIR/order"

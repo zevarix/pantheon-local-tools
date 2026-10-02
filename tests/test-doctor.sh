@@ -14,6 +14,47 @@ assert_not_contains() { case "$1" in *"$2"*) fail "expected output not to contai
 assert_file_not_contains() { if [ -f "$1" ] && grep -F "$2" "$1" >/dev/null 2>&1; then fail "expected $1 not to contain [$2]"; fi; }
 assert_file_contains() { grep -F "$2" "$1" >/dev/null 2>&1 || fail "expected $1 to contain [$2]"; }
 
+run_doctor_pty() {
+  input=$1
+  command -v python3 >/dev/null 2>&1 || fail 'python3 is required for doctor PTY tests'
+  python3 - "$CLI" "$input" <<'PY'
+import errno
+import os
+import pty
+import sys
+
+cli = sys.argv[1]
+data = sys.argv[2].encode()
+env = os.environ.copy()
+pid, fd = pty.fork()
+if pid == 0:
+    os.execve('/bin/bash', ['bash', cli, 'doctor'], env)
+
+while data:
+    written = os.write(fd, data)
+    data = data[written:]
+
+while True:
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError as exc:
+        if exc.errno == errno.EIO:
+            break
+        raise
+    if not chunk:
+        break
+    sys.stdout.buffer.write(chunk)
+    sys.stdout.buffer.flush()
+
+_, status = os.waitpid(pid, 0)
+if os.WIFEXITED(status):
+    raise SystemExit(os.WEXITSTATUS(status))
+if os.WIFSIGNALED(status):
+    raise SystemExit(128 + os.WTERMSIG(status))
+raise SystemExit(1)
+PY
+}
+
 scenario_init() {
   local name=$1
   SCENARIO="$TMP_ROOT/$name"
@@ -311,7 +352,46 @@ bash "$CLI" config tag set 'Example Group' clients
 warning_json=$(bash "$CLI" doctor --format json)
 assert_contains "$warning_json" '"result":{"state":"complete","reason_code":"doctor-warnings","exit_code":0'
 assert_contains "$warning_json" '"reason_code":"checkout-missing"'
+assert_contains "$warning_json" '"remediation_class":"plt-managed","remediation_action":"checkout-create"'
 assert_contains "$warning_json" '"reason_code":"accessible-tag-unmapped"'
+assert_contains "$warning_json" '"remediation_class":"user-choice","remediation_action":"config-tag-route"'
+assert_not_contains "$warning_json" 'Fix the'
+
+# Interactive remediation is opt-in, previewed, delegated, and reassessed.
+scenario_init remediation-decline
+create_remote example-site 'Example Group' ddev
+set_sites example-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+DECLINE_DEST="$LOCAL_ROOT/clients/example-site"
+decline_output=$(run_doctor_pty $'\n')
+assert_contains "$decline_output" 'Doctor found 1 item that needs attention.'
+assert_contains "$decline_output" '1 PLT-managed item'
+assert_contains "$decline_output" 'Create canonical Dev checkout for example-site'
+assert_contains "$decline_output" 'Fix the 1 PLT-managed item now? [y/N]'
+assert_contains "$decline_output" 'No repairs were performed.'
+[ ! -e "$DECLINE_DEST" ] || fail 'doctor created a checkout without explicit remediation consent'
+
+scenario_init remediation-accept
+create_remote example-site 'Example Group' ddev
+set_sites example-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+ACCEPT_DEST="$LOCAL_ROOT/clients/example-site"
+accept_output=$(run_doctor_pty $'y\ny\n')
+assert_contains "$accept_output" 'Doctor found 1 item that needs attention.'
+assert_contains "$accept_output" 'PLT can fix now:'
+assert_contains "$accept_output" 'Create canonical Dev checkout for example-site'
+assert_contains "$accept_output" 'pantheon-local checkout example-site.dev --dry-run'
+assert_contains "$accept_output" 'Create the canonical Dev checkout for example-site now? [y/N]'
+assert_contains "$accept_output" 'Repairs complete.'
+assert_contains "$accept_output" 'Running doctor again...'
+assert_contains "$accept_output" 'Doctor: all checks passed.'
+[ -d "$ACCEPT_DEST/.git" ] || fail 'guided doctor remediation did not create the canonical checkout'
+assert_eq "$(git config --file "$ACCEPT_DEST/.git/pantheon-local-tools/state" --get pantheon.site)" 'example-site'
+assert_eq "$(git config --file "$ACCEPT_DEST/.git/pantheon-local-tools/state" --get pantheon.environment)" 'dev'
+assert_eq "$(git config --file "$ACCEPT_DEST/.git/pantheon-local-tools/state" --get checkout.kind)" 'canonical-dev'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'guided checkout remediation started or invoked a provider'
 
 # Invalid checkout root occupied by a file.
 scenario_init invalid-root

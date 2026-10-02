@@ -6,9 +6,17 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+## 0.2.1 — 2026-10-01
+
+Patch release improving long-running doctor visibility and hardening the Windows-to-WSL release-validation transport without changing the v0.2 public command/configuration contract.
+
 ### Changed
 
 - `pantheon-local doctor` now shows bounded phase and current/total site progress in default terminal mode during longer estate inspections, while JSON stdout and durable records remain progress-free.
+
+### Fixed
+
+- Normalized the embedded Linux payload in the disposable WSL2 APT release harness before UTF-8/Base64 transport so Windows CRLF checkouts cannot corrupt Bash execution.
 
 ## 0.2.0 — 2026-10-01
 

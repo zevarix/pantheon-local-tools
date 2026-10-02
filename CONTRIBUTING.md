@@ -45,6 +45,20 @@ User-visible commands should make their execution state understandable without w
 - Unknown, unavailable, ambiguous, or inconclusive authority must remain explicit. Never report it as current, clean, synchronized, or successful merely to keep a workflow moving.
 - Explicit user cancellation must stop long-running work. An interrupt such as Ctrl-C must not be converted into an ordinary child-step failure followed by continued targets, a normal final success/failure report, or publication of a partial operation record. Cleanup may run while the command exits with interrupt semantics.
 
+## Human interaction and consent
+
+Human-facing workflows follow the shared interaction contract documented in [`docs/interaction.md`](docs/interaction.md):
+
+`detect -> explain -> offer choices -> preview -> confirm -> delegate -> verify -> reassess`
+
+- Reuse `libexec/pantheon-local-interaction` for bounded yes/no confirmation and numbered choices rather than adding command-specific prompt dialects.
+- A flow that escalates from read-only/advisory behavior to mutation must obtain explicit consent; mutation confirmation defaults to **No**.
+- Directly invoked mutating commands do not require redundant prompts when the command invocation itself is the explicit action boundary, but they must still expose/describe their mutation boundary and fail closed on ambiguity.
+- Prompts require a real terminal; JSON, operation records, and redirected/non-TTY execution remain prompt-free.
+- Shared interaction code owns prompting mechanics only. The command that owns the mutation continues to own business logic, validation, execution, and verification.
+- Never infer a remediation by parsing terminal prose. Use stable reason/action metadata and bounded explicit choices.
+- Cancellation must stop the current interactive/remediation action rather than silently continuing to later mutations.
+
 ## Portability and test isolation
 
 Cross-platform behavior must be proven without depending on a maintainer workstation's incidental state.

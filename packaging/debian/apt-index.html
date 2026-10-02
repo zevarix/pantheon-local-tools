@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#02060b">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="Pantheon Local Tools is a free CLI for repeatable Pantheon Multidev checkouts, data pulls, Drupal setup, and configuration checks across DDEV and Lando.">
+  <meta name="description" content="Pantheon Local Tools is a free CLI for Pantheon estate diagnostics, canonical Dev checkouts and sync, Multidev workflows, data pulls, and Drupal setup across DDEV and Lando.">
   <meta name="google-site-verification" content="2Mf5s5Svt4s8KUgXUoFKFgyF2uiW03wVTzRezjFJBFk">
   <link rel="canonical" href="https://zevarix.github.io/pantheon-local-tools/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Pantheon Local Tools">
   <meta property="og:title" content="Pantheon Local Tools — Pantheon workflows for DDEV and Lando">
-  <meta property="og:description" content="A free CLI for repeatable Pantheon Multidev checkouts, data pulls, Drupal setup, and configuration checks across DDEV and Lando.">
+  <meta property="og:description" content="A free CLI for Pantheon estate diagnostics, canonical Dev checkouts and sync, Multidev workflows, data pulls, and Drupal setup across DDEV and Lando.">
   <meta property="og:url" content="https://zevarix.github.io/pantheon-local-tools/">
   <meta name="twitter:card" content="summary">
   <!-- IndexNow verification is published as a sibling key file by the APT repository builder. -->
@@ -37,7 +37,7 @@
       <div class="hero-copy">
         <span class="hero-terminal-motif" aria-hidden="true"><span class="hero-terminal-motif-prompt">$</span><span class="hero-terminal-motif-command"> pantheon-local</span><span class="hero-terminal-motif-cursor">_</span></span>
         <h1>Pantheon work, locally. <span>Without the glue scripts.</span></h1>
-        <p class="lede">A small CLI for the Pantheon jobs that otherwise turn into shell history: Multidev checkouts, local data pulls, Drupal setup, config checks, and provider-aware status. It works with DDEV or Lando without taking over either one.</p>
+        <p class="lede">A small CLI for the Pantheon jobs that otherwise turn into shell history: first-run diagnostics, canonical Dev checkout and sync, estate drift inspection, Multidev workflows, local data pulls, Drupal setup, and structured status. It works with DDEV or Lando without taking over either one.</p>
         <div class="actions">
           <a class="button" href="#install">Install</a>
           <a class="button button--quiet" href="https://github.com/zevarix/pantheon-local-tools/blob/main/README.md">Read the docs</a>
@@ -101,7 +101,52 @@ Created Pantheon multidev checkout
 
         <article class="feature-row">
           <div class="feature-copy">
-            <p class="feature-number">01 / MULTIDEV</p>
+            <p class="feature-number">01 / DOCTOR</p>
+            <h3>Find the setup problem before a mutating workflow finds it for you.</h3>
+            <p>Check Git, the checkout root, provider prerequisites, Terminus authentication, Pantheon Tag routing, canonical Dev access, and existing checkout metadata without repairing or starting anything. PASS, INFO, WARN, and FAIL results include the smallest safe next action when PLT can determine one.</p>
+            <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/doctor.md">Doctor diagnostics →</a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <pre><code><i>$</i> pantheon-local doctor
+<i>$</i> pantheon-local doctor --format json
+PASS  terminus-auth     Terminus authentication is valid</code></pre>
+          </div>
+        </article>
+
+        <article class="feature-row">
+          <div class="feature-copy">
+            <p class="feature-number">02 / CHECKOUT</p>
+            <h3>Populate canonical Dev checkouts — then sync only when you ask.</h3>
+            <p>Use Terminus-backed site, Tag, environment, and Git discovery to build a deterministic canonical Dev estate. Normal checkout creates only missing destinations; <code>checkout sync</code> is the explicit fast-forward-only update path and refuses dirty, ahead, diverged, or ambiguous local state.</p>
+            <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/checkout.md">Checkout and sync contract →</a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <pre><code><i>$</i> pantheon-local checkout example-site.dev --dry-run
+<i>$</i> pantheon-local checkout dev --tag 'Example Group'
+<i>$</i> pantheon-local checkout sync example-site.dev</code></pre>
+          </div>
+        </article>
+
+        <article class="feature-row">
+          <div class="feature-copy">
+            <p class="feature-number">03 / ESTATE</p>
+            <h3>See local drift beside Dev, Test, and Live code identity.</h3>
+            <p>Inspect one site, all accessible sites, or configured Tag-selected subsets without changing anything. PLT joins Terminus-backed environment code identity with canonical local Git and provider state so missing, behind, ahead, diverged, dirty, or unavailable state stays explicit.</p>
+            <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/estate-status.md">Estate status contract →</a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <pre><code><i>$</i> pantheon-local estate status --all
+<i>$</i> pantheon-local estate status --tag 'Example Group'
+<i>$</i> pantheon-local estate status example-site --format json</code></pre>
+          </div>
+        </article>
+
+        <article class="feature-row">
+          <div class="feature-copy">
+            <p class="feature-number">04 / MULTIDEV</p>
             <h3>Clone an existing Multidev into an isolated local checkout.</h3>
             <p>Resolve the authoritative Git URL through Terminus, route the checkout through your configured root or Pantheon Tag mapping, configure DDEV or Lando locally, and refuse to overwrite an existing destination. The command never creates or deletes the remote Multidev.</p>
             <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/multidev.md">Multidev behavior →</a>
@@ -116,7 +161,7 @@ Created Pantheon multidev checkout
 
         <article class="feature-row">
           <div class="feature-copy">
-            <p class="feature-number">02 / PULL</p>
+            <p class="feature-number">05 / PULL</p>
             <h3>Refresh the database, files, or both — without pulling code.</h3>
             <p>Use the provider already associated with the checkout and request only the data you need. Pantheon Local Tools verifies Git HEAD and tracked content before and after the provider pull, then records database and file provenance only after success.</p>
             <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/pull.md">Pull safety contract →</a>
@@ -131,7 +176,7 @@ Created Pantheon multidev checkout
 
         <article class="feature-row">
           <div class="feature-copy">
-            <p class="feature-number">03 / STATUS</p>
+            <p class="feature-number">06 / STATUS</p>
             <h3>Know what this checkout is before you touch it.</h3>
             <p>Run a local, read-only inspection from the checkout root or any subdirectory. See Pantheon metadata when it is recorded, the detected local provider, Git state, runtime URL when safely available, and independent database/files provenance — without contacting Pantheon or starting the provider.</p>
             <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/status.md">Status contract →</a>
@@ -139,7 +184,7 @@ Created Pantheon multidev checkout
           <div class="terminal">
             <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
             <pre><code><i>$</i> pantheon-local status
-<i>$</i> pantheon-local config list
+<i>$</i> pantheon-local status --format json
 <i>$</i> pantheon-local --version</code></pre>
           </div>
         </article>

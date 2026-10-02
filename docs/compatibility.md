@@ -1,8 +1,8 @@
-# v0.1 Compatibility Contract
+# v0.2 Compatibility Contract
 
-Pantheon Local Tools is pre-1.0 software, but the first public release still needs a clear contract so users, shell scripts, Homebrew, Debian packaging, and future maintainers know what may change safely.
+Pantheon Local Tools is pre-1.0 software, but each stable minor line has a clear contract so users, scripts, package managers, and future maintainers know what may change safely.
 
-This document defines the supported public surface for the `0.1.x` release line.
+This document defines the supported public surface for the `0.2.x` release line. v0.2 inherits the established 0.1.x command/configuration/provider safety guarantees and adds canonical Dev estate workflows plus a stable structured-output contract.
 
 ## Version source
 
@@ -21,11 +21,11 @@ Both print:
 pantheon-local VERSION
 ```
 
-Development snapshots use a SemVer prerelease value such as `0.1.0-dev`. A tagged release must contain the exact release value (for example `0.1.1`) in `VERSION`, and the Git tag must match it with a leading `v` (`v0.1.1`).
+Development snapshots may use a SemVer prerelease value such as `0.2.0-dev`. A tagged release must contain the exact release value (for example `0.2.0`) in `VERSION`, and the Git tag must match it with a leading `v` (`v0.2.0`).
 
 ## Public command surface
 
-The following commands/options are public for `0.1.x`:
+The following commands/options are public for `0.2.x`:
 
 ```text
 pantheon-local help
@@ -47,6 +47,14 @@ pantheon-local config tag profile unset TAG PROPERTY
 pantheon-local config tag profile list [TAG]
 pantheon-local config export [--provider ddev|lando] [--yes]
 
+pantheon-local checkout SITE.dev [--dry-run] [--format default|json] [--record FILE]
+pantheon-local checkout dev (--all | --tag TAG [--tag TAG ...]) [OPTIONS]
+pantheon-local checkout sync SITE.dev [OPTIONS]
+pantheon-local checkout sync (--all | --tag TAG [--tag TAG ...]) [OPTIONS]
+
+pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]
+pantheon-local doctor [--format default|json] [--record FILE]
+
 pantheon-local multidev SITE.ENV
   --provider ddev|lando
   --group NAME
@@ -59,6 +67,8 @@ pantheon-local multidev create SITE.SOURCE NEW_ENV
   --dry-run
   --start
   --yes
+  --format default|json
+  --record FILE
 
 pantheon-local setup
   --provider ddev|lando
@@ -72,14 +82,14 @@ pantheon-local pull ENV
   --files-only
   --provider ddev|lando
 
-pantheon-local status
+pantheon-local status [--format default|json] [--record FILE]
 pantheon-local version
 pantheon-local --version
 ```
 
-Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
+Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local checkout --help`, `pantheon-local estate status --help`, `pantheon-local doctor --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
 
-New commands and additive options may be introduced in a compatible `0.1.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only. Adding `pantheon-local config export` does not make setup, readiness, status, Tag matching, or provider start export configuration implicitly. Adding `pantheon-local multidev create` does not make the existing `pantheon-local multidev SITE.ENV` command create a missing remote environment implicitly.
+New commands and additive options may be introduced in a compatible `0.2.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only. Adding `pantheon-local config export` does not make setup, readiness, status, Tag matching, or provider start export configuration implicitly. Adding `pantheon-local multidev create` does not make the existing `pantheon-local multidev SITE.ENV` command create a missing remote environment implicitly.
 
 ## Configuration contract
 
@@ -104,7 +114,7 @@ The Git-compatible on-disk representation is intentionally simple, but users sho
 
 ## Provider contract
 
-DDEV and Lando are the supported local providers for `0.1.x`.
+DDEV and Lando are the supported local providers for `0.2.x`.
 
 Provider-owned project configuration remains authoritative. Pantheon Local Tools is additive and must not silently replace or strip existing provider services, tooling, add-ons, proxy/custom-hostname configuration, or custom Compose definitions.
 
@@ -119,6 +129,46 @@ When stored configuration uses `provider=auto`, provider selection is based on p
 `pantheon-local multidev create` does not implement a second provider setup path. After remote creation has been verified, it passes provider/group/start intent into the existing transactional Multidev checkout implementation, which remains authoritative for provider project validation, local overrides, URL discovery, and optional provider start.
 
 A provider-specific implementation detail may change in a patch release when the user-visible command contract and safety properties remain the same.
+
+## Workflow and authority contract
+
+Terminus owns atomic Pantheon reads and mutations. PLT may select, plan, orchestrate, invoke, verify, and reconcile documented Terminus primitives, but the 0.2 line must not add a parallel direct Pantheon API implementation for capabilities Terminus already owns.
+
+The public CLI remains purpose-specific even when commands share the internal workflow model. Users are not required to invoke a generic `workflow run` command. PLT distinguishes primitives, built-in workflows, downstream workflows, and concrete workflow runs internally/documentationally so later composition does not create parallel bespoke execution models.
+
+Planning never grants mutation authority. Review does not imply commit. Commit does not imply push. For ambiguous remote mutations, PLT must re-read the owning Pantheon state through Terminus before replay rather than assuming a failed local process means no remote effect occurred.
+
+## Canonical Dev checkout and sync contract
+
+`pantheon-local checkout` manages canonical local source checkouts for Pantheon `dev`. Pantheon site/environment/Tag/Git discovery is Terminus-backed; Git remains authoritative for repository history and fast-forward safety.
+
+Single-site checkout uses `SITE.dev`. Estate checkout uses explicit `dev --all` or repeatable configured `--tag TAG` selection. Repeated Tags use OR selection and estate results are deterministic.
+
+Before mutation PLT classifies each selected site as CLONE/CURRENT/UPDATE/SKIP/BLOCKED. Normal checkout may create only missing destinations and never moves an existing checkout. `pantheon-local checkout sync` is the only canonical-checkout update path and may only fast-forward a clean canonical checkout after proving local history is an ancestor of the exact reviewed remote branch/SHA. Dirty, occupied, wrong-origin, wrong-branch, ahead, or diverged state is preserved rather than reset.
+
+Canonical checkout/sync does not start a provider, pull databases/files, run Composer/Drush, export configuration, commit/push Git, or mutate Pantheon. A completed checkout records bounded local identity such as `pantheon.site`, `pantheon.environment=dev`, matched Tag when applicable, and `checkout.kind=canonical-dev`.
+
+## Estate status contract
+
+`pantheon-local estate status` is a read-only cross-system view for one exact site, all accessible sites, or repeatable configured Tag selection. Pantheon environment/code facts come from supported Terminus reads, including `env:code-log` for Dev/Test/Live code identity. Local checkout facts come from Git/PLT/provider project configuration.
+
+Observed drift such as missing, behind, ahead, diverged, or dirty local checkout state is information and may still exit successfully when the inspection completed authoritatively. Unknown/unavailable authority is distinct from clean/current state. Estate status never starts a provider or mutates local/Pantheon state except for an explicitly requested bounded record file.
+
+## Doctor diagnostics contract
+
+`pantheon-local doctor` is a read-only first-run/troubleshooting workflow. It reports PASS/INFO/WARN/FAIL checks for version/config path, Git/root/provider prerequisites, Terminus availability/authentication, accessible sites/Tags/routing, canonical Dev Git access, and obvious checkout-local metadata/provider inconsistencies.
+
+Doctor continues after individual failures so a single run can report the useful diagnostic set. INFO/WARN states do not authorize repair and remain successful diagnostics; FAIL checks map to the shared nonzero categories. Doctor never repairs configuration, starts providers, creates credentials, mutates checkouts, or writes to Pantheon.
+
+## Structured output contract
+
+Commands that advertise machine output use `--format default|json`; omitting `--format` is equivalent to `default`. Default terminal prose is not a machine API. JSON uses the documented schema-versioned contract in `docs/structured-output.md`.
+
+Schema version 1 includes a common result envelope with stable semantic state/reason fields, read-only/mutating identity where applicable, authority/source metadata, and bounded command/workflow facts. Additive fields may be introduced compatibly; incompatible field removal/type/meaning changes require a new structured schema version.
+
+The shared exit categories are public in the 0.2 line: `0` success/current/complete, `10` changed, `20` no-targets, `30` unsafe-local-state, `31` ambiguous-configuration, `32` authority-unavailable, `33` verification-failed, `40` operation-failed, and `64` usage-error. Commands may add stable reason codes beneath those coarse categories.
+
+When supported, `--record FILE` writes the same bounded JSON semantic result to a new file. Existing files/symlinks are never overwritten. Records must not contain credentials, raw secret-bearing provider/Terminus output, database contents, or giant logs.
 
 ## Pantheon Multidev contract
 
@@ -249,9 +299,15 @@ A future overlay mutation mechanism requires its own proven strategy-aware contr
 
 ## Safety contract
 
-A compatible `0.1.x` release must preserve these properties:
+A compatible `0.2.x` release must preserve these properties:
 
 - never overwrite an existing Multidev checkout;
+- never overwrite/reset a canonical Dev checkout; normal checkout creates only missing destinations and explicit sync is fast-forward-only;
+- never let canonical checkout/sync start a provider, pull data, run Composer/Drush, commit/push Git, or mutate Pantheon;
+- never let estate status or doctor repair/mutate the state they inspect;
+- never replace unavailable/ambiguous Pantheon/Git/provider facts with guessed current/clean values;
+- never make machine-readable output or operation records grant mutation authority;
+- never overwrite an existing operation-record path;
 - never create/delete a Pantheon Multidev as a side effect of clone-only local checkout creation;
 - never create a missing remote Multidev from `pantheon-local multidev SITE.ENV`; remote creation requires the distinct `multidev create` surface;
 - never run a real `multidev create` without source/target preflight and confirmation/`--yes` acknowledgement;
@@ -298,19 +354,19 @@ Its schema is not a general-purpose external API. However, upgrades must preserv
 
 In particular, the legacy `data.source` migration to independent database/files provenance demonstrates the expected upgrade behavior.
 
-Setup may add local troubleshooting keys for bootstrap status, failed/current step, recorded environment/provider, and update timestamp. `pantheon-local status` may display those fields. Their presence does not make checkout-local state a stable machine API or application configuration.
+Setup may add local troubleshooting keys for bootstrap status, failed/current step, recorded environment/provider, update timestamp, and the shared namespaced workflow lifecycle. Canonical Dev checkout may add bounded checkout identity such as `checkout.kind=canonical-dev`. `pantheon-local status` may display these fields. Checkout-local state itself is not the stable machine API; structured command output is.
 
 Readiness consumes the recorded Pantheon Tag and provider identity when applicable but does not add a persistent readiness-result cache. Config export consumes the same current profile/runtime state and does not add a persistent export-result cache; the resulting project-file state is represented by Git itself.
 
 A successful `multidev create` handoff records the same checkout-local target environment/provider/name metadata as an ordinary clone-only checkout because it reuses that implementation. PLT does not create a second persistent configuration/state model for remote creation.
 
-## Default terminal output
+## Default terminal and machine output
 
-Normal command output is designed for developers and may gain additional labeled fields in patch releases. Existing labels should not be casually renamed or removed within `0.1.x`.
+Normal terminal output is designed for developers and may gain additional labeled fields in patch releases. Existing labels should not be casually renamed or removed within `0.2.x`, but scripts must not parse incidental terminal spacing/prose.
 
-The text output is **not** yet a stable machine-readable API. Scripts that require a formal structured output format should wait for an explicitly documented JSON/porcelain interface rather than parsing incidental spacing.
+Where a command advertises `--format json`, that JSON is the supported machine surface and follows the schema/versioning contract above. `--format default` explicitly selects the normal terminal presentation.
 
-Exact non-zero numeric exit codes are not part of the `0.1.x` contract; success is exit `0`, failure is nonzero. A successful full-export readiness inspection may still report a review-required state, while overlay-delta currently exits nonzero when owning validation is unavailable. Config export exits nonzero for refused/cancelled/failed mutation paths, including partial provider-export failure after local files were written. Multidev creation exits nonzero for refused/cancelled/failed or uncertain remote creation and for local handoff failure after a verified remote create.
+Stable numeric exit categories are part of the `0.2.x` structured contract. Command-specific semantics may distinguish successful current/complete/review states under exit `0`, while the shared nonzero categories identify changed/no-target/unsafe/ambiguous/authority/verification/operation/usage outcomes as documented in `docs/structured-output.md`.
 
 ## Packaging contract
 
@@ -327,6 +383,6 @@ The project website may be published alongside machine-consumed package metadata
 
 ## Breaking changes
 
-Before `1.0.0`, a future minor release such as `0.2.0` may intentionally change a documented command or configuration contract, but the change must be called out in release notes with a migration path when state/configuration is affected.
+Before `1.0.0`, a future minor release such as `0.3.0` may intentionally change a documented command or configuration contract, but the change must be called out in release notes with a migration path when state/configuration is affected.
 
-Patch releases in the `0.1.x` line should remain compatible with this document.
+Patch releases in the `0.2.x` line should remain compatible with this document.

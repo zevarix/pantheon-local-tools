@@ -6,6 +6,10 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-01
+
+Minor release establishing the shared workflow/structured-output foundations and adding canonical Dev estate onboarding, read-only estate drift inspection, and first-run diagnostics while preserving the established provider and mutation safety boundaries.
+
 ### Added
 
 - Added `pantheon-local doctor` for read-only first-run/troubleshooting diagnostics covering local tools/config, Terminus auth, Tag routing, provider prerequisites, and canonical Dev checkout health.

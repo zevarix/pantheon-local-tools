@@ -8,7 +8,7 @@ Pantheon Local Tools is a free, open-source CLI for safer, repeatable Pantheon l
 
 It is designed to replace machine-specific glue scripts without taking ownership away from Pantheon, Terminus, Git, or the local provider. The shared Pantheon/Terminus core stays provider-neutral, project-owned DDEV/Lando configuration remains authoritative, and ambiguous or destructive situations fail instead of guessing.
 
-The public release line has completed real-provider and real-host validation on macOS, Linux/hosted Ubuntu, and Windows through WSL2. See [`docs/real-integration-validation.md`](docs/real-integration-validation.md) for the evidence model and [`docs/compatibility.md`](docs/compatibility.md) for the supported `0.1.x` contract.
+The public release line has completed real-provider and real-host validation on macOS, Linux/hosted Ubuntu, and Windows through WSL2. See [`docs/real-integration-validation.md`](docs/real-integration-validation.md) for the evidence model and [`docs/compatibility.md`](docs/compatibility.md) for the supported `0.2.x` contract.
 
 ## Quick start
 
@@ -397,7 +397,7 @@ Organization-specific Pantheon Tags, directory names, config strategies/paths, a
 
 ## Providers and hosts
 
-Supported local providers for the `0.1.x` line are **DDEV** and **Lando**.
+Supported local providers for the `0.2.x` line are **DDEV** and **Lando**.
 
 Pantheon Local Tools preserves project-owned `.ddev/config.yaml`, `.lando.yml`, services, add-ons, custom tooling, and Compose extensions. Local overrides are additive; if a change cannot be made safely, the tool fails instead of replacing provider configuration.
 
@@ -441,7 +441,7 @@ Pantheon Local Tools is intentionally conservative around developer machines and
 - pull provenance is recorded only after provider success and Git-integrity verification; and
 - package installation/removal does not own user configuration or checkout-local state.
 
-The complete compatibility and safety guarantees for the `0.1.x` line are in [`docs/compatibility.md`](docs/compatibility.md).
+The complete compatibility and safety guarantees for the `0.2.x` line are in [`docs/compatibility.md`](docs/compatibility.md).
 
 ## Distribution
 
@@ -491,7 +491,7 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 - [`docs/pull.md`](docs/pull.md) — database/files pull behavior and Git protection
 - [`docs/status.md`](docs/status.md) — read-only checkout inspection contract
 - [`docs/local-provider-architecture.md`](docs/local-provider-architecture.md) — DDEV/Lando boundary and provider architecture
-- [`docs/compatibility.md`](docs/compatibility.md) — supported `0.1.x` public contract
+- [`docs/compatibility.md`](docs/compatibility.md) — supported `0.2.x` public contract
 - [`docs/apt-repository.md`](docs/apt-repository.md) — signed APT client trust, one-command install, rotation, and recovery
 - [`docs/real-integration-validation.md`](docs/real-integration-validation.md) — real-host/provider validation runbook
 - [`docs/releasing.md`](docs/releasing.md) — maintainer release procedure

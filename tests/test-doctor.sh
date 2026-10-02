@@ -12,6 +12,7 @@ assert_eq() { [ "$1" = "$2" ] || fail "expected [$2], got [$1]"; }
 assert_contains() { case "$1" in *"$2"*) ;; *) fail "expected output to contain [$2], got [$1]" ;; esac; }
 assert_not_contains() { case "$1" in *"$2"*) fail "expected output not to contain [$2], got [$1]" ;; *) ;; esac; }
 assert_file_not_contains() { if [ -f "$1" ] && grep -F "$2" "$1" >/dev/null 2>&1; then fail "expected $1 not to contain [$2]"; fi; }
+assert_file_contains() { grep -F "$2" "$1" >/dev/null 2>&1 || fail "expected $1 to contain [$2]"; }
 
 scenario_init() {
   local name=$1
@@ -188,6 +189,53 @@ assert_file_not_contains "$MOCK_TERMINUS_LOG" 'env:deploy'
 assert_file_not_contains "$MOCK_TERMINUS_LOG" 'env:clone-content'
 assert_file_not_contains "$MOCK_TERMINUS_LOG" 'multidev:create'
 
+# Default-mode progress is line-oriented, deterministic, and separate from final stdout/JSON.
+scenario_init progress
+create_remote gamma-site 'Example Group' ddev
+create_remote alpha-site 'Example Group' ddev
+create_remote beta-site 'Example Group' ddev
+set_sites gamma-site alpha-site beta-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+PROGRESS_STDOUT="$SCENARIO/default.out"
+PROGRESS_STDERR="$SCENARIO/default.err"
+bash "$CLI" doctor >"$PROGRESS_STDOUT" 2>"$PROGRESS_STDERR"
+assert_eq "$(sed -n '1p' "$PROGRESS_STDERR")" 'Doctor: checking local prerequisites...'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: checking Terminus authentication...'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: Terminus authentication ready'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: discovering accessible Pantheon sites...'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: discovered 3 accessible sites'
+progress_text=$(cat "$PROGRESS_STDERR")
+case "$progress_text" in
+  *'Doctor: inspecting site 1/3: alpha-site'*'Doctor: inspecting site 2/3: beta-site'*'Doctor: inspecting site 3/3: gamma-site'*) ;;
+  *) fail 'doctor site progress was missing or not deterministically ordered' ;;
+esac
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: finalizing diagnostics...'
+assert_file_contains "$PROGRESS_STDOUT" 'Pantheon Local Tools doctor'
+assert_file_not_contains "$PROGRESS_STDOUT" 'Doctor:'
+
+JSON_PROGRESS="$SCENARIO/json.err"
+progress_json=$(bash "$CLI" doctor --format json 2>"$JSON_PROGRESS")
+[ ! -s "$JSON_PROGRESS" ] || fail 'doctor JSON mode emitted progress on stderr by default'
+assert_not_contains "$progress_json" 'Doctor:'
+assert_contains "$progress_json" '"command":"doctor"'
+
+PROGRESS_RECORD="$SCENARIO/doctor-record.json"
+RECORD_PROGRESS="$SCENARIO/record.err"
+bash "$CLI" doctor --record "$PROGRESS_RECORD" >/dev/null 2>"$RECORD_PROGRESS"
+assert_file_contains "$RECORD_PROGRESS" 'Doctor: discovered 3 accessible sites'
+assert_file_not_contains "$PROGRESS_RECORD" 'Doctor:'
+assert_file_contains "$PROGRESS_RECORD" '"command":"doctor"'
+
+# Zero-site discovery still produces prompt progress and final diagnostics.
+scenario_init zero-sites
+: > "$MOCK_DATA/sites"
+configure_base ddev
+ZERO_STDERR="$SCENARIO/zero.err"
+bash "$CLI" doctor >/dev/null 2>"$ZERO_STDERR"
+assert_file_contains "$ZERO_STDERR" 'Doctor: discovered 0 accessible sites'
+assert_file_contains "$ZERO_STDERR" 'Doctor: finalizing diagnostics...'
+
 # Warnings-only: missing checkout + an additional accessible unmapped Tag remain exit 0.
 scenario_init warnings
 create_remote warning-site $'Example Group\nInformational Tag' ddev
@@ -244,6 +292,15 @@ assert_contains "$missing_provider_json" '"failure_source":"ddev"'
 scenario_init unauthenticated
 configure_base ddev
 export MOCK_AUTH_FAIL=true
+UNAUTH_PROGRESS="$SCENARIO/unauth.err"
+set +e
+bash "$CLI" doctor >/dev/null 2>"$UNAUTH_PROGRESS"
+unauth_default_rc=$?
+set -e
+assert_eq "$unauth_default_rc" '32'
+assert_file_contains "$UNAUTH_PROGRESS" 'Doctor: checking Terminus authentication...'
+assert_file_contains "$UNAUTH_PROGRESS" 'Doctor: Terminus authentication unavailable'
+assert_file_contains "$UNAUTH_PROGRESS" 'Doctor: finalizing diagnostics...'
 set +e
 unauth_json=$(bash "$CLI" doctor --format json 2>&1)
 unauth_rc=$?

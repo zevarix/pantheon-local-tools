@@ -10,6 +10,7 @@ OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
 ESTATE_COMMON="$SCRIPT_DIR/pantheon-local-estate-common"
 CHECK_DIR=''
 CHECK_SEQ=0
+DOCTOR_PROGRESS=false
 
 [ -x "$CORE" ] || { printf '%s: core module is missing or not executable: %s\n' "$PROGRAM_NAME" "$CORE" >&2; exit 40; }
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
@@ -18,6 +19,15 @@ CHECK_SEQ=0
 . "$OUTPUT_LIB"
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$ESTATE_COMMON"
+
+doctor_progress() {
+  [ "${DOCTOR_PROGRESS:-false}" = true ] || return 0
+  printf 'Doctor: %s\n' "$*" >&2
+}
+
+count_nonempty_lines() {
+  printf '%s\n' "$1" | awk 'NF { count++ } END { print count + 0 }'
+}
 
 usage() {
   cat <<'USAGE'
@@ -256,6 +266,7 @@ inspect_checkout_structure() {
 
 doctor_command() {
   local format=default record_file='' config_path='' version='' platform root='' provider='' mappings='' git_ok=false
+  local site_total=0 site_index=0
   local failure_rank failure_source_value category source rank candidate_code
   local root_parent terminus_ok=false auth_ok=false sites='' site envs remote_tags route route_rc tag route_dir destination git_url remote_info remote_branch remote_sha
   local tag_line mapped_tag mapped_dir tags_seen_file tags_unique_file line exit_code semantic reason failure_source json record_rc
@@ -276,6 +287,9 @@ doctor_command() {
       *) usage_error 'usage: pantheon-local doctor [--format default|json] [--record FILE]' ;;
     esac
   done
+
+  if [ "$format" = default ]; then DOCTOR_PROGRESS=true; else DOCTOR_PROGRESS=false; fi
+  doctor_progress 'checking local prerequisites...'
 
   CHECK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pantheon-local-doctor.XXXXXX") || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not create temporary diagnostic directory'
   trap cleanup EXIT HUP INT TERM
@@ -377,17 +391,23 @@ EOF
   fi
 
   if [ "$terminus_ok" = true ]; then
+    doctor_progress 'checking Terminus authentication...'
     if terminus auth:whoami >/dev/null 2>&1; then
       auth_ok=true
       check_add terminus-auth PASS terminus-authenticated '' terminus 'Terminus authentication is valid' '' global
+      doctor_progress 'Terminus authentication ready'
     else
       check_add terminus-auth FAIL terminus-unauthenticated authority-unavailable terminus 'Terminus is installed but not authenticated' 'run terminus auth:login and retry doctor' global
+      doctor_progress 'Terminus authentication unavailable'
     fi
   fi
 
   if [ "$auth_ok" = true ] && [ "$git_ok" = true ] && [ -n "$root" ]; then
+    doctor_progress 'discovering accessible Pantheon sites...'
     if sites=$(terminus site:list --format=list --field=name 2>/dev/null); then
       sites=$(printf '%s\n' "$sites" | sed '/^$/d' | LC_ALL=C sort -u)
+      site_total=$(count_nonempty_lines "$sites")
+      doctor_progress "discovered $site_total accessible sites"
       if [ -n "$sites" ]; then
         check_add pantheon-sites PASS pantheon-sites-readable '' terminus 'accessible Pantheon site inventory is readable' '' global
       else
@@ -395,11 +415,15 @@ EOF
       fi
     else
       sites=''
+      site_total=0
+      doctor_progress 'Pantheon site discovery unavailable'
       check_add pantheon-sites FAIL pantheon-site-list-unavailable authority-unavailable terminus 'Terminus could not list accessible Pantheon sites' 'verify Terminus/Pantheon access and retry doctor' global
     fi
 
     while IFS= read -r site; do
       [ -n "$site" ] || continue
+      site_index=$((site_index + 1))
+      doctor_progress "inspecting site $site_index/$site_total: $site"
       validate_site "$site"
       if ! envs=$(site_environment_list "$site"); then
         check_add "site-$site-envs" FAIL site-environments-unavailable authority-unavailable terminus "cannot read environments for $site" 'verify Pantheon site access and retry doctor' "site:$site"
@@ -480,6 +504,8 @@ EOF
       done < "$tags_unique_file"
     fi
   fi
+
+  doctor_progress 'finalizing diagnostics...'
 
   exit_code=0
   semantic=current

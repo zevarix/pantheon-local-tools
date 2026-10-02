@@ -42,6 +42,7 @@ User-visible commands should make their execution state understandable without w
 - Default terminal prose is not a machine API. New structured consumers should reuse the shared schema/versioning, exit-category, reason-code, authority, and record helpers rather than inventing command-specific machine contracts.
 - Discovered multi-target sets and structured results must be deterministic. Preserve explicit caller order when it is meaningful; otherwise use a documented stable ordering.
 - Unknown, unavailable, ambiguous, or inconclusive authority must remain explicit. Never report it as current, clean, synchronized, or successful merely to keep a workflow moving.
+- Explicit user cancellation must stop long-running work. An interrupt such as Ctrl-C must not be converted into an ordinary child-step failure followed by continued targets, a normal final success/failure report, or publication of a partial operation record. Cleanup may run while the command exits with interrupt semantics.
 
 ## Portability and test isolation
 

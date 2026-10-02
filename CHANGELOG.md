@@ -6,6 +6,10 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+### Fixed
+
+- `pantheon-local doctor` now treats Ctrl-C and other termination signals as cancellation, cleaning temporary diagnostic state and stopping the whole run instead of continuing after an interrupted child read.
+
 ## 0.2.1 — 2026-10-01
 
 Patch release improving long-running doctor visibility and hardening the Windows-to-WSL release-validation transport without changing the v0.2 public command/configuration contract.

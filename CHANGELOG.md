@@ -6,6 +6,10 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+## 0.2.2 — 2026-10-02
+
+Patch release polishing the shared human-terminal presentation and interactive doctor experience while preserving the established v0.2 command/configuration and structured-output contracts.
+
 ### Changed
 
 - Added shared terminal presentation primitives and upgraded interactive `doctor` with semantic colors/glyphs, grouped final diagnostics, and a Braille in-place per-site substep progress display while preserving plain redirected output and clean JSON/records.

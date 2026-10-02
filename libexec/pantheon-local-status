@@ -313,6 +313,15 @@ status_command() {
   if [ -n "$record_file" ]; then
     status_print_line 'Operation record: ' "$record_file"
   fi
+
+  if [ "$managed" = no ]; then
+    printf '\n'
+    plt_term_style 1 heading 'Next'
+    printf '\n'
+    printf '  This checkout is not managed by Pantheon Local Tools.\n'
+    printf '  setup and readiness require a canonical PLT-managed checkout.\n'
+    printf '  Run pantheon-local doctor to inspect the estate and choose a safe next action.\n'
+  fi
 }
 
 status_command "$@"

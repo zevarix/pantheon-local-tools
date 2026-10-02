@@ -1,8 +1,8 @@
 # Doctor diagnostics
 
-`pantheon-local doctor` is the read-only first-run and troubleshooting diagnostic for Pantheon Local Tools.
+`pantheon-local doctor` is the first-run and troubleshooting diagnostic for Pantheon Local Tools.
 
-It evaluates local prerequisites, effective configuration, Terminus authority, configured Tag routing, provider readiness, and canonical Dev checkout structure without repairing or mutating anything.
+Its diagnosis/report phase is read-only. It evaluates local prerequisites, effective configuration, Terminus authority, configured Tag routing, provider readiness, and canonical Dev checkout structure without mutation. In an interactive terminal, after the report, Doctor may offer guided remediation for findings that map to an existing PLT-owned repair workflow. No mutation occurs unless the user explicitly opts in and confirms the owning action.
 
 ## Usage
 
@@ -154,6 +154,29 @@ Successful diagnostics use:
 - `result.state=current`, reason `doctor-ready` when there are no warnings;
 - `result.state=complete`, reason `doctor-warnings` when authority is complete but follow-up work is recommended.
 
+## Guided remediation
+
+After the interactive report, Doctor classifies actionable WARN/FAIL findings as:
+
+- `plt-managed` — an existing PLT command owns a safe repair that Doctor can offer;
+- `user-choice` — PLT needs an explicit bounded user decision and must not guess;
+- `external-action` — the action belongs to an external tool/authority;
+- `manual-recovery` — automatic repair would be unsafe;
+- `none` — no remediation is required.
+
+When PLT-managed findings exist, Doctor summarizes them and asks whether to fix them. The default is **No**. For each accepted repair Doctor:
+
+1. shows the owning PLT action;
+2. runs the owning dry-run/preview when available;
+3. asks again before mutation;
+4. delegates to the owning command rather than reimplementing it;
+5. verifies through that command's normal result/exit contract;
+6. reruns Doctor read-only after successful repair.
+
+The initial supported PLT-managed remediation is a missing canonical Dev checkout, delegated to `pantheon-local checkout SITE.dev`. Ambiguous Tag/provider decisions and unsafe checkout identity are never auto-selected or rewritten.
+
+`--format json`, `--record`, and redirected/non-TTY use never prompt or mutate through guided remediation.
+
 ## Structured checks
 
 JSON check records include:
@@ -165,24 +188,19 @@ JSON check records include:
 - `source`;
 - concise `message`;
 - smallest known `next_action`;
+- stable `remediation_class`;
+- stable `remediation_action`;
 - `scope` such as `global`, `site:example-site`, or `tag:Example Group`.
 
 Doctor records bounded diagnostics only. It does not include credentials, machine tokens, private keys, raw secret-bearing provider output, or database contents.
 
 ## Safety
 
-Doctor never:
+Doctor's diagnosis/report phase never mutates provider, Git, Drupal, PLT configuration, credentials, or Pantheon state.
 
-- starts/stops/rebuilds DDEV or Lando;
-- clones, pulls, fetches into, merges, resets, stages, commits, or pushes a checkout;
-- pulls databases/files;
-- runs Composer/Drush;
-- exports configuration;
-- creates/stores credentials;
-- edits PLT user configuration;
-- deploys, clones content, creates Multidevs, or otherwise mutates Pantheon.
+Guided remediation is a separate opt-in phase. Doctor itself does not implement mutations; it delegates only to an existing PLT command that already owns the action and its safety contract. A repair must be explicitly confirmed, and actions with ambiguous intent or unsafe identity remain manual/user-choice findings.
 
-The only optional write is the explicitly requested operation record.
+The only write performed without entering guided remediation is the explicitly requested operation record.
 
 ## Suggested first-run sequence
 
@@ -195,4 +213,4 @@ cd /path/to/checkout
 pantheon-local setup --dry-run
 ```
 
-Fix FAIL checks before relying on the affected workflow. WARN checks are review/action cues, not permission for doctor to repair them automatically.
+Fix FAIL checks before relying on the affected workflow. WARN checks are review/action cues. In an interactive terminal Doctor may offer supported repairs, but pressing Enter declines mutation and PLT never treats a finding itself as permission to change state.

@@ -74,7 +74,7 @@ The setup uses the current effective checkout root/provider values, lets you cho
 pantheon-local doctor
 ```
 
-Doctor reports PASS/INFO/WARN/FAIL checks with the smallest known next action and never repairs automatically. See [`docs/doctor.md`](docs/doctor.md).
+Doctor reports PASS/INFO/WARN/FAIL checks with the smallest known next action. Diagnosis is read-only; in an interactive terminal Doctor can offer explicitly confirmed repairs that delegate to existing PLT commands, then rerun diagnostics. See [`docs/doctor.md`](docs/doctor.md) and [`docs/interaction.md`](docs/interaction.md).
 
 Experienced users and scripts can configure one or both values without prompts:
 
@@ -257,9 +257,9 @@ Focused help remains available for nontrivial commands, for example `pantheon-lo
 
 ### First-run doctor and diagnostics
 
-`pantheon-local doctor` is the read-only first-run/troubleshooting gate. It checks PLT version/config path, Git, checkout root, configured provider prerequisites, Terminus installation/authentication, accessible sites/Tags, route ambiguity, canonical Dev Git access, missing/invalid checkouts, and checkout-local provider/metadata consistency.
+`pantheon-local doctor` is the first-run/troubleshooting gate. Its diagnosis phase is read-only and checks PLT version/config path, Git, checkout root, configured provider prerequisites, Terminus installation/authentication, accessible sites/Tags, route ambiguity, canonical Dev Git access, missing/invalid checkouts, and checkout-local provider/metadata consistency.
 
-PASS/INFO/WARN checks keep exit `0`; FAIL checks use the shared unsafe/ambiguous/authority/operation categories and retain per-check next actions/source metadata in JSON. Doctor never starts a provider, mutates Git/config, creates credentials, or writes to Pantheon; only an explicitly requested record file is written. See [`docs/doctor.md`](docs/doctor.md).
+PASS/INFO/WARN checks keep exit `0`; FAIL checks use the shared unsafe/ambiguous/authority/operation categories and retain per-check next-action/remediation metadata in JSON. Interactive Doctor may offer PLT-managed fixes after explicit consent; it delegates mutations to the existing owning command, previews when available, never guesses ambiguous choices, and reruns Doctor afterward. JSON/record/non-TTY use remains prompt-free. See [`docs/doctor.md`](docs/doctor.md) and [`docs/interaction.md`](docs/interaction.md).
 
 ### Canonical Dev checkout and sync
 
@@ -481,7 +481,8 @@ CI runs syntax validation, ShellCheck, and the shell integration suite on Ubuntu
 - [`docs/workflows.md`](docs/workflows.md) — shared primitive/built-in/downstream workflow model and Terminus authority boundary
 - [`docs/checkout.md`](docs/checkout.md) — canonical Pantheon Dev checkout, estate population, and explicit fast-forward sync
 - [`docs/estate-status.md`](docs/estate-status.md) — read-only estate drift overview joining Terminus environment code with local Git/provider state
-- [`docs/doctor.md`](docs/doctor.md) — read-only first-run and troubleshooting diagnostics for tools, config, routing, providers, and Pantheon authority
+- [`docs/doctor.md`](docs/doctor.md) — read-only diagnosis plus explicitly confirmed guided remediation for tools, config, routing, providers, and Pantheon authority
+- [`docs/interaction.md`](docs/interaction.md) — shared detect/explain/choose/preview/confirm/delegate/verify/reassess interaction contract
 - [`docs/structured-output.md`](docs/structured-output.md) — stable JSON schema, exit categories, and durable operation-record contract
 - [`docs/configuration.md`](docs/configuration.md) — Git-compatible user configuration and Pantheon Tag profile strategies
 - [`docs/multidev.md`](docs/multidev.md) — existing Multidev checkout plus guarded remote creation behavior and safety

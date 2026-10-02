@@ -211,11 +211,18 @@ assert_contains "$unmanaged_output" 'Local URL:       https://example-ddev.test'
 assert_contains "$unmanaged_output" 'URL source:      provider runtime'
 assert_contains "$unmanaged_output" 'Database source: (not recorded)'
 assert_contains "$unmanaged_output" 'Files source:    (not recorded)'
+assert_contains "$unmanaged_output" 'Next'
+assert_contains "$unmanaged_output" 'This checkout is not managed by Pantheon Local Tools.'
+assert_contains "$unmanaged_output" 'setup and readiness require a canonical PLT-managed checkout.'
+assert_contains "$unmanaged_output" 'Run pantheon-local doctor to inspect the estate and choose a safe next action.'
 unmanaged_json=$(cd "$UNMANAGED" && bash "$CLI" status --format json)
 assert_contains "$unmanaged_json" '"targets":[]'
 assert_contains "$unmanaged_json" '"target":{"site":null,"environment":null}'
 assert_contains "$unmanaged_json" '"checkout":{"managed":false'
 assert_contains "$unmanaged_json" '"provider":{"name":"ddev","source":"detected"'
+case "$unmanaged_json" in
+  *'Run pantheon-local doctor'*) fail 'structured status included human onboarding prose' ;;
+esac
 [ "$(git -C "$UNMANAGED" hash-object .ddev/config.yaml)" = "$DDEV_CONFIG_BEFORE" ] || fail 'status changed DDEV base configuration'
 [ "$(git -C "$UNMANAGED" hash-object .ddev/docker-compose.adminer.yaml)" = "$DDEV_EXTRA_BEFORE" ] || fail 'status changed DDEV extra service configuration'
 

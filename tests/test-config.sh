@@ -94,19 +94,26 @@ assert_eq "$(bash "$CLI" config get root)" "$HOME/Both Root"
 assert_eq "$(bash "$CLI" config get provider)" 'lando'
 
 # Guided setup uses effective defaults/current values and confirms before writing.
+# Mutation defaults to No: pressing Enter at the final prompt changes nothing.
 rm -f "$PANTHEON_LOCAL_CONFIG"
 output=$(run_guided_init $'\n\n\n')
+assert_contains "$output" 'Save configuration? [y/N]'
+assert_contains "$output" 'Configuration not changed.'
+[ ! -e "$PANTHEON_LOCAL_CONFIG" ] || fail 'guided config init wrote configuration without explicit consent'
+
+rm -f "$PANTHEON_LOCAL_CONFIG"
+output=$(run_guided_init $'\n\ny\n')
 assert_contains "$output" 'Auto - use the project DDEV or Lando configuration (recommended)'
 assert_contains "$output" 'Configuration saved.'
 assert_eq "$(bash "$CLI" config get root)" "$HOME/sites/pantheon"
 assert_eq "$(bash "$CLI" config get provider)" 'auto'
 
 rm -f "$PANTHEON_LOCAL_CONFIG"
-run_guided_init $'\n2\n\n' >/dev/null
+run_guided_init $'\n2\ny\n' >/dev/null
 assert_eq "$(bash "$CLI" config get provider)" 'ddev'
 
 rm -f "$PANTHEON_LOCAL_CONFIG"
-run_guided_init $'\n3\n\n' >/dev/null
+run_guided_init $'\n3\ny\n' >/dev/null
 assert_eq "$(bash "$CLI" config get provider)" 'lando'
 
 bash "$CLI" config set root "$HOME/Keep Root"

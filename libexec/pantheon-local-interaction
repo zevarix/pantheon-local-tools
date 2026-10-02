@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+# Shared human-interaction primitives for Pantheon Local Tools.
+#
+# This library owns prompting/consent mechanics only. Terminal styling remains
+# in pantheon-local-terminal, machine-readable output remains in
+# pantheon-local-output, and command-specific business logic stays with the
+# owning command.
+
+# shellcheck disable=SC2034 # Shared result is read by sourcing callers.
+PLT_INTERACT_CHOICE=''
+
+plt_interact_can_prompt_for() {
+  local stdin_tty=$1 stdout_tty=$2 stderr_tty=$3
+  [ "$stdin_tty" = true ] && [ "$stdout_tty" = true ] && [ "$stderr_tty" = true ]
+}
+
+plt_interact_can_prompt() {
+  local stdin_tty=false stdout_tty=false stderr_tty=false
+  [ -t 0 ] && stdin_tty=true
+  [ -t 1 ] && stdout_tty=true
+  [ -t 2 ] && stderr_tty=true
+  plt_interact_can_prompt_for "$stdin_tty" "$stdout_tty" "$stderr_tty"
+}
+
+plt_interact_confirm() {
+  local prompt=${1:?confirmation prompt is required} answer=''
+
+  plt_interact_can_prompt || return 2
+
+  while :; do
+    printf '%s [y/N] ' "$prompt" >&2
+    IFS= read -r answer || return 1
+    case "$answer" in
+      y|Y|yes|Yes|YES) return 0 ;;
+      ''|n|N|no|No|NO) return 1 ;;
+      *) printf 'Please answer y or n.\n' >&2 ;;
+    esac
+  done
+}
+
+plt_interact_choose() {
+  local prompt=${1:?choice prompt is required} default_index=${2:-} choice='' count index
+  shift 2
+
+  PLT_INTERACT_CHOICE=''
+
+  count=$#
+  [ "$count" -gt 0 ] || return 1
+  plt_interact_can_prompt || return 2
+
+  printf '%s\n' "$prompt" >&2
+  index=1
+  for choice in "$@"; do
+    printf '  %s) %s\n' "$index" "$choice" >&2
+    index=$((index + 1))
+  done
+
+  while :; do
+    if [ -n "$default_index" ]; then
+      printf 'Choice [%s]: ' "$default_index" >&2
+    else
+      printf 'Choice: ' >&2
+    fi
+    IFS= read -r choice || return 1
+    [ -n "$choice" ] || choice=$default_index
+
+    case "$choice" in
+      *[!0-9]*|'')
+        printf 'Please choose a number from 1 to %s.\n' "$count" >&2
+        continue
+        ;;
+    esac
+
+    if [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le "$count" ] 2>/dev/null; then
+      # shellcheck disable=SC2034 # Shared result is read by sourcing callers.
+      PLT_INTERACT_CHOICE=$choice
+      return 0
+    fi
+
+    printf 'Please choose a number from 1 to %s.\n' "$count" >&2
+  done
+}

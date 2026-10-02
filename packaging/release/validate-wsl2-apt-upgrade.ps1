@@ -449,6 +449,10 @@ echo '=== WSL2 APT UPGRADE VALIDATION PASS ==='
 echo "Evidence: $STATE_DIR/evidence.txt"
 '@
 
+# A Windows Git checkout may materialize this PowerShell file with CRLF.
+# Normalize the embedded Linux payload before byte-preserving UTF-8/Base64
+# transport so Bash always receives Unix line endings.
+$LinuxScript = $LinuxScript.Replace("`r`n", "`n").Replace("`r", "`n")
 $Bytes = [System.Text.Encoding]::UTF8.GetBytes($LinuxScript)
 $Encoded = [Convert]::ToBase64String($Bytes)
 $LinuxCommand = "printf '%s' '$Encoded' | base64 -d | bash"

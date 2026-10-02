@@ -73,6 +73,8 @@ assert_contains "apt-get install --yes --reinstall \"pantheon-local-tools=\$TO_V
 assert_contains 'apt-get remove --yes pantheon-local-tools'
 assert_contains 'assert_config_unchanged'
 assert_contains 'assert_shell_unchanged'
+# shellcheck disable=SC2016 # Assert the literal PowerShell variable/expression text.
+assert_contains '$LinuxScript.Replace("`r`n", "`n").Replace("`r", "`n")'
 assert_contains "[System.Text.Encoding]::UTF8.GetBytes(\$LinuxScript)"
 assert_contains "[Convert]::ToBase64String(\$Bytes)"
 assert_contains 'base64 -d | bash'

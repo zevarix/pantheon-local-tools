@@ -25,8 +25,10 @@ scenario_init() {
   MOCK_TERMINUS_LOG="$SCENARIO/terminus.log"
   MOCK_PROVIDER_LOG="$SCENARIO/provider.log"
   export HOME PANTHEON_LOCAL_CONFIG MOCK_DATA MOCK_TERMINUS_LOG MOCK_PROVIDER_LOG
-  unset MOCK_AUTH_FAIL MOCK_SITE_LIST_FAIL MOCK_ENV_FAIL_SITE MOCK_TAG_FAIL_SITE MOCK_CONNECTION_FAIL_SITE
-  mkdir -p "$HOME" "$MOCK_BIN" "$MOCK_DATA" "$LOCAL_ROOT"
+  unset MOCK_AUTH_FAIL MOCK_SITE_LIST_FAIL MOCK_ENV_FAIL_SITE MOCK_TAG_FAIL_SITE MOCK_CONNECTION_FAIL_SITE MOCK_BLOCK_ENV_SITE MOCK_BLOCK_READY_FILE
+  TMPDIR="$SCENARIO/tmp"
+  export TMPDIR
+  mkdir -p "$HOME" "$MOCK_BIN" "$MOCK_DATA" "$LOCAL_ROOT" "$TMPDIR"
   : > "$MOCK_TERMINUS_LOG"
   : > "$MOCK_PROVIDER_LOG"
   PATH="$MOCK_BIN:$ORIGINAL_PATH"
@@ -59,6 +61,11 @@ case "${1:-}" in
     [ "$site" != "${MOCK_ENV_FAIL_SITE:-}" ] || exit 9
     [ "${3:-}" = '--format=list' ] || exit 2
     [ "${4:-}" = '--field=id' ] || exit 2
+    if [ "$site" = "${MOCK_BLOCK_ENV_SITE:-}" ]; then
+      [ -n "${MOCK_BLOCK_READY_FILE:-}" ] || exit 2
+      : > "$MOCK_BLOCK_READY_FILE"
+      sleep 30
+    fi
     cat "${MOCK_DATA:?}/$site.envs"
     ;;
   site:info)
@@ -235,6 +242,54 @@ ZERO_STDERR="$SCENARIO/zero.err"
 bash "$CLI" doctor >/dev/null 2>"$ZERO_STDERR"
 assert_file_contains "$ZERO_STDERR" 'Doctor: discovered 0 accessible sites'
 assert_file_contains "$ZERO_STDERR" 'Doctor: finalizing diagnostics...'
+
+# Ctrl-C cancels the whole doctor process group instead of converting an interrupted child into an ordinary failure.
+scenario_init interrupt
+create_remote alpha-block 'Example Group' ddev
+create_remote beta-later 'Example Group' ddev
+set_sites alpha-block beta-later
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+export MOCK_BLOCK_ENV_SITE=alpha-block
+MOCK_BLOCK_READY_FILE="$SCENARIO/block-ready"
+export MOCK_BLOCK_READY_FILE
+INT_STDOUT="$SCENARIO/interrupt.out"
+INT_STDERR="$SCENARIO/interrupt.err"
+INT_RECORD="$SCENARIO/interrupt-record.json"
+set -m
+bash "$CLI" doctor --record "$INT_RECORD" >"$INT_STDOUT" 2>"$INT_STDERR" &
+doctor_pid=$!
+set +m
+ready=false
+i=0
+while [ "$i" -lt 50 ]; do
+  if [ -f "$MOCK_BLOCK_READY_FILE" ]; then ready=true; break; fi
+  sleep 0.1
+  i=$((i + 1))
+done
+if [ "$ready" != true ]; then
+  kill -TERM -- "-$doctor_pid" 2>/dev/null || true
+  wait "$doctor_pid" 2>/dev/null || true
+  fail 'blocking Terminus fixture did not become ready'
+fi
+doctor_pgid=$(ps -o pgid= -p "$doctor_pid" | tr -d ' ')
+assert_eq "$doctor_pgid" "$doctor_pid"
+set +e
+kill -INT -- "-$doctor_pgid"
+wait "$doctor_pid"
+interrupt_rc=$?
+set -e
+assert_eq "$interrupt_rc" '130'
+assert_file_contains "$INT_STDERR" 'Doctor: inspecting site 1/2: alpha-block'
+assert_file_not_contains "$INT_STDERR" 'Doctor: inspecting site 2/2: beta-later'
+assert_file_not_contains "$INT_STDOUT" 'Pantheon Local Tools doctor'
+assert_file_contains "$MOCK_TERMINUS_LOG" 'terminus|env:list|alpha-block|--format=list|--field=id'
+assert_file_not_contains "$MOCK_TERMINUS_LOG" 'terminus|env:list|beta-later|--format=list|--field=id'
+[ ! -e "$INT_RECORD" ] || fail 'interrupted doctor published a partial operation record'
+if find "$TMPDIR" -maxdepth 1 -type d -name 'pantheon-local-doctor.*' -print -quit | grep -q .; then
+  fail 'interrupted doctor left temporary diagnostic state behind'
+fi
+unset MOCK_BLOCK_ENV_SITE MOCK_BLOCK_READY_FILE
 
 # Warnings-only: missing checkout + an additional accessible unmapped Tag remain exit 0.
 scenario_init warnings

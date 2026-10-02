@@ -30,6 +30,12 @@ Doctor: finalizing diagnostics...
 
 `--format json` emits no progress text by default, so stdout remains one valid JSON document and stderr stays quiet. `--record FILE` stores only the final bounded diagnostic JSON; progress is never persisted in the record.
 
+## Cancellation
+
+Ctrl-C cancels the entire doctor invocation. Doctor cleans its temporary diagnostic state and exits with conventional SIGINT status `130`; it does not reinterpret an interrupted Terminus/Git child as an ordinary per-site failure, continue to later sites, print the normal final diagnostic report, or publish a partial `--record` result.
+
+Termination/hangup signals likewise stop doctor after cleanup rather than continuing estate inspection.
+
 ## Diagnostic statuses
 
 Each check reports one of:

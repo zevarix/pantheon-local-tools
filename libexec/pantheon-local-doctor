@@ -63,7 +63,16 @@ Output:
 USAGE
 }
 
-cleanup() { [ -z "$CHECK_DIR" ] || rm -rf "$CHECK_DIR"; }
+cleanup() {
+  [ -z "$CHECK_DIR" ] || rm -rf "$CHECK_DIR"
+  CHECK_DIR=''
+}
+
+doctor_signal_exit() {
+  local code=$1
+  trap - HUP INT TERM
+  exit "$code"
+}
 
 die_code() {
   local code=$1
@@ -291,8 +300,12 @@ doctor_command() {
   if [ "$format" = default ]; then DOCTOR_PROGRESS=true; else DOCTOR_PROGRESS=false; fi
   doctor_progress 'checking local prerequisites...'
 
+  trap cleanup EXIT
+  trap 'doctor_signal_exit 129' HUP
+  trap 'doctor_signal_exit 130' INT
+  trap 'doctor_signal_exit 143' TERM
+
   CHECK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pantheon-local-doctor.XXXXXX") || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not create temporary diagnostic directory'
-  trap cleanup EXIT HUP INT TERM
   : > "$CHECK_DIR/order"
   tags_seen_file="$CHECK_DIR/tags-seen"
   tags_unique_file="$CHECK_DIR/tags-unique"

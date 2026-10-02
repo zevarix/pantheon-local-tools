@@ -53,6 +53,7 @@ assert_eq "$frames" '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 assert_eq "$(plt_term_spinner_frame 10)" '⠋'
 
 # This test process is non-interactive; cursor-control helpers must stay silent.
+assert_eq "$(plt_term_rewind_current_line 1)" ''
 assert_eq "$(plt_term_clear_current_line 1)" ''
 
 printf 'terminal presentation tests passed\n'

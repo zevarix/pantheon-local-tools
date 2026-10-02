@@ -37,6 +37,8 @@ Doctor: site 2/34: example-site — tags
 
 `--format json` emits no progress text by default, so stdout remains one valid JSON document and stderr stays quiet. `--record FILE` stores only the final bounded diagnostic JSON; progress is never persisted in the record.
 
+Interactive terminals also keep the final aggregation phase visibly active with the same Braille activity indicator while doctor summarizes checks and builds the final result. Finalization reads each stored check once per pass with Bash built-ins rather than launching a separate text-processing subprocess for every field.
+
 ## Interactive report
 
 On an interactive stdout terminal, the final diagnostic report is grouped into Global, Sites, and Tags sections and uses the same semantic glyph/color vocabulary. Redirected/non-interactive stdout keeps the deterministic plain table form without ANSI sequences. WARN/FAIL details and their smallest known next actions remain visible in both forms.

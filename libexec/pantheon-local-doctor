@@ -102,7 +102,7 @@ doctor_render_step() {
 doctor_render_site_line() {
   local frame=${1:-'⠋'} first=true step
   {
-    plt_term_clear_current_line 2
+    plt_term_rewind_current_line 2
     plt_term_style 2 heading 'Doctor:'
     printf ' '
     plt_term_style 2 heading "site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL"

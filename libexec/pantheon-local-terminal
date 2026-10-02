@@ -98,6 +98,12 @@ plt_term_spinner_frame() {
   esac
 }
 
+plt_term_rewind_current_line() {
+  local fd=${1:-1}
+  plt_term_is_interactive "$fd" || return 0
+  printf '\r'
+}
+
 plt_term_clear_current_line() {
   local fd=${1:-1}
   plt_term_is_interactive "$fd" || return 0

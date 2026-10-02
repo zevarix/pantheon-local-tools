@@ -7,16 +7,32 @@ PROJECT_ROOT="$SCRIPT_DIR/.."
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 CORE="$SCRIPT_DIR/pantheon-local-core"
 OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
 ESTATE_COMMON="$SCRIPT_DIR/pantheon-local-estate-common"
 CHECK_DIR=''
 CHECK_SEQ=0
 DOCTOR_PROGRESS=false
+DOCTOR_PROGRESS_INTERACTIVE=false
+DOCTOR_SPINNER_PID=''
+DOCTOR_SITE_INDEX=0
+DOCTOR_SITE_TOTAL=0
+DOCTOR_SITE_NAME=''
+DOCTOR_STEP_ENVIRONMENTS=waiting
+DOCTOR_STEP_ORGANIZATION=waiting
+DOCTOR_STEP_TAGS=waiting
+DOCTOR_STEP_ROUTING=waiting
+DOCTOR_STEP_GIT_URL=waiting
+DOCTOR_STEP_GIT_REMOTE=waiting
+DOCTOR_STEP_CHECKOUT=waiting
 
 [ -x "$CORE" ] || { printf '%s: core module is missing or not executable: %s\n' "$PROGRAM_NAME" "$CORE" >&2; exit 40; }
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
+[ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 40; }
 [ -r "$ESTATE_COMMON" ] || { printf '%s: estate discovery module is missing: %s\n' "$PROGRAM_NAME" "$ESTATE_COMMON" >&2; exit 40; }
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$OUTPUT_LIB"
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$TERMINAL_LIB"
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$ESTATE_COMMON"
 
@@ -27,6 +43,166 @@ doctor_progress() {
 
 count_nonempty_lines() {
   printf '%s\n' "$1" | awk 'NF { count++ } END { print count + 0 }'
+}
+
+doctor_step_status() {
+  case "$1" in
+    environments) printf '%s' "$DOCTOR_STEP_ENVIRONMENTS" ;;
+    organization) printf '%s' "$DOCTOR_STEP_ORGANIZATION" ;;
+    tags) printf '%s' "$DOCTOR_STEP_TAGS" ;;
+    routing) printf '%s' "$DOCTOR_STEP_ROUTING" ;;
+    git-url) printf '%s' "$DOCTOR_STEP_GIT_URL" ;;
+    git-remote) printf '%s' "$DOCTOR_STEP_GIT_REMOTE" ;;
+    checkout) printf '%s' "$DOCTOR_STEP_CHECKOUT" ;;
+    *) return 1 ;;
+  esac
+}
+
+doctor_step_set() {
+  local step=$1 status=$2
+  case "$step" in
+    environments) DOCTOR_STEP_ENVIRONMENTS=$status ;;
+    organization) DOCTOR_STEP_ORGANIZATION=$status ;;
+    tags) DOCTOR_STEP_TAGS=$status ;;
+    routing) DOCTOR_STEP_ROUTING=$status ;;
+    git-url) DOCTOR_STEP_GIT_URL=$status ;;
+    git-remote) DOCTOR_STEP_GIT_REMOTE=$status ;;
+    checkout) DOCTOR_STEP_CHECKOUT=$status ;;
+    *) return 1 ;;
+  esac
+}
+
+doctor_step_label() {
+  case "$1" in
+    environments) printf '%s' 'environments' ;;
+    organization) printf '%s' 'organization' ;;
+    tags) printf '%s' 'tags' ;;
+    routing) printf '%s' 'routing' ;;
+    git-url) printf '%s' 'Dev Git URL' ;;
+    git-remote) printf '%s' 'Git remote' ;;
+    checkout) printf '%s' 'local checkout' ;;
+    *) return 1 ;;
+  esac
+}
+
+doctor_render_step() {
+  local step=$1 frame=$2 status glyph style label
+  status=$(doctor_step_status "$step") || return 1
+  label=$(doctor_step_label "$step") || return 1
+  if [ "$status" = active ]; then
+    glyph=$frame
+    style=active
+  else
+    glyph=$(plt_term_status_glyph "$status")
+    style=$(plt_term_status_style "$status")
+  fi
+  plt_term_style 2 "$style" "$glyph $label"
+}
+
+doctor_render_site_line() {
+  local frame=${1:-'⠋'} first=true step
+  {
+    plt_term_clear_current_line 2
+    plt_term_style 2 heading 'Doctor:'
+    printf ' '
+    plt_term_style 2 heading "site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL"
+    printf ' · %s — ' "$DOCTOR_SITE_NAME"
+    for step in environments organization tags routing git-url git-remote checkout; do
+      if [ "$first" = true ]; then first=false; else printf ', '; fi
+      doctor_render_step "$step" "$frame"
+    done
+  } >&2
+}
+
+doctor_spinner_stop() {
+  if [ -n "$DOCTOR_SPINNER_PID" ]; then
+    kill -TERM "$DOCTOR_SPINNER_PID" 2>/dev/null || true
+    wait "$DOCTOR_SPINNER_PID" 2>/dev/null || true
+    DOCTOR_SPINNER_PID=''
+  fi
+}
+
+doctor_spinner_start() {
+  local frame_index=0
+  [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ] || return 0
+  doctor_spinner_stop
+  (
+    trap 'exit 0' HUP INT TERM
+    while :; do
+      doctor_render_site_line "$(plt_term_spinner_frame "$frame_index")"
+      frame_index=$((frame_index + 1))
+      sleep 0.1
+    done
+  ) &
+  DOCTOR_SPINNER_PID=$!
+}
+
+doctor_site_begin() {
+  DOCTOR_SITE_INDEX=$1
+  DOCTOR_SITE_TOTAL=$2
+  DOCTOR_SITE_NAME=$3
+  DOCTOR_STEP_ENVIRONMENTS=waiting
+  DOCTOR_STEP_ORGANIZATION=waiting
+  DOCTOR_STEP_TAGS=waiting
+  DOCTOR_STEP_ROUTING=waiting
+  DOCTOR_STEP_GIT_URL=waiting
+  DOCTOR_STEP_GIT_REMOTE=waiting
+  DOCTOR_STEP_CHECKOUT=waiting
+  if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
+    doctor_render_site_line '⠋'
+  else
+    doctor_progress "inspecting site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL: $DOCTOR_SITE_NAME"
+  fi
+}
+
+doctor_site_step_start() {
+  local step=$1 label
+  doctor_spinner_stop
+  doctor_step_set "$step" active
+  if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
+    doctor_spinner_start
+  else
+    label=$(doctor_step_label "$step")
+    doctor_progress "site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL: $DOCTOR_SITE_NAME — $label"
+  fi
+}
+
+doctor_site_step_finish() {
+  local step=$1 status=$2
+  doctor_spinner_stop
+  doctor_step_set "$step" "$status"
+  [ "$DOCTOR_PROGRESS_INTERACTIVE" != true ] || doctor_render_site_line '⠋'
+}
+
+doctor_site_skip_waiting() {
+  local step status
+  for step in environments organization tags routing git-url git-remote checkout; do
+    status=$(doctor_step_status "$step")
+    [ "$status" != waiting ] || doctor_step_set "$step" skipped
+  done
+}
+
+doctor_site_end() {
+  doctor_spinner_stop
+  doctor_site_skip_waiting
+  if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
+    doctor_render_site_line '⠋'
+    printf '\n' >&2
+  fi
+}
+
+doctor_scope_progress_status() {
+  local wanted_scope=$1 file status overall=complete
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    [ "$(check_get "$file" 8)" = "$wanted_scope" ] || continue
+    status=$(check_get "$file" 2)
+    case "$status" in
+      FAIL) printf '%s' failure; return 0 ;;
+      WARN) overall=warning ;;
+    esac
+  done < "$CHECK_DIR/order"
+  printf '%s' "$overall"
 }
 
 usage() {
@@ -64,6 +240,7 @@ USAGE
 }
 
 cleanup() {
+  doctor_spinner_stop
   [ -z "$CHECK_DIR" ] || rm -rf "$CHECK_DIR"
   CHECK_DIR=''
 }
@@ -71,6 +248,10 @@ cleanup() {
 doctor_signal_exit() {
   local code=$1
   trap - HUP INT TERM
+  doctor_spinner_stop
+  if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
+    { plt_term_clear_current_line 2; } >&2
+  fi
   exit "$code"
 }
 
@@ -277,7 +458,7 @@ doctor_command() {
   local format=default record_file='' config_path='' version='' platform root='' provider='' mappings='' git_ok=false
   local site_total=0 site_index=0
   local failure_rank failure_source_value category source rank candidate_code
-  local root_parent terminus_ok=false auth_ok=false sites='' site envs remote_tags route route_rc tag route_dir destination git_url remote_info remote_branch remote_sha
+  local root_parent terminus_ok=false auth_ok=false sites='' site envs org remote_tags route route_rc tag route_dir destination git_url remote_info remote_branch remote_sha
   local tag_line mapped_tag mapped_dir tags_seen_file tags_unique_file line exit_code semantic reason failure_source json record_rc
 
   while [ "$#" -gt 0 ]; do
@@ -297,7 +478,13 @@ doctor_command() {
     esac
   done
 
-  if [ "$format" = default ]; then DOCTOR_PROGRESS=true; else DOCTOR_PROGRESS=false; fi
+  if [ "$format" = default ]; then
+    DOCTOR_PROGRESS=true
+    plt_term_is_interactive 2 && DOCTOR_PROGRESS_INTERACTIVE=true || DOCTOR_PROGRESS_INTERACTIVE=false
+  else
+    DOCTOR_PROGRESS=false
+    DOCTOR_PROGRESS_INTERACTIVE=false
+  fi
   doctor_progress 'checking local prerequisites...'
 
   trap cleanup EXIT
@@ -436,28 +623,49 @@ EOF
     while IFS= read -r site; do
       [ -n "$site" ] || continue
       site_index=$((site_index + 1))
-      doctor_progress "inspecting site $site_index/$site_total: $site"
+      doctor_site_begin "$site_index" "$site_total" "$site"
       validate_site "$site"
+
+      doctor_site_step_start environments
       if ! envs=$(site_environment_list "$site"); then
+        doctor_site_step_finish environments failure
         check_add "site-$site-envs" FAIL site-environments-unavailable authority-unavailable terminus "cannot read environments for $site" 'verify Pantheon site access and retry doctor' "site:$site"
+        doctor_site_end
         continue
       fi
       if env_list_has_dev "$envs"; then
+        doctor_site_step_finish environments complete
         check_add "site-$site-dev" PASS dev-environment-available '' terminus "Pantheon Dev environment is available for $site" '' "site:$site"
       else
+        doctor_site_step_finish environments failure
         check_add "site-$site-dev" FAIL dev-environment-unavailable operation-failed terminus "Pantheon Dev environment is unavailable for $site" 'initialize/restore the site Dev environment before canonical checkout workflows' "site:$site"
+        doctor_site_end
         continue
       fi
 
-      if remote_tags=$(site_remote_tags "$site"); then
+      doctor_site_step_start organization
+      if ! org=$(site_organization "$site"); then
+        doctor_site_step_finish organization failure
+        check_add "site-$site-tags" FAIL site-tags-unavailable authority-unavailable terminus "cannot read Pantheon Tags for $site" 'verify organization/Tag access in Terminus and retry doctor' "site:$site"
+        doctor_site_end
+        continue
+      fi
+      doctor_site_step_finish organization complete
+
+      doctor_site_step_start tags
+      if remote_tags=$(site_remote_tags_for_org "$site" "$org"); then
+        doctor_site_step_finish tags complete
         while IFS= read -r line; do [ -n "$line" ] && printf '%s\n' "$line" >> "$tags_seen_file"; done <<EOF
 $remote_tags
 EOF
       else
+        doctor_site_step_finish tags failure
         check_add "site-$site-tags" FAIL site-tags-unavailable authority-unavailable terminus "cannot read Pantheon Tags for $site" 'verify organization/Tag access in Terminus and retry doctor' "site:$site"
+        doctor_site_end
         continue
       fi
 
+      doctor_site_step_start routing
       route_rc=0
       route=$(resolve_route "$mappings" "$remote_tags") || route_rc=$?
       tag=''; route_dir=''; destination=''
@@ -466,41 +674,62 @@ EOF
           tag=$(printf '%s\n' "$route" | sed -n '1p')
           route_dir=$(printf '%s\n' "$route" | sed -n '2p')
           if [ -n "$route_dir" ] && ! route_directory_valid "$route_dir"; then
+            doctor_site_step_finish routing failure
             check_add "site-$site-route" FAIL tag-route-invalid ambiguous-configuration plt-orchestration "site $site resolves to invalid Tag route directory: $route_dir" 'repair the configured Tag route before checkout' "site:$site"
+            doctor_site_end
             continue
           fi
+          doctor_site_step_finish routing complete
           check_add "site-$site-route" PASS site-route-resolved '' plt "canonical route resolved for $site${tag:+ via $tag}" '' "site:$site"
           ;;
         10)
+          doctor_site_step_finish routing failure
           check_add "site-$site-route" FAIL site-route-unmapped ambiguous-configuration plt-orchestration "site $site has no Pantheon Tag matching a configured local route" 'configure one local route matching this site or remove Tag routing if root-level routing is intended' "site:$site"
+          doctor_site_end
           continue
           ;;
         11)
+          doctor_site_step_finish routing failure
           check_add "site-$site-route" FAIL site-route-ambiguous ambiguous-configuration plt-orchestration "site $site matches more than one configured local Tag route" 'leave exactly one configured local Tag route matching this site' "site:$site"
+          doctor_site_end
           continue
           ;;
         *)
+          doctor_site_step_finish routing failure
           check_add "site-$site-route" FAIL site-route-failed operation-failed plt-orchestration "route resolution failed for $site" 'review PLT Tag routing configuration' "site:$site"
+          doctor_site_end
           continue
           ;;
       esac
 
       if [ -n "$route_dir" ]; then destination="$root/$route_dir/$site"; else destination="$root/$site"; fi
 
+      doctor_site_step_start git-url
       if ! git_url=$(site_git_url "$site"); then
+        doctor_site_step_finish git-url failure
         check_add "site-$site-git-url" FAIL dev-git-url-unavailable authority-unavailable terminus "canonical Dev Git URL is unavailable for $site" 'verify Terminus connection information for this site' "site:$site"
+        doctor_site_end
         continue
       fi
+      doctor_site_step_finish git-url complete
+
+      doctor_site_step_start git-remote
       remote_info=$(remote_head_info "$git_url" 2>/dev/null || true)
       remote_branch=$(printf '%s\n' "$remote_info" | sed -n '1p')
       remote_sha=$(printf '%s\n' "$remote_info" | sed -n '2p')
       if [ -z "$remote_branch" ] || [ -z "$remote_sha" ]; then
+        doctor_site_step_finish git-remote failure
         check_add "site-$site-git-remote" FAIL dev-git-remote-unavailable authority-unavailable git "canonical Dev Git repository is not readable for $site" 'verify Git/SSH access to Pantheon and retry doctor' "site:$site"
+        doctor_site_end
         continue
       fi
+      doctor_site_step_finish git-remote complete
       check_add "site-$site-git-remote" PASS dev-git-remote-readable '' git "canonical Dev Git repository is readable for $site ($remote_branch @ $(printf '%.8s' "$remote_sha"))" '' "site:$site"
 
+      doctor_site_step_start checkout
       inspect_checkout_structure "$site" "$destination" "$git_url" "$remote_branch"
+      doctor_site_step_finish checkout "$(doctor_scope_progress_status "site:$site")"
+      doctor_site_end
     done <<EOF
 $sites
 EOF
@@ -576,6 +805,14 @@ EOF
 }
 
 print_doctor_default() {
+  if plt_term_is_interactive 1; then
+    print_doctor_pretty "$@"
+  else
+    print_doctor_plain "$@"
+  fi
+}
+
+print_doctor_plain() {
   local version=$1 config_path=$2 platform=$3 file id status message next
   printf 'Pantheon Local Tools doctor\n\n'
   printf 'Version:     %s\n' "${version:--}"
@@ -589,6 +826,124 @@ print_doctor_default() {
     printf '%-5s %-36s %s\n' "$status" "$id" "$message"
     [ -z "$next" ] || printf '      %-36s Next: %s\n' '' "$next"
   done < "$CHECK_DIR/order"
+}
+
+doctor_pretty_platform() {
+  case "$1" in
+    macos) printf '%s' 'macOS' ;;
+    wsl) printf '%s' 'WSL' ;;
+    linux) printf '%s' 'Linux' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+doctor_pretty_meta() {
+  local label=$1 value=$2
+  printf '  '
+  plt_term_style 1 muted "$(printf '%-12s' "$label")"
+  printf '%s\n' "$value"
+}
+
+doctor_pretty_check() {
+  local file=$1 indent=$2 status message next glyph style
+  status=$(check_get "$file" 2)
+  message=$(check_get "$file" 6)
+  next=$(check_get "$file" 7)
+  glyph=$(plt_term_status_glyph "$status")
+  style=$(plt_term_status_style "$status")
+  printf '%s' "$indent"
+  plt_term_style 1 "$style" "$glyph"
+  printf '  %s\n' "$message"
+  if [ -n "$next" ]; then
+    printf '%s   ' "$indent"
+    plt_term_style 1 active '→'
+    printf ' %s\n' "$next"
+  fi
+}
+
+doctor_pretty_section() {
+  printf '\n'
+  plt_term_style 1 heading "$1"
+  printf '\n'
+}
+
+doctor_pretty_scope_names() {
+  local prefix=$1 file scope
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    scope=$(check_get "$file" 8)
+    case "$scope" in
+      "$prefix":*) printf '%s\n' "${scope#*:}" ;;
+    esac
+  done < "$CHECK_DIR/order" | LC_ALL=C sort -u
+}
+
+print_doctor_pretty() {
+  local version=$1 config_path=$2 platform=$3 file id scope site_name tag_name site_names tag_names
+
+  plt_term_style 1 heading 'Pantheon Local Tools doctor'
+  printf '\n'
+  plt_term_style 1 muted '────────────────────────────────────────────────────────────'
+  printf '\n\n'
+  doctor_pretty_meta Version "${version:--}"
+  doctor_pretty_meta Platform "$(doctor_pretty_platform "${platform:--}")"
+  doctor_pretty_meta Config "${config_path:--}"
+
+  doctor_pretty_section Global
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    scope=$(check_get "$file" 8)
+    [ "$scope" = global ] || continue
+    id=$(check_get "$file" 1)
+    case "$id" in platform|version|config-path) continue ;; esac
+    doctor_pretty_check "$file" '  '
+  done < "$CHECK_DIR/order"
+
+  doctor_pretty_section Sites
+  site_names=$(doctor_pretty_scope_names site)
+  if [ -n "$site_names" ]; then
+    while IFS= read -r site_name; do
+      [ -n "$site_name" ] || continue
+      printf '  '
+      plt_term_style 1 active "$site_name"
+      printf '\n'
+      while IFS= read -r file; do
+        [ -n "$file" ] || continue
+        [ "$(check_get "$file" 8)" = "site:$site_name" ] || continue
+        doctor_pretty_check "$file" '    '
+      done < "$CHECK_DIR/order"
+      printf '\n'
+    done <<EOF
+$site_names
+EOF
+  else
+    printf '  '
+    plt_term_style 1 muted '• no site diagnostics'
+    printf '\n\n'
+  fi
+
+  doctor_pretty_section Tags
+  tag_names=$(doctor_pretty_scope_names tag)
+  if [ -n "$tag_names" ]; then
+    while IFS= read -r tag_name; do
+      [ -n "$tag_name" ] || continue
+      printf '  '
+      plt_term_style 1 active "$tag_name"
+      printf '\n'
+      while IFS= read -r file; do
+        [ -n "$file" ] || continue
+        [ "$(check_get "$file" 8)" = "tag:$tag_name" ] || continue
+        doctor_pretty_check "$file" '    '
+      done < "$CHECK_DIR/order"
+      printf '\n'
+    done <<EOF
+$tag_names
+EOF
+  else
+    printf '  '
+    plt_term_style 1 muted '• no Tag diagnostics'
+    printf '\n'
+  fi
 }
 
 build_doctor_json() {

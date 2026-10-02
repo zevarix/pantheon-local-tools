@@ -6,6 +6,10 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+### Changed
+
+- Added shared terminal presentation primitives and upgraded interactive `doctor` with semantic colors/glyphs, grouped final diagnostics, and a Braille in-place per-site substep progress display while preserving plain redirected output and clean JSON/records.
+
 ### Fixed
 
 - `pantheon-local doctor` now treats Ctrl-C and other termination signals as cancellation, cleaning temporary diagnostic state and stopping the whole run instead of continuing after an interrupted child read.

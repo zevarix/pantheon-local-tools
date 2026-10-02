@@ -212,6 +212,13 @@ assert_file_contains "$PROGRESS_STDERR" 'Doctor: checking Terminus authenticatio
 assert_file_contains "$PROGRESS_STDERR" 'Doctor: Terminus authentication ready'
 assert_file_contains "$PROGRESS_STDERR" 'Doctor: discovering accessible Pantheon sites...'
 assert_file_contains "$PROGRESS_STDERR" 'Doctor: discovered 3 accessible sites'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: site 1/3: alpha-site — environments'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: site 1/3: alpha-site — organization'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: site 1/3: alpha-site — tags'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: site 1/3: alpha-site — routing'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: site 1/3: alpha-site — Dev Git URL'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: site 1/3: alpha-site — Git remote'
+assert_file_contains "$PROGRESS_STDERR" 'Doctor: site 1/3: alpha-site — local checkout'
 progress_text=$(cat "$PROGRESS_STDERR")
 case "$progress_text" in
   *'Doctor: inspecting site 1/3: alpha-site'*'Doctor: inspecting site 2/3: beta-site'*'Doctor: inspecting site 3/3: gamma-site'*) ;;
@@ -220,6 +227,9 @@ esac
 assert_file_contains "$PROGRESS_STDERR" 'Doctor: finalizing diagnostics...'
 assert_file_contains "$PROGRESS_STDOUT" 'Pantheon Local Tools doctor'
 assert_file_not_contains "$PROGRESS_STDOUT" 'Doctor:'
+ESC=$(printf '\033')
+assert_file_not_contains "$PROGRESS_STDOUT" "$ESC"
+assert_file_not_contains "$PROGRESS_STDERR" "$ESC"
 
 JSON_PROGRESS="$SCENARIO/json.err"
 progress_json=$(bash "$CLI" doctor --format json 2>"$JSON_PROGRESS")
@@ -272,6 +282,7 @@ if [ "$ready" != true ]; then
   wait "$doctor_pid" 2>/dev/null || true
   fail 'blocking Terminus fixture did not become ready'
 fi
+assert_file_contains "$INT_STDERR" 'Doctor: site 1/2: alpha-block — environments'
 doctor_pgid=$(ps -o pgid= -p "$doctor_pid" | tr -d ' ')
 assert_eq "$doctor_pgid" "$doctor_pid"
 set +e
@@ -374,6 +385,17 @@ set_sites unmapped-site ambiguous-site
 configure_base ddev
 bash "$CLI" config tag set 'Example Group' clients
 bash "$CLI" config tag set 'Another Group' apps
+ROUTING_PROGRESS="$SCENARIO/routing.err"
+set +e
+bash "$CLI" doctor >/dev/null 2>"$ROUTING_PROGRESS"
+routing_default_rc=$?
+set -e
+assert_eq "$routing_default_rc" '31'
+assert_file_contains "$ROUTING_PROGRESS" 'Doctor: site 1/2: ambiguous-site — environments'
+assert_file_contains "$ROUTING_PROGRESS" 'Doctor: site 1/2: ambiguous-site — organization'
+assert_file_contains "$ROUTING_PROGRESS" 'Doctor: site 1/2: ambiguous-site — tags'
+assert_file_contains "$ROUTING_PROGRESS" 'Doctor: site 1/2: ambiguous-site — routing'
+assert_file_not_contains "$ROUTING_PROGRESS" 'Doctor: site 1/2: ambiguous-site — Dev Git URL'
 set +e
 routing_json=$(bash "$CLI" doctor --format json 2>&1)
 routing_rc=$?

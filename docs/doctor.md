@@ -16,19 +16,30 @@ pantheon-local doctor --record ./doctor-result.json
 
 ## Progress
 
-Default terminal mode emits bounded line-oriented progress to stderr while doctor performs longer remote/estate checks. This keeps the command visibly active without mixing progress text into the final stdout report.
+Default terminal mode keeps long remote/estate work visibly active without mixing progress text into structured output.
 
-For multi-site inspection, progress includes the discovered site count and deterministic current/total site position, for example:
+On an interactive terminal, each site uses one in-place status line. The active substep uses a Braille spinner while completed, failed, and not-yet-started substeps retain visible semantic markers:
 
 ```text
-Doctor: checking local prerequisites...
-Doctor: Terminus authentication ready
-Doctor: discovered 35 accessible sites
-Doctor: inspecting site 7/35: example-site
-Doctor: finalizing diagnostics...
+Doctor: site 2/34 · example-site — ✓ environments, ✓ organization, ⠹ tags, ○ routing, ○ Dev Git URL, ○ Git remote, ○ local checkout
+```
+
+Completed steps are green, the active step is bright cyan, pending/skipped steps are muted, warnings are yellow, and failures are red when color is available. Color is supplemental to glyph/text state, respects `NO_COLOR`, and is disabled for `TERM=dumb`.
+
+When stderr is redirected or non-interactive, doctor emits deterministic line-oriented progress instead of cursor-control sequences, including the current site/substep:
+
+```text
+Doctor: inspecting site 2/34: example-site
+Doctor: site 2/34: example-site — environments
+Doctor: site 2/34: example-site — organization
+Doctor: site 2/34: example-site — tags
 ```
 
 `--format json` emits no progress text by default, so stdout remains one valid JSON document and stderr stays quiet. `--record FILE` stores only the final bounded diagnostic JSON; progress is never persisted in the record.
+
+## Interactive report
+
+On an interactive stdout terminal, the final diagnostic report is grouped into Global, Sites, and Tags sections and uses the same semantic glyph/color vocabulary. Redirected/non-interactive stdout keeps the deterministic plain table form without ANSI sequences. WARN/FAIL details and their smallest known next actions remain visible in both forms.
 
 ## Cancellation
 

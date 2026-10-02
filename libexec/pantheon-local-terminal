@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# Shared human-terminal presentation primitives for Pantheon Local Tools.
+# This library owns presentation only. Machine-readable JSON/records remain in
+# pantheon-local-output.
+
+plt_term_interactive_for() {
+  local is_tty=$1 term=${2:-}
+  [ "$is_tty" = true ] && [ "$term" != dumb ]
+}
+
+plt_term_is_interactive() {
+  local fd=${1:-1} is_tty=false
+  [ -t "$fd" ] && is_tty=true
+  plt_term_interactive_for "$is_tty" "${TERM:-}"
+}
+
+plt_term_color_for() {
+  local interactive=$1 no_color_set=$2
+  [ "$interactive" = true ] && [ "$no_color_set" = false ]
+}
+
+plt_term_color_enabled() {
+  local fd=${1:-1} interactive=false no_color_set=false
+  plt_term_is_interactive "$fd" && interactive=true
+  [ "${NO_COLOR+x}" = x ] && no_color_set=true
+  plt_term_color_for "$interactive" "$no_color_set"
+}
+
+plt_term_style_code() {
+  case "$1" in
+    heading) printf '%s' '1' ;;
+    success) printf '%s' '32' ;;
+    active) printf '%s' '96' ;;
+    info) printf '%s' '36' ;;
+    warning) printf '%s' '33' ;;
+    failure) printf '%s' '31' ;;
+    muted) printf '%s' '2' ;;
+    *) return 1 ;;
+  esac
+}
+
+plt_term_style_raw() {
+  local enabled=$1 style=$2 value=$3 code
+  if [ "$enabled" = true ]; then
+    code=$(plt_term_style_code "$style") || {
+      printf '%s' "$value"
+      return 0
+    }
+    printf '\033[%sm%s\033[0m' "$code" "$value"
+  else
+    printf '%s' "$value"
+  fi
+}
+
+plt_term_style() {
+  local fd=$1 style=$2 value=$3 enabled=false
+  plt_term_color_enabled "$fd" && enabled=true
+  plt_term_style_raw "$enabled" "$style" "$value"
+}
+
+plt_term_status_glyph() {
+  case "$1" in
+    PASS|complete|success) printf '%s' '✓' ;;
+    INFO|info) printf '%s' '•' ;;
+    WARN|warning) printf '%s' '!' ;;
+    FAIL|failed|blocked|failure) printf '%s' '×' ;;
+    waiting|planned|pending) printf '%s' '○' ;;
+    skipped|skip) printf '%s' '–' ;;
+    *) printf '%s' '?' ;;
+  esac
+}
+
+plt_term_status_style() {
+  case "$1" in
+    PASS|complete|success) printf '%s' success ;;
+    INFO|info) printf '%s' info ;;
+    WARN|warning) printf '%s' warning ;;
+    FAIL|failed|blocked|failure) printf '%s' failure ;;
+    waiting|planned|pending|skipped|skip) printf '%s' muted ;;
+    active) printf '%s' active ;;
+    *) printf '%s' muted ;;
+  esac
+}
+
+plt_term_spinner_frame() {
+  case $(($1 % 10)) in
+    0) printf '%s' '⠋' ;;
+    1) printf '%s' '⠙' ;;
+    2) printf '%s' '⠹' ;;
+    3) printf '%s' '⠸' ;;
+    4) printf '%s' '⠼' ;;
+    5) printf '%s' '⠴' ;;
+    6) printf '%s' '⠦' ;;
+    7) printf '%s' '⠧' ;;
+    8) printf '%s' '⠇' ;;
+    9) printf '%s' '⠏' ;;
+  esac
+}
+
+plt_term_clear_current_line() {
+  local fd=${1:-1}
+  plt_term_is_interactive "$fd" || return 0
+  printf '\r\033[2K'
+}

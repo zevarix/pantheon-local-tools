@@ -2,6 +2,12 @@
 set -euo pipefail
 
 PROGRAM_NAME="pantheon-local"
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
+
+[ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 1; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$TERMINAL_LIB"
 
 usage() {
   cat <<'USAGE'
@@ -242,11 +248,16 @@ pull_command() {
   head_before=$(git -C "$root" rev-parse HEAD)
   diff_before=$(tracked_fingerprint "$root")
 
-  printf 'Pulling Pantheon data\n\n'
-  printf 'Environment: %s\n' "$env"
-  printf 'Components:  %s\n' "$(print_components "$components")"
-  printf 'Provider:    %s\n' "$provider"
-  printf 'Directory:   %s\n\n' "$root"
+  plt_term_style 1 heading 'Pulling Pantheon data'
+  printf '\n\n'
+  plt_term_style 1 muted 'Environment: '
+  printf '%s\n' "$env"
+  plt_term_style 1 muted 'Components:  '
+  printf '%s\n' "$(print_components "$components")"
+  plt_term_style 1 muted 'Provider:    '
+  printf '%s\n' "$provider"
+  plt_term_style 1 muted 'Directory:   '
+  printf '%s\n\n' "$root"
 
   case "$provider" in
     lando) run_lando_pull "$root" "$env" "$components" ;;
@@ -264,10 +275,16 @@ pull_command() {
 
   record_pull_state "$state" "$provider" "$env" "$components"
 
-  printf '\nPantheon data pull complete\n'
-  printf 'Environment: %s\n' "$env"
-  printf 'Components:  %s\n' "$(print_components "$components")"
-  printf 'Git code:    unchanged\n'
+  printf '\n'
+  plt_term_style 1 success 'Pantheon data pull complete'
+  printf '\n'
+  plt_term_style 1 muted 'Environment: '
+  printf '%s\n' "$env"
+  plt_term_style 1 muted 'Components:  '
+  printf '%s\n' "$(print_components "$components")"
+  plt_term_style 1 muted 'Git code:    '
+  plt_term_style 1 success 'unchanged'
+  printf '\n'
 }
 
 pull_command "$@"

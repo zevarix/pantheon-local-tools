@@ -5,6 +5,11 @@ PROGRAM_NAME="pantheon-local"
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 PULL="$SCRIPT_DIR/pantheon-local-pull"
 WORKFLOW_STATE="$SCRIPT_DIR/pantheon-local-workflow-state"
+TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
+
+[ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 1; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$TERMINAL_LIB"
 
 usage() {
   cat <<'USAGE'
@@ -190,22 +195,29 @@ run_pull_step() {
 
 print_plan() {
   local root=$1 site=$2 env=$3 provider=$4
-  printf 'Pantheon Local Tools setup dry-run\n\n'
-  printf 'Directory:   %s\n' "$root"
+  plt_term_style 1 heading 'Pantheon Local Tools setup dry-run'
+  printf '\n\n'
+  plt_term_style 1 muted 'Directory:   '
+  printf '%s\n' "$root"
+  plt_term_style 1 muted 'Pantheon:    '
   if [ -n "$site" ]; then
-    printf 'Pantheon:    %s.%s\n' "$site" "$env"
+    printf '%s.%s\n' "$site" "$env"
   else
-    printf 'Pantheon:    environment %s (site not recorded)\n' "$env"
+    printf 'environment %s (site not recorded)\n' "$env"
   fi
-  printf 'Provider:    %s\n' "$provider"
-  printf 'Database:    replace local database from %s\n\n' "$env"
-  printf 'Planned steps:\n'
+  plt_term_style 1 muted 'Provider:    '
+  printf '%s\n' "$provider"
+  plt_term_style 1 muted 'Database:    '
+  printf 'replace local database from %s\n\n' "$env"
+  plt_term_style 1 heading 'Planned steps:'
+  printf '\n'
   printf '  1. %s start\n' "$provider"
   printf '  2. %s composer install\n' "$provider"
   printf '  3. pantheon-local pull %s --database-only --provider %s\n' "$env" "$provider"
   printf '  4. %s drush updb -y\n' "$provider"
   printf '  5. %s drush cr\n\n' "$provider"
-  printf 'Dry-run only: no provider, Composer, Drush, pull, or state mutation was run.\n'
+  plt_term_style 1 muted 'Dry-run only: no provider, Composer, Drush, pull, or state mutation was run.'
+  printf '\n'
 }
 
 setup_command() {
@@ -261,24 +273,37 @@ setup_command() {
   require_command "$provider"
   require_command date
 
-  printf 'Preparing Drupal checkout\n\n'
-  printf 'Directory:   %s\n' "$root"
-  printf 'Environment: %s\n' "$env"
-  printf 'Provider:    %s\n\n' "$provider"
+  plt_term_style 1 heading 'Preparing Drupal checkout'
+  printf '\n\n'
+  plt_term_style 1 muted 'Directory:   '
+  printf '%s\n' "$root"
+  plt_term_style 1 muted 'Environment: '
+  printf '%s\n' "$env"
+  plt_term_style 1 muted 'Provider:    '
+  printf '%s\n\n' "$provider"
 
-  printf 'Step 1/5: starting %s\n' "$provider"
+  plt_term_style 1 active "Step 1/5: starting $provider"
+  printf '\n'
   run_provider_step "$root" "$state" "$env" "$provider" provider-start 'provider start' start
 
-  printf '\nStep 2/5: installing Composer dependencies inside %s\n' "$provider"
+  printf '\n'
+  plt_term_style 1 active "Step 2/5: installing Composer dependencies inside $provider"
+  printf '\n'
   run_provider_step "$root" "$state" "$env" "$provider" composer-install 'Composer install' composer install
 
-  printf '\nStep 3/5: refreshing local database from %s\n' "$env"
+  printf '\n'
+  plt_term_style 1 active "Step 3/5: refreshing local database from $env"
+  printf '\n'
   run_pull_step "$root" "$state" "$env" "$provider"
 
-  printf '\nStep 4/5: running Drupal database updates\n'
+  printf '\n'
+  plt_term_style 1 active 'Step 4/5: running Drupal database updates'
+  printf '\n'
   run_provider_step "$root" "$state" "$env" "$provider" drush-updb 'drush updb' drush updb -y
 
-  printf '\nStep 5/5: rebuilding Drupal caches\n'
+  printf '\n'
+  plt_term_style 1 active 'Step 5/5: rebuilding Drupal caches'
+  printf '\n'
   run_provider_step "$root" "$state" "$env" "$provider" drush-cr 'drush cr' drush cr
 
   record_bootstrap "$state" complete complete "$env" "$provider"
@@ -289,12 +314,24 @@ setup_command() {
     git_state=clean
   fi
 
-  printf '\nDrupal bootstrap complete\n'
-  printf 'Environment: %s\n' "$env"
-  printf 'Provider:    %s\n' "$provider"
-  printf 'Database:    refreshed from %s\n' "$env"
-  printf 'Git state:   %s\n' "$git_state"
-  printf 'Status:      pantheon-local status\n'
+  printf '\n'
+  plt_term_style 1 success 'Drupal bootstrap complete'
+  printf '\n'
+  plt_term_style 1 muted 'Environment: '
+  printf '%s\n' "$env"
+  plt_term_style 1 muted 'Provider:    '
+  printf '%s\n' "$provider"
+  plt_term_style 1 muted 'Database:    '
+  printf 'refreshed from %s\n' "$env"
+  plt_term_style 1 muted 'Git state:   '
+  if [ "$git_state" = clean ]; then
+    plt_term_style 1 success "$git_state"
+  else
+    plt_term_style 1 warning "$git_state"
+  fi
+  printf '\n'
+  plt_term_style 1 muted 'Status:      '
+  printf 'pantheon-local status\n'
 }
 
 setup_command "$@"

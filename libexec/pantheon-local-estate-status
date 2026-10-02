@@ -5,14 +5,18 @@ PROGRAM_NAME='pantheon-local'
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 CORE="$SCRIPT_DIR/pantheon-local-core"
 OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
 ESTATE_COMMON="$SCRIPT_DIR/pantheon-local-estate-common"
 STATUS_DIR=''
 
 [ -x "$CORE" ] || { printf '%s: core module is missing or not executable: %s\n' "$PROGRAM_NAME" "$CORE" >&2; exit 40; }
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
+[ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 40; }
 [ -r "$ESTATE_COMMON" ] || { printf '%s: estate discovery module is missing: %s\n' "$PROGRAM_NAME" "$ESTATE_COMMON" >&2; exit 40; }
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$OUTPUT_LIB"
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$TERMINAL_LIB"
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$ESTATE_COMMON"
 
@@ -64,6 +68,15 @@ die_code() {
 
 usage_error() { die_code "$PLT_EXIT_USAGE" "$*"; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die_code "$PLT_EXIT_OPERATION_FAILED" "required command not found: $1"; }
+
+estate_assessment_style() {
+  case "$1" in
+    current) printf '%s' success ;;
+    missing|behind|ahead|diverged|dirty|review) printf '%s' warning ;;
+    unavailable) printf '%s' failure ;;
+    *) printf '%s' muted ;;
+  esac
+}
 
 status_file_for() { printf '%s/%s.status\n' "$STATUS_DIR" "$1"; }
 status_set() { git config --file "$1" --replace-all "status.$2" "$3"; }
@@ -356,10 +369,15 @@ aggregate_semantics() {
 }
 
 print_default() {
-  local order_file=$1 site file tag local_present branch clean relation provider dev test live assessment
-  printf 'Pantheon estate status\n\n'
-  printf '%-20s %-14s %-6s %-12s %-5s %-10s %-9s %-8s %-8s %-8s %s\n' SITE TAG LOCAL BRANCH CLEAN RELATION PROVIDER DEV TEST LIVE STATUS
-  printf '%-20s %-14s %-6s %-12s %-5s %-10s %-9s %-8s %-8s %-8s %s\n' '--------------------' '--------------' '------' '------------' '-----' '----------' '---------' '--------' '--------' '--------' '----------'
+  local order_file=$1 site file tag local_present branch clean relation provider dev test live assessment style header separator
+  plt_term_style 1 heading 'Pantheon estate status'
+  printf '\n\n'
+  header=$(printf '%-20s %-14s %-6s %-12s %-5s %-10s %-9s %-8s %-8s %-8s %s' SITE TAG LOCAL BRANCH CLEAN RELATION PROVIDER DEV TEST LIVE STATUS)
+  separator=$(printf '%-20s %-14s %-6s %-12s %-5s %-10s %-9s %-8s %-8s %-8s %s' '--------------------' '--------------' '------' '------------' '-----' '----------' '---------' '--------' '--------' '--------' '----------')
+  plt_term_style 1 heading "$header"
+  printf '\n'
+  plt_term_style 1 muted "$separator"
+  printf '\n'
   while IFS= read -r site; do
     [ -n "$site" ] || continue
     file=$(status_file_for "$site")
@@ -373,7 +391,10 @@ print_default() {
     test=$(short_sha "$(status_get "$file" test-sha)")
     live=$(short_sha "$(status_get "$file" live-sha)")
     assessment=$(status_get "$file" assessment); [ -n "$assessment" ] || assessment='unavailable'
-    printf '%-20s %-14s %-6s %-12s %-5s %-10s %-9s %-8s %-8s %-8s %s\n' "$site" "$tag" "$local_present" "$branch" "$clean" "$relation" "$provider" "$dev" "$test" "$live" "$assessment"
+    style=$(estate_assessment_style "$assessment")
+    printf '%-20s %-14s %-6s %-12s %-5s %-10s %-9s %-8s %-8s %-8s ' "$site" "$tag" "$local_present" "$branch" "$clean" "$relation" "$provider" "$dev" "$test" "$live"
+    plt_term_style 1 "$style" "$assessment"
+    printf '\n'
   done < "$order_file"
 }
 

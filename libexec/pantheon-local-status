@@ -5,10 +5,14 @@ PROGRAM_NAME="pantheon-local"
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 PROVIDER_URL="$SCRIPT_DIR/pantheon-local-provider-url"
 OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
 
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
+[ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 40; }
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$OUTPUT_LIB"
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$TERMINAL_LIB"
 
 usage() {
   cat <<'USAGE'
@@ -43,6 +47,28 @@ usage_error() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die_code "$PLT_EXIT_OPERATION_FAILED" "required command not found: $1"
+}
+
+status_value_style() {
+  case "$1" in
+    yes|present|clean|complete|current|synchronized) printf '%s' success ;;
+    in-progress) printf '%s' active ;;
+    missing|modified|'differences detected') printf '%s' warning ;;
+    ambiguous|failed|blocked|unavailable) printf '%s' failure ;;
+    no|unknown|'(not recorded)'|'(not available)'|'not available') printf '%s' muted ;;
+    *) printf '%s' '' ;;
+  esac
+}
+
+status_print_line() {
+  local label=$1 value=$2 style=${3:-}
+  plt_term_style 1 muted "$label"
+  if [ -n "$style" ]; then
+    plt_term_style 1 "$style" "$value"
+  else
+    printf '%s' "$value"
+  fi
+  printf '\n'
 }
 
 state_get() {
@@ -265,25 +291,28 @@ status_command() {
   [ -n "$bootstrap_step" ] || bootstrap_step='(not recorded)'
   [ -n "$bootstrap_updated" ] || bootstrap_updated='(not recorded)'
 
-  printf 'Pantheon Local Tools status\n\n'
-  printf 'Directory:       %s\n' "$root"
-  printf 'Managed:         %s\n' "$managed"
-  printf 'Pantheon:        %s\n' "$target"
-  printf 'Tag:             %s\n' "$tag"
-  printf 'Provider:        %s\n' "$provider"
-  printf 'Provider config: %s\n' "$provider_config"
-  printf 'Local name:      %s\n' "$local_name"
-  printf 'Local URL:       %s\n' "$local_url"
-  printf 'URL source:      %s\n' "$url_source"
-  printf 'Git branch:      %s\n' "$branch"
-  printf 'Git tracking:    %s\n' "$tracking"
-  printf 'Git state:       %s\n' "$git_state"
-  printf 'Database source: %s\n' "$database_source"
-  printf 'Files source:    %s\n' "$files_source"
-  printf 'Bootstrap status:  %s\n' "$bootstrap_status"
-  printf 'Bootstrap step:    %s\n' "$bootstrap_step"
-  printf 'Bootstrap updated: %s\n' "$bootstrap_updated"
-  if [ -n "$record_file" ]; then printf 'Operation record: %s\n' "$record_file"; fi
+  plt_term_style 1 heading 'Pantheon Local Tools status'
+  printf '\n\n'
+  status_print_line 'Directory:       ' "$root"
+  status_print_line 'Managed:         ' "$managed" "$(status_value_style "$managed")"
+  status_print_line 'Pantheon:        ' "$target"
+  status_print_line 'Tag:             ' "$tag"
+  status_print_line 'Provider:        ' "$provider"
+  status_print_line 'Provider config: ' "$provider_config" "$(status_value_style "$provider_config")"
+  status_print_line 'Local name:      ' "$local_name"
+  status_print_line 'Local URL:       ' "$local_url"
+  status_print_line 'URL source:      ' "$url_source"
+  status_print_line 'Git branch:      ' "$branch"
+  status_print_line 'Git tracking:    ' "$tracking"
+  status_print_line 'Git state:       ' "$git_state" "$(status_value_style "$git_state")"
+  status_print_line 'Database source: ' "$database_source"
+  status_print_line 'Files source:    ' "$files_source"
+  status_print_line 'Bootstrap status:  ' "$bootstrap_status" "$(status_value_style "$bootstrap_status")"
+  status_print_line 'Bootstrap step:    ' "$bootstrap_step"
+  status_print_line 'Bootstrap updated: ' "$bootstrap_updated"
+  if [ -n "$record_file" ]; then
+    status_print_line 'Operation record: ' "$record_file"
+  fi
 }
 
 status_command "$@"

@@ -4,6 +4,11 @@ set -euo pipefail
 PROGRAM_NAME="pantheon-local"
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 PROFILE="$SCRIPT_DIR/pantheon-local-config-profile"
+TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
+
+[ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 1; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$TERMINAL_LIB"
 
 usage() {
   cat <<'USAGE'
@@ -63,6 +68,33 @@ die() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+readiness_value_style() {
+  case "$1" in
+    ready|synchronized|clean) printf '%s' success ;;
+    'differences detected'|modified|'review configuration differences'|'review working tree'|'review configuration differences and working tree') printf '%s' warning ;;
+    unavailable) printf '%s' failure ;;
+    enabled) printf '%s' info ;;
+    disabled|'not invoked'|'not inspected'|'not performed'|'protected partial override set'|'not interpreted as full export') printf '%s' muted ;;
+    *) printf '%s' '' ;;
+  esac
+}
+
+readiness_print_line() {
+  local label=$1 value=$2 style=${3:-}
+  plt_term_style 1 muted "$label"
+  if [ -n "$style" ]; then
+    plt_term_style 1 "$style" "$value"
+  else
+    printf '%s' "$value"
+  fi
+  printf '\n'
+}
+
+readiness_heading() {
+  plt_term_style 1 heading 'Pantheon Local Tools readiness'
+  printf '\n\n'
 }
 
 git_root() {
@@ -214,22 +246,26 @@ report_overlay_delta() {
     git_state=clean
   fi
 
-  printf 'Pantheon Local Tools readiness\n\n'
-  printf 'Directory:             %s\n' "$root"
-  printf 'Pantheon Tag:          %s\n' "$tag"
-  printf 'Config strategy:       %s\n' "$strategy"
-  printf 'Configured config path:%s%s\n' ' ' "$config_path"
-  printf 'Provider:              not invoked\n'
-  printf 'Delta interpretation:  protected partial override set\n'
-  printf 'Drupal configuration:  not interpreted as full export\n'
-  printf 'Owning validation:     unavailable\n'
-  printf 'Config Ignore:         not inspected\n'
-  printf 'Config export:         not performed\n'
-  printf 'Git working tree:      %s\n' "$git_state"
-  printf 'Readiness:             unavailable\n'
-  printf '\nMissing YAML, directory size, and file count are not interpreted as overlay drift.\n'
-  printf 'No provider or Drush command was invoked.\n'
-  printf 'A reliable non-destructive owning validation mechanism has not been established, so readiness fails closed.\n'
+  readiness_heading
+  readiness_print_line 'Directory:             ' "$root"
+  readiness_print_line 'Pantheon Tag:          ' "$tag"
+  readiness_print_line 'Config strategy:       ' "$strategy"
+  readiness_print_line 'Configured config path: ' "$config_path"
+  readiness_print_line 'Provider:              ' 'not invoked' muted
+  readiness_print_line 'Delta interpretation:  ' 'protected partial override set' muted
+  readiness_print_line 'Drupal configuration:  ' 'not interpreted as full export' muted
+  readiness_print_line 'Owning validation:     ' unavailable failure
+  readiness_print_line 'Config Ignore:         ' 'not inspected' muted
+  readiness_print_line 'Config export:         ' 'not performed' muted
+  readiness_print_line 'Git working tree:      ' "$git_state" "$(readiness_value_style "$git_state")"
+  readiness_print_line 'Readiness:             ' unavailable failure
+  printf '\n'
+  plt_term_style 1 warning 'Missing YAML, directory size, and file count are not interpreted as overlay drift.'
+  printf '\n'
+  plt_term_style 1 muted 'No provider or Drush command was invoked.'
+  printf '\n'
+  plt_term_style 1 failure 'A reliable non-destructive owning validation mechanism has not been established, so readiness fails closed.'
+  printf '\n'
 
   return 1
 }
@@ -334,24 +370,28 @@ readiness_command() {
     readiness=ready
   fi
 
-  printf 'Pantheon Local Tools readiness\n\n'
-  printf 'Directory:             %s\n' "$root"
-  printf 'Pantheon Tag:          %s\n' "$tag"
-  printf 'Config strategy:       %s\n' "$strategy"
-  printf 'Configured config path:%s%s\n' ' ' "$config_path"
-  printf 'Provider:              %s\n' "$provider"
-  printf 'Drupal configuration:  %s\n' "$config_state"
-  printf 'Config Ignore:         %s\n' "$config_ignore"
-  printf 'Config export:         not performed\n'
-  printf 'Git working tree:      %s\n' "$git_state"
-  printf 'Readiness:             %s\n' "$readiness"
+  readiness_heading
+  readiness_print_line 'Directory:             ' "$root"
+  readiness_print_line 'Pantheon Tag:          ' "$tag"
+  readiness_print_line 'Config strategy:       ' "$strategy"
+  readiness_print_line 'Configured config path: ' "$config_path"
+  readiness_print_line 'Provider:              ' "$provider"
+  readiness_print_line 'Drupal configuration:  ' "$config_state" "$(readiness_value_style "$config_state")"
+  readiness_print_line 'Config Ignore:         ' "$config_ignore" "$(readiness_value_style "$config_ignore")"
+  readiness_print_line 'Config export:         ' 'not performed' muted
+  readiness_print_line 'Git working tree:      ' "$git_state" "$(readiness_value_style "$git_state")"
+  readiness_print_line 'Readiness:             ' "$readiness" "$(readiness_value_style "$readiness")"
 
   if [ "$config_state" = 'differences detected' ]; then
-    printf '\nConfiguration differences were detected. Review them before choosing any export action.\n'
+    printf '\n'
+    plt_term_style 1 warning 'Configuration differences were detected. Review them before choosing any export action.'
+    printf '\n'
     if [ "$config_ignore" = enabled ]; then
-      printf 'Config Ignore is enabled; PLT does not reinterpret its matching rules or assume the differences are errors.\n'
+      plt_term_style 1 info 'Config Ignore is enabled; PLT does not reinterpret its matching rules or assume the differences are errors.'
+      printf '\n'
     elif [ "$config_ignore" = unavailable ]; then
-      printf 'Config Ignore state was unavailable; review runtime module state as part of the difference review.\n'
+      plt_term_style 1 warning 'Config Ignore state was unavailable; review runtime module state as part of the difference review.'
+      printf '\n'
     fi
   fi
 }

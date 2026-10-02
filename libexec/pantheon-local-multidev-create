@@ -5,10 +5,14 @@ PROGRAM_NAME="pantheon-local"
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 CORE="$SCRIPT_DIR/pantheon-local-core"
 OUTPUT_LIB="$SCRIPT_DIR/pantheon-local-output"
+TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
 
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
+[ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 40; }
 # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
 . "$OUTPUT_LIB"
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$TERMINAL_LIB"
 
 usage() {
   cat <<'USAGE'
@@ -206,34 +210,52 @@ build_plan_json() {
 
 print_plan() {
   local source=$1 target=$2 provider=$3 group=$4 start=$5 dry_run=$6
-  printf 'Pantheon Local Tools Multidev creation plan\n\n'
-  printf 'Source environment:    %s\n' "$source"
-  printf 'New environment:       %s\n' "$target"
-  printf 'Remote content clone:  database and files (Terminus default)\n'
+  plt_term_style 1 heading 'Pantheon Local Tools Multidev creation plan'
+  printf '\n\n'
+  plt_term_style 1 muted 'Source environment:    '
+  printf '%s\n' "$source"
+  plt_term_style 1 muted 'New environment:       '
+  plt_term_style 1 active "$target"
+  printf '\n'
+  plt_term_style 1 muted 'Remote content clone:  '
+  printf 'database and files (Terminus default)\n'
+  plt_term_style 1 muted 'Local provider:        '
   if [ -n "$provider" ]; then
-    printf 'Local provider:        %s\n' "$provider"
+    printf '%s\n' "$provider"
   else
-    printf 'Local provider:        existing PLT configuration/detection\n'
+    printf 'existing PLT configuration/detection\n'
   fi
+  plt_term_style 1 muted 'Local group:           '
   if [ -n "$group" ]; then
-    printf 'Local group:           %s\n' "$group"
+    printf '%s\n' "$group"
   else
-    printf 'Local group:           (none)\n'
+    plt_term_style 1 muted '(none)'
+    printf '\n'
   fi
-  printf 'Start provider:        %s\n' "$start"
+  plt_term_style 1 muted 'Start provider:        '
+  printf '%s\n' "$start"
+  plt_term_style 1 muted 'Remote mutation:       '
   if [ "$dry_run" = true ]; then
-    printf 'Remote mutation:       not performed (--dry-run)\n'
-    printf 'Local checkout:        not performed (--dry-run)\n'
+    plt_term_style 1 muted 'not performed (--dry-run)'
+    printf '\n'
+    plt_term_style 1 muted 'Local checkout:        '
+    plt_term_style 1 muted 'not performed (--dry-run)'
+    printf '\n'
   else
-    printf 'Remote mutation:       terminus multidev:create after confirmation\n'
-    printf 'Local checkout:        existing pantheon-local multidev path after verification\n'
+    plt_term_style 1 warning 'terminus multidev:create after confirmation'
+    printf '\n'
+    plt_term_style 1 muted 'Local checkout:        '
+    plt_term_style 1 active 'existing pantheon-local multidev path after verification'
+    printf '\n'
   fi
 }
 
 confirm_creation() {
   local assume_yes=$1 source=$2 target=$3 answer=''
   if [ "$assume_yes" = true ]; then
-    printf 'Confirmation:          acknowledged by --yes\n'
+    plt_term_style 1 muted 'Confirmation:          '
+    plt_term_style 1 success 'acknowledged by --yes'
+    printf '\n'
     return
   fi
 
@@ -376,7 +398,9 @@ multidev_create_command() {
 
   confirm_creation "$assume_yes" "$source" "$target"
 
-  printf '\nCreating remote Pantheon Multidev...\n'
+  printf '\n'
+  plt_term_style 1 active 'Creating remote Pantheon Multidev...'
+  printf '\n'
   if ! terminus multidev:create "$source" "$new_env" --yes; then
     printf '%s: Terminus multidev:create failed; remote state may be partial or uncertain. Verify %s in Pantheon before retrying. No automatic delete or retry was attempted.\n' "$PROGRAM_NAME" "$target" >&2
     return 1
@@ -391,15 +415,19 @@ multidev_create_command() {
     return 1
   fi
 
-  printf 'Remote Multidev verified: %s\n\n' "$target"
-  printf 'Handing off to existing local Multidev checkout path...\n'
+  plt_term_style 1 success 'Remote Multidev verified:'
+  printf ' %s\n\n' "$target"
+  plt_term_style 1 active 'Handing off to existing local Multidev checkout path...'
+  printf '\n'
   if ! (run_local_handoff "$target" "$provider" "$group" "$start"); then
     printf '%s: remote Multidev %s was created successfully, but local checkout/start failed. The remote environment was preserved.\n' "$PROGRAM_NAME" "$target" >&2
     print_retry "$target" "$provider" "$group" "$start"
     return 1
   fi
 
-  printf '\nRemote creation and local Multidev handoff completed for %s.\n' "$target"
+  printf '\n'
+  plt_term_style 1 success "Remote creation and local Multidev handoff completed for $target."
+  printf '\n'
 }
 
 multidev_create_command "$@"

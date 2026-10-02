@@ -5,6 +5,11 @@ PROGRAM_NAME="pantheon-local"
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 PROFILE="$SCRIPT_DIR/pantheon-local-config-profile"
 READINESS="$SCRIPT_DIR/pantheon-local-readiness"
+TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
+
+[ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 1; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$TERMINAL_LIB"
 
 usage() {
   cat <<'USAGE'
@@ -196,17 +201,26 @@ report_git_state() {
   changed_count=$(printf '%s\n' "$tracked" | awk '$1 == "M" || $1 == "T" || $1 ~ /^R[0-9]+$/ || $1 ~ /^C[0-9]+$/ { count++ } END { print count + 0 }')
   deleted_count=$(printf '%s\n' "$tracked" | awk '$1 == "D" { count++ } END { print count + 0 }')
 
-  printf '\nExport change summary for %s:\n' "$config_path"
-  printf '  created: %s\n' "$created_count"
-  printf '  changed: %s\n' "$changed_count"
-  printf '  deleted: %s\n' "$deleted_count"
+  printf '\n'
+  plt_term_style 1 heading "Export change summary for $config_path:"
+  printf '\n'
+  plt_term_style 1 muted '  created: '
+  printf '%s\n' "$created_count"
+  plt_term_style 1 muted '  changed: '
+  printf '%s\n' "$changed_count"
+  plt_term_style 1 muted '  deleted: '
+  printf '%s\n' "$deleted_count"
 
   final_status=$(git -C "$root" status --short)
-  printf '\nFinal Git status:\n'
+  printf '\n'
+  plt_term_style 1 heading 'Final Git status:'
+  printf '\n'
   if [ -n "$final_status" ]; then
-    printf '%s\n' "$final_status"
+    plt_term_style 1 warning "$final_status"
+    printf '\n'
   else
-    printf '(clean)\n'
+    plt_term_style 1 success '(clean)'
+    printf '\n'
   fi
 }
 
@@ -214,7 +228,9 @@ confirm_export() {
   local assume_yes=$1 answer=''
 
   if [ "$assume_yes" = true ]; then
-    printf 'Confirmation:          acknowledged by --yes\n'
+    plt_term_style 1 muted 'Confirmation:          '
+    plt_term_style 1 success 'acknowledged by --yes'
+    printf '\n'
     return
   fi
 
@@ -229,7 +245,7 @@ confirm_export() {
 
 export_command() {
   local provider_override='' assume_yes=false root git_dir state tag strategy config_path provider
-  local path_state readiness_output ignore_state head_before head_after export_status=0
+  local path_state ignore_state head_before head_after export_status=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -288,26 +304,37 @@ export_command() {
   require_command "$provider"
   [ -x "$READINESS" ] || die "readiness module is missing or not executable: $READINESS"
 
-  printf 'Pantheon Local Tools config export preflight\n\n'
-  if ! readiness_output=$("$READINESS" --provider "$provider" 2>&1); then
-    printf '%s\n' "$readiness_output"
+  plt_term_style 1 heading 'Pantheon Local Tools config export preflight'
+  printf '\n\n'
+  if ! "$READINESS" --provider "$provider" 2>&1; then
     die 'full-export readiness preflight failed; configuration was not exported'
   fi
-  printf '%s\n' "$readiness_output"
 
   if ! ignore_state=$(config_ignore_state "$root" "$provider"); then
     die 'Config Ignore module-state inspection failed; refusing tracked-source mutation rather than guessing runtime export semantics'
   fi
 
-  printf '\nExport mutation plan\n'
-  printf 'Directory:             %s\n' "$root"
-  printf 'Pantheon Tag:          %s\n' "$tag"
-  printf 'Config strategy:       full-export\n'
-  printf 'Configured config path:%s%s\n' ' ' "$config_path"
-  printf 'Provider:              %s\n' "$provider"
-  printf 'Config Ignore module:  %s\n' "$ignore_state"
-  printf 'Mutation:              provider-owned drush config:export -y\n'
-  printf 'Git commit/push:       not performed\n'
+  printf '\n'
+  plt_term_style 1 heading 'Export mutation plan'
+  printf '\n'
+  plt_term_style 1 muted 'Directory:             '
+  printf '%s\n' "$root"
+  plt_term_style 1 muted 'Pantheon Tag:          '
+  printf '%s\n' "$tag"
+  plt_term_style 1 muted 'Config strategy:       '
+  printf 'full-export\n'
+  plt_term_style 1 muted 'Configured config path: '
+  printf '%s\n' "$config_path"
+  plt_term_style 1 muted 'Provider:              '
+  printf '%s\n' "$provider"
+  plt_term_style 1 muted 'Config Ignore module:  '
+  printf '%s\n' "$ignore_state"
+  plt_term_style 1 muted 'Mutation:              '
+  plt_term_style 1 warning 'provider-owned drush config:export -y'
+  printf '\n'
+  plt_term_style 1 muted 'Git commit/push:       '
+  plt_term_style 1 muted 'not performed'
+  printf '\n'
 
   if [ "$ignore_state" = enabled ]; then
     printf '\nConfig Ignore is enabled. Drupal/Config Ignore runtime export rules, including any runtime deactivation setting, remain authoritative; PLT does not duplicate those rules.\n'
@@ -316,7 +343,9 @@ export_command() {
   confirm_export "$assume_yes"
 
   head_before=$(git -C "$root" rev-parse HEAD)
-  printf '\nRunning provider-owned Drupal configuration export...\n'
+  printf '\n'
+  plt_term_style 1 active 'Running provider-owned Drupal configuration export...'
+  printf '\n'
   if ! (cd "$root" && "$provider" drush config:export -y); then
     export_status=1
   fi
@@ -332,7 +361,9 @@ export_command() {
     die 'provider-owned drush config:export failed; inspect the reported local Git changes before retrying'
   fi
 
-  printf '\nConfiguration export completed. Review the reported Git changes; PLT did not commit or push them.\n'
+  printf '\n'
+  plt_term_style 1 success 'Configuration export completed.'
+  printf ' Review the reported Git changes; PLT did not commit or push them.\n'
 }
 
 export_command "$@"

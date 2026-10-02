@@ -7,6 +7,11 @@ DEFAULT_ROOT_SUFFIX="sites/pantheon"
 MULTIDEV_TEMP=''
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 PROVIDER_URL="$SCRIPT_DIR/pantheon-local-provider-url"
+TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
+
+[ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 1; }
+# shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library; CI checks files independently.
+. "$TERMINAL_LIB"
 
 usage() {
   cat <<'USAGE'
@@ -250,13 +255,17 @@ config_list() {
 
 config_init_summary() {
   local root=$1 provider=$2
-  printf 'Configuration:\n'
-  printf '  Root:     %s\n' "$root"
-  printf '  Provider: %s\n' "$provider"
+  plt_term_style 1 heading 'Configuration:'
+  printf '\n'
+  plt_term_style 1 muted '  Root:     '
+  printf '%s\n' "$root"
+  plt_term_style 1 muted '  Provider: '
+  printf '%s\n' "$provider"
 }
 
 config_init_result() {
-  printf 'Configuration saved.\n'
+  plt_term_style 1 success 'Configuration saved.'
+  printf '\n'
   printf 'root=%s\n' "$(config_get root)"
   printf 'provider=%s\n' "$(config_get provider)"
 }
@@ -268,8 +277,10 @@ config_init_interactive() {
   provider=$(config_get provider)
   validate_value provider "$provider"
 
-  printf 'Pantheon Local Tools setup\n\n'
-  printf 'Local checkout root [%s]: ' "$root"
+  plt_term_style 1 heading 'Pantheon Local Tools setup'
+  printf '\n\n'
+  plt_term_style 1 muted 'Local checkout root '
+  printf '[%s]: ' "$root"
   IFS= read -r answer || die 'interactive setup ended before root selection'
   [ -z "$answer" ] || root=$answer
   root=$(expand_home "$root")
@@ -283,7 +294,9 @@ config_init_interactive() {
   esac
 
   while :; do
-    printf '\nProvider:\n'
+    printf '\n'
+    plt_term_style 1 heading 'Provider:'
+    printf '\n'
     printf '  1) Auto - use the project DDEV or Lando configuration (recommended)\n'
     printf '  2) DDEV\n'
     printf '  3) Lando\n'
@@ -308,7 +321,8 @@ config_init_interactive() {
     case "$confirm" in
       ''|y|Y|yes|YES|Yes) break ;;
       n|N|no|NO|No)
-        printf 'Configuration not changed.\n'
+        plt_term_style 1 muted 'Configuration not changed.'
+        printf '\n'
         return
         ;;
       *) printf 'Please answer y or n.\n' >&2 ;;
@@ -619,19 +633,30 @@ cleanup_multidev_temp() {
 }
 
 print_multidev_plan() {
-  local heading=$1 target=$2 tag=$3 provider=$4 env=$5 destination=$6 local_name=$7 url=$8
-  printf '%s\n\n' "$heading"
-  printf 'Pantheon:    %s\n' "$target"
+  local heading=$1 target=$2 tag=$3 provider=$4 env=$5 destination=$6 local_name=$7 url=$8 heading_style=heading
+  case "$heading" in Created*) heading_style=success ;; esac
+  plt_term_style 1 "$heading_style" "$heading"
+  printf '\n\n'
+  plt_term_style 1 muted 'Pantheon:    '
+  plt_term_style 1 active "$target"
+  printf '\n'
+  plt_term_style 1 muted 'Tag:         '
   if [ -n "$tag" ]; then
-    printf 'Tag:         %s\n' "$tag"
+    printf '%s\n' "$tag"
   else
-    printf 'Tag:         (no configured Tag routing)\n'
+    plt_term_style 1 muted '(no configured Tag routing)'
+    printf '\n'
   fi
-  printf 'Provider:    %s\n' "$provider"
-  printf 'Git branch:  %s\n' "$env"
-  printf 'Directory:   %s\n' "$destination"
-  printf 'Local name:  %s\n' "$local_name"
-  printf 'Local URL:   %s\n' "$url"
+  plt_term_style 1 muted 'Provider:    '
+  printf '%s\n' "$provider"
+  plt_term_style 1 muted 'Git branch:  '
+  printf '%s\n' "$env"
+  plt_term_style 1 muted 'Directory:   '
+  printf '%s\n' "$destination"
+  plt_term_style 1 muted 'Local name:  '
+  printf '%s\n' "$local_name"
+  plt_term_style 1 muted 'Local URL:   '
+  printf '%s\n' "$url"
 }
 
 multidev_command() {
@@ -743,14 +768,18 @@ multidev_command() {
 
   if [ "$start" = true ]; then
     require_command "$provider"
-    printf '\nStarting %s...\n' "$provider"
+    printf '\n'
+    plt_term_style 1 active "Starting $provider..."
+    printf '\n'
     if ! (cd "$destination" && "$provider" start); then
       die "$provider start failed; checkout retained at $destination"
     fi
 
     if url=$(discover_checkout_url "$provider" "$destination"); then
       record_checkout_url "$destination" "$url"
-      printf 'Runtime URL:  %s\n' "$url"
+      plt_term_style 1 muted 'Runtime URL:  '
+      plt_term_style 1 active "$url"
+      printf '\n'
     fi
   fi
 }

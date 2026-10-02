@@ -24,6 +24,14 @@ DOCTOR_STEP_ROUTING=waiting
 DOCTOR_STEP_GIT_URL=waiting
 DOCTOR_STEP_GIT_REMOTE=waiting
 DOCTOR_STEP_CHECKOUT=waiting
+CHECK_ID=''
+CHECK_STATUS=''
+CHECK_REASON=''
+CHECK_CATEGORY=''
+CHECK_SOURCE=''
+CHECK_MESSAGE=''
+CHECK_NEXT=''
+CHECK_SCOPE=''
 
 [ -x "$CORE" ] || { printf '%s: core module is missing or not executable: %s\n' "$PROGRAM_NAME" "$CORE" >&2; exit 40; }
 [ -r "$OUTPUT_LIB" ] || { printf '%s: output contract module is missing: %s\n' "$PROGRAM_NAME" "$OUTPUT_LIB" >&2; exit 40; }
@@ -39,6 +47,36 @@ DOCTOR_STEP_CHECKOUT=waiting
 doctor_progress() {
   [ "${DOCTOR_PROGRESS:-false}" = true ] || return 0
   printf 'Doctor: %s\n' "$*" >&2
+}
+
+doctor_finalizer_start() {
+  local frame_index=0
+  if [ "$DOCTOR_PROGRESS_INTERACTIVE" != true ]; then
+    doctor_progress 'finalizing diagnostics...'
+    return 0
+  fi
+  doctor_spinner_stop
+  (
+    trap 'exit 0' HUP INT TERM
+    while :; do
+      {
+        plt_term_rewind_current_line 2
+        plt_term_style 2 heading 'Doctor:'
+        printf ' finalizing diagnostics '
+        plt_term_style 2 active "$(plt_term_spinner_frame "$frame_index")"
+      } >&2
+      frame_index=$((frame_index + 1))
+      sleep 0.1
+    done
+  ) &
+  DOCTOR_SPINNER_PID=$!
+}
+
+doctor_finalizer_stop() {
+  doctor_spinner_stop
+  if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
+    { plt_term_clear_current_line 2; } >&2
+  fi
 }
 
 count_nonempty_lines() {
@@ -192,12 +230,12 @@ doctor_site_end() {
 }
 
 doctor_scope_progress_status() {
-  local wanted_scope=$1 file status overall=complete
+  local wanted_scope=$1 file overall=complete
   while IFS= read -r file; do
     [ -n "$file" ] || continue
-    [ "$(check_get "$file" 8)" = "$wanted_scope" ] || continue
-    status=$(check_get "$file" 2)
-    case "$status" in
+    check_load "$file"
+    [ "$CHECK_SCOPE" = "$wanted_scope" ] || continue
+    case "$CHECK_STATUS" in
       FAIL) printf '%s' failure; return 0 ;;
       WARN) overall=warning ;;
     esac
@@ -285,7 +323,19 @@ check_add() {
   printf '%s\n' "$file" >> "$CHECK_DIR/order"
 }
 
-check_get() { sed -n "${2}p" "$1"; }
+check_load() {
+  local file=$1
+  {
+    IFS= read -r CHECK_ID || CHECK_ID=''
+    IFS= read -r CHECK_STATUS || CHECK_STATUS=''
+    IFS= read -r CHECK_REASON || CHECK_REASON=''
+    IFS= read -r CHECK_CATEGORY || CHECK_CATEGORY=''
+    IFS= read -r CHECK_SOURCE || CHECK_SOURCE=''
+    IFS= read -r CHECK_MESSAGE || CHECK_MESSAGE=''
+    IFS= read -r CHECK_NEXT || CHECK_NEXT=''
+    IFS= read -r CHECK_SCOPE || CHECK_SCOPE=''
+  } < "$file"
+}
 
 route_directory_valid() {
   local directory=$1 wrapped
@@ -747,7 +797,7 @@ EOF
     fi
   fi
 
-  doctor_progress 'finalizing diagnostics...'
+  doctor_finalizer_start
 
   exit_code=0
   semantic=current
@@ -757,7 +807,8 @@ EOF
   failure_source_value=''
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    case "$(check_get "$line" 2)" in
+    check_load "$line"
+    case "$CHECK_STATUS" in
       WARN)
         if [ "$semantic" = current ]; then
           semantic=complete
@@ -767,8 +818,8 @@ EOF
       FAIL)
         semantic=blocked
         reason=doctor-failed
-        category=$(check_get "$line" 4)
-        source=$(check_get "$line" 5)
+        category=$CHECK_CATEGORY
+        source=$CHECK_SOURCE
         case "$category" in
           operation-failed) rank=4; candidate_code=$PLT_EXIT_OPERATION_FAILED ;;
           authority-unavailable) rank=3; candidate_code=$PLT_EXIT_AUTHORITY_UNAVAILABLE ;;
@@ -790,6 +841,7 @@ EOF
   fi
 
   json=$(build_doctor_json "$version" "$config_path" "$platform" "$root" "$provider" "$exit_code" "$semantic" "$reason" "$failure_source")
+  doctor_finalizer_stop
   if [ -n "$record_file" ]; then
     record_rc=0; plt_write_record "$record_file" "$json" || record_rc=$?
     case "$record_rc" in
@@ -822,9 +874,9 @@ print_doctor_plain() {
   printf '%-5s %-36s %s\n' '-----' '------------------------------------' '----------------------------------------'
   while IFS= read -r file; do
     [ -n "$file" ] || continue
-    id=$(check_get "$file" 1); status=$(check_get "$file" 2); message=$(check_get "$file" 6); next=$(check_get "$file" 7)
-    printf '%-5s %-36s %s\n' "$status" "$id" "$message"
-    [ -z "$next" ] || printf '      %-36s Next: %s\n' '' "$next"
+    check_load "$file"
+    printf '%-5s %-36s %s\n' "$CHECK_STATUS" "$CHECK_ID" "$CHECK_MESSAGE"
+    [ -z "$CHECK_NEXT" ] || printf '      %-36s Next: %s\n' '' "$CHECK_NEXT"
   done < "$CHECK_DIR/order"
 }
 
@@ -844,20 +896,17 @@ doctor_pretty_meta() {
   printf '%s\n' "$value"
 }
 
-doctor_pretty_check() {
-  local file=$1 indent=$2 status message next glyph style
-  status=$(check_get "$file" 2)
-  message=$(check_get "$file" 6)
-  next=$(check_get "$file" 7)
-  glyph=$(plt_term_status_glyph "$status")
-  style=$(plt_term_status_style "$status")
+doctor_pretty_check_loaded() {
+  local indent=$1 glyph style
+  glyph=$(plt_term_status_glyph "$CHECK_STATUS")
+  style=$(plt_term_status_style "$CHECK_STATUS")
   printf '%s' "$indent"
   plt_term_style 1 "$style" "$glyph"
-  printf '  %s\n' "$message"
-  if [ -n "$next" ]; then
+  printf '  %s\n' "$CHECK_MESSAGE"
+  if [ -n "$CHECK_NEXT" ]; then
     printf '%s   ' "$indent"
     plt_term_style 1 active '→'
-    printf ' %s\n' "$next"
+    printf ' %s\n' "$CHECK_NEXT"
   fi
 }
 
@@ -868,18 +917,18 @@ doctor_pretty_section() {
 }
 
 doctor_pretty_scope_names() {
-  local prefix=$1 file scope
+  local prefix=$1 file
   while IFS= read -r file; do
     [ -n "$file" ] || continue
-    scope=$(check_get "$file" 8)
-    case "$scope" in
-      "$prefix":*) printf '%s\n' "${scope#*:}" ;;
+    check_load "$file"
+    case "$CHECK_SCOPE" in
+      "$prefix":*) printf '%s\n' "${CHECK_SCOPE#*:}" ;;
     esac
   done < "$CHECK_DIR/order" | LC_ALL=C sort -u
 }
 
 print_doctor_pretty() {
-  local version=$1 config_path=$2 platform=$3 file id scope site_name tag_name site_names tag_names
+  local version=$1 config_path=$2 platform=$3 file site_name tag_name tag_names
 
   plt_term_style 1 heading 'Pantheon Local Tools doctor'
   printf '\n'
@@ -892,34 +941,33 @@ print_doctor_pretty() {
   doctor_pretty_section Global
   while IFS= read -r file; do
     [ -n "$file" ] || continue
-    scope=$(check_get "$file" 8)
-    [ "$scope" = global ] || continue
-    id=$(check_get "$file" 1)
-    case "$id" in platform|version|config-path) continue ;; esac
-    doctor_pretty_check "$file" '  '
+    check_load "$file"
+    [ "$CHECK_SCOPE" = global ] || continue
+    case "$CHECK_ID" in platform|version|config-path) continue ;; esac
+    doctor_pretty_check_loaded '  '
   done < "$CHECK_DIR/order"
 
   doctor_pretty_section Sites
-  site_names=$(doctor_pretty_scope_names site)
-  if [ -n "$site_names" ]; then
-    while IFS= read -r site_name; do
-      [ -n "$site_name" ] || continue
+  site_name=''
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    case "$CHECK_SCOPE" in site:*) ;; *) continue ;; esac
+    if [ "${CHECK_SCOPE#site:}" != "$site_name" ]; then
+      [ -z "$site_name" ] || printf '\n'
+      site_name=${CHECK_SCOPE#site:}
       printf '  '
       plt_term_style 1 active "$site_name"
       printf '\n'
-      while IFS= read -r file; do
-        [ -n "$file" ] || continue
-        [ "$(check_get "$file" 8)" = "site:$site_name" ] || continue
-        doctor_pretty_check "$file" '    '
-      done < "$CHECK_DIR/order"
-      printf '\n'
-    done <<EOF
-$site_names
-EOF
-  else
+    fi
+    doctor_pretty_check_loaded '    '
+  done < "$CHECK_DIR/order"
+  if [ -z "$site_name" ]; then
     printf '  '
     plt_term_style 1 muted '• no site diagnostics'
-    printf '\n\n'
+    printf '\n'
+  else
+    printf '\n'
   fi
 
   doctor_pretty_section Tags
@@ -932,8 +980,9 @@ EOF
       printf '\n'
       while IFS= read -r file; do
         [ -n "$file" ] || continue
-        [ "$(check_get "$file" 8)" = "tag:$tag_name" ] || continue
-        doctor_pretty_check "$file" '    '
+        check_load "$file"
+        [ "$CHECK_SCOPE" = "tag:$tag_name" ] || continue
+        doctor_pretty_check_loaded '    '
       done < "$CHECK_DIR/order"
       printf '\n'
     done <<EOF
@@ -963,9 +1012,17 @@ build_doctor_json() {
   printf '"checks":['
   while IFS= read -r file; do
     [ -n "$file" ] || continue
+    check_load "$file"
     [ "$first" = true ] || printf ','; first=false
-    printf '{"id":%s,"status":%s,"reason_code":%s,"exit_category":%s,"source":%s,"message":%s,"next_action":%s,"scope":%s}' \
-      "$(plt_json_string "$(check_get "$file" 1)")" "$(plt_json_string "$(check_get "$file" 2)")" "$(plt_json_string "$(check_get "$file" 3)")" "$(plt_json_nullable_string "$(check_get "$file" 4)")" "$(plt_json_nullable_string "$(check_get "$file" 5)")" "$(plt_json_string "$(check_get "$file" 6)")" "$(plt_json_nullable_string "$(check_get "$file" 7)")" "$(plt_json_string "$(check_get "$file" 8)")"
+    printf '{"id":'; plt_json_string "$CHECK_ID"
+    printf ',"status":'; plt_json_string "$CHECK_STATUS"
+    printf ',"reason_code":'; plt_json_string "$CHECK_REASON"
+    printf ',"exit_category":'; plt_json_nullable_string "$CHECK_CATEGORY"
+    printf ',"source":'; plt_json_nullable_string "$CHECK_SOURCE"
+    printf ',"message":'; plt_json_string "$CHECK_MESSAGE"
+    printf ',"next_action":'; plt_json_nullable_string "$CHECK_NEXT"
+    printf ',"scope":'; plt_json_string "$CHECK_SCOPE"
+    printf '}'
   done < "$CHECK_DIR/order"
   printf ']}'
 }

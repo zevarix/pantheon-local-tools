@@ -14,6 +14,7 @@ CHECK_SEQ=0
 DOCTOR_PROGRESS=false
 DOCTOR_PROGRESS_INTERACTIVE=false
 DOCTOR_SPINNER_PID=''
+DOCTOR_CURSOR_HIDDEN=false
 DOCTOR_SITE_INDEX=0
 DOCTOR_SITE_TOTAL=0
 DOCTOR_SITE_NAME=''
@@ -55,6 +56,7 @@ doctor_finalizer_start() {
     doctor_progress 'finalizing diagnostics...'
     return 0
   fi
+  doctor_cursor_hide
   doctor_spinner_stop
   (
     trap 'exit 0' HUP INT TERM
@@ -77,6 +79,7 @@ doctor_finalizer_stop() {
   if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
     { plt_term_clear_current_line 2; } >&2
   fi
+  doctor_cursor_show
 }
 
 count_nonempty_lines() {
@@ -152,6 +155,19 @@ doctor_render_site_line() {
   } >&2
 }
 
+doctor_cursor_hide() {
+  [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ] || return 0
+  [ "$DOCTOR_CURSOR_HIDDEN" = false ] || return 0
+  plt_term_hide_cursor 2 >&2
+  DOCTOR_CURSOR_HIDDEN=true
+}
+
+doctor_cursor_show() {
+  [ "$DOCTOR_CURSOR_HIDDEN" = true ] || return 0
+  plt_term_show_cursor 2 >&2
+  DOCTOR_CURSOR_HIDDEN=false
+}
+
 doctor_spinner_stop() {
   if [ -n "$DOCTOR_SPINNER_PID" ]; then
     kill -TERM "$DOCTOR_SPINNER_PID" 2>/dev/null || true
@@ -187,6 +203,7 @@ doctor_site_begin() {
   DOCTOR_STEP_GIT_REMOTE=waiting
   DOCTOR_STEP_CHECKOUT=waiting
   if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
+    doctor_cursor_hide
     doctor_render_site_line '⠋'
   else
     doctor_progress "inspecting site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL: $DOCTOR_SITE_NAME"
@@ -279,6 +296,7 @@ USAGE
 
 cleanup() {
   doctor_spinner_stop
+  doctor_cursor_show
   [ -z "$CHECK_DIR" ] || rm -rf "$CHECK_DIR"
   CHECK_DIR=''
 }
@@ -290,6 +308,7 @@ doctor_signal_exit() {
   if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
     { plt_term_clear_current_line 2; } >&2
   fi
+  doctor_cursor_show
   exit "$code"
 }
 

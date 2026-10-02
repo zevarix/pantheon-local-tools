@@ -10,6 +10,7 @@ The project follows Semantic Versioning for its public command/configuration con
 
 - Added shared terminal presentation primitives and upgraded interactive `doctor` with semantic colors/glyphs, grouped final diagnostics, and a Braille in-place per-site substep progress display while preserving plain redirected output and clean JSON/records.
 - Kept doctor finalization visibly active in interactive terminals and reduced final-report/JSON aggregation overhead by replacing repeated per-field subprocess reads with one-pass built-in check loading.
+- Hid the terminal cursor only during interactive doctor animation and reliably restored it before final output or on interruption, preventing cursor-block flashes across progress markers.
 
 ### Fixed
 

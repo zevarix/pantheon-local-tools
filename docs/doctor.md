@@ -26,6 +26,8 @@ Doctor: site 2/34 · example-site — ✓ environments, ✓ organization, ⠹ ta
 
 Completed steps are green, the active step is bright cyan, pending/skipped steps are muted, warnings are yellow, and failures are red when color is available. Color is supplemental to glyph/text state, respects `NO_COLOR`, and is disabled for `TERM=dumb`.
 
+The text cursor is hidden only while interactive progress animation is active and is restored before the final report and on cancellation/termination/cleanup so cursor repaint does not flash across the animated status markers.
+
 When stderr is redirected or non-interactive, doctor emits deterministic line-oriented progress instead of cursor-control sequences, including the current site/substep:
 
 ```text

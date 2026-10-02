@@ -104,6 +104,18 @@ plt_term_rewind_current_line() {
   printf '\r'
 }
 
+plt_term_hide_cursor() {
+  local fd=${1:-1}
+  plt_term_is_interactive "$fd" || return 0
+  printf '\033[?25l'
+}
+
+plt_term_show_cursor() {
+  local fd=${1:-1}
+  plt_term_is_interactive "$fd" || return 0
+  printf '\033[?25h'
+}
+
 plt_term_clear_current_line() {
   local fd=${1:-1}
   plt_term_is_interactive "$fd" || return 0

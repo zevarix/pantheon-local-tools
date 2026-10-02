@@ -16,6 +16,13 @@ assert_false() { if "$@"; then fail "expected failure: $*"; fi; }
 # CI/test process is non-interactive.
 assert_false plt_interact_can_prompt
 
+# Prompting requires all three standard streams to be terminals. A redirected
+# stdout/stderr or non-interactive stdin must never leave automation waiting.
+assert_true plt_interact_can_prompt_for true true true
+assert_false plt_interact_can_prompt_for false true true
+assert_false plt_interact_can_prompt_for true false true
+assert_false plt_interact_can_prompt_for true true false
+
 # Override only the TTY availability probe so the decision logic can be tested
 # deterministically without depending on host PTY implementation details.
 plt_interact_can_prompt() { return 0; }
@@ -38,13 +45,12 @@ else
 fi
 grep -F 'Please answer y or n.' "$prompt_log" >/dev/null 2>&1 || fail 'confirmation did not retry invalid input'
 
-choice=$(plt_interact_choose 'Provider:' 2 'Auto' 'DDEV' 'Lando' <<< '')
-assert_eq "$choice" '2'
-choice=$(plt_interact_choose 'Provider:' '' 'Auto' 'DDEV' 'Lando' <<'EOF'
+plt_interact_choose 'Provider:' 2 'Auto' 'DDEV' 'Lando' <<< ''
+assert_eq "$PLT_INTERACT_CHOICE" '2'
+plt_interact_choose 'Provider:' '' 'Auto' 'DDEV' 'Lando' <<'EOF'
 9
 3
 EOF
-)
-assert_eq "$choice" '3'
+assert_eq "$PLT_INTERACT_CHOICE" '3'
 
 printf 'interaction tests passed\n'

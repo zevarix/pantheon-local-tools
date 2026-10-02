@@ -7,8 +7,20 @@
 # pantheon-local-output, and command-specific business logic stays with the
 # owning command.
 
+# shellcheck disable=SC2034 # Shared result is read by sourcing callers.
+PLT_INTERACT_CHOICE=''
+
+plt_interact_can_prompt_for() {
+  local stdin_tty=$1 stdout_tty=$2 stderr_tty=$3
+  [ "$stdin_tty" = true ] && [ "$stdout_tty" = true ] && [ "$stderr_tty" = true ]
+}
+
 plt_interact_can_prompt() {
-  [ -t 0 ] && [ -t 2 ]
+  local stdin_tty=false stdout_tty=false stderr_tty=false
+  [ -t 0 ] && stdin_tty=true
+  [ -t 1 ] && stdout_tty=true
+  [ -t 2 ] && stderr_tty=true
+  plt_interact_can_prompt_for "$stdin_tty" "$stdout_tty" "$stderr_tty"
 }
 
 plt_interact_confirm() {
@@ -30,6 +42,8 @@ plt_interact_confirm() {
 plt_interact_choose() {
   local prompt=${1:?choice prompt is required} default_index=${2:-} choice='' count index
   shift 2
+
+  PLT_INTERACT_CHOICE=''
 
   count=$#
   [ "$count" -gt 0 ] || return 1
@@ -59,7 +73,8 @@ plt_interact_choose() {
     esac
 
     if [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le "$count" ] 2>/dev/null; then
-      printf '%s\n' "$choice"
+      # shellcheck disable=SC2034 # Shared result is read by sourcing callers.
+      PLT_INTERACT_CHOICE=$choice
       return 0
     fi
 

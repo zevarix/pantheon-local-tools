@@ -298,12 +298,13 @@ config_init_interactive() {
   esac
 
   printf '\n'
-  choice=$(plt_interact_choose \
+  plt_interact_choose \
     'Provider:' \
     "$default_choice" \
     'Auto - use the project DDEV or Lando configuration (recommended)' \
     'DDEV' \
-    'Lando') || die 'interactive setup ended before provider selection'
+    'Lando' || die 'interactive setup ended before provider selection'
+  choice=$PLT_INTERACT_CHOICE
   case "$choice" in
     1) provider=auto ;;
     2) provider=ddev ;;

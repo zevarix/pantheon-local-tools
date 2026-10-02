@@ -56,9 +56,9 @@ assert_eq "$(plt_term_spinner_frame 10)" '⠋'
 assert_eq "$(plt_term_rewind_current_line 1)" ''
 assert_eq "$(plt_term_hide_cursor 1)" ''
 assert_eq "$(plt_term_show_cursor 1)" ''
-# shellcheck disable=SC2329 # Test-local override is invoked by the sourced cursor helper.
+# shellcheck disable=SC2317,SC2329 # Test-local override is invoked by the sourced cursor helper.
 assert_eq "$( ( plt_term_is_interactive() { return 0; }; plt_term_hide_cursor 1 ) )" "$(printf '\033[?25l')"
-# shellcheck disable=SC2329 # Test-local override is invoked by the sourced cursor helper.
+# shellcheck disable=SC2317,SC2329 # Test-local override is invoked by the sourced cursor helper.
 assert_eq "$( ( plt_term_is_interactive() { return 0; }; plt_term_show_cursor 1 ) )" "$(printf '\033[?25h')"
 assert_eq "$(plt_term_clear_current_line 1)" ''
 

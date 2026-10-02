@@ -14,6 +14,22 @@ pantheon-local doctor --record ./doctor-result.json
 
 `default` terminal output is a checklist. JSON is the supported automation surface. `--record FILE` writes that same JSON result to a new file and never overwrites an existing path.
 
+## Progress
+
+Default terminal mode emits bounded line-oriented progress to stderr while doctor performs longer remote/estate checks. This keeps the command visibly active without mixing progress text into the final stdout report.
+
+For multi-site inspection, progress includes the discovered site count and deterministic current/total site position, for example:
+
+```text
+Doctor: checking local prerequisites...
+Doctor: Terminus authentication ready
+Doctor: discovered 35 accessible sites
+Doctor: inspecting site 7/35: example-site
+Doctor: finalizing diagnostics...
+```
+
+`--format json` emits no progress text by default, so stdout remains one valid JSON document and stderr stays quiet. `--record FILE` stores only the final bounded diagnostic JSON; progress is never persisted in the record.
+
 ## Diagnostic statuses
 
 Each check reports one of:

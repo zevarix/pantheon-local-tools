@@ -6,6 +6,10 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+### Changed
+
+- `pantheon-local doctor` now shows bounded phase and current/total site progress in default terminal mode during longer estate inspections, while JSON stdout and durable records remain progress-free.
+
 ## 0.2.0 — 2026-10-01
 
 Minor release establishing the shared workflow/structured-output foundations and adding canonical Dev estate onboarding, read-only estate drift inspection, and first-run diagnostics while preserving the established provider and mutation safety boundaries.

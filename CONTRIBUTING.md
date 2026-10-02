@@ -32,6 +32,26 @@ Pantheon publishes the canonical Terminus setup and authentication guidance:
 
 Never add machine tokens or other credentials to tests, fixtures, documentation examples, or repository configuration.
 
+## CLI, output, and long-running work
+
+User-visible commands should make their execution state understandable without weakening machine-readable contracts.
+
+- Commands that may spend material time on sequential remote, provider, Git, Drupal, or estate-wide work must provide timely bounded progress in the default terminal experience so a healthy command does not appear hung. When a total target count is known, prefer phase plus current/total progress.
+- Progress must remain useful in non-interactive/accessibility contexts. Prefer deterministic line-oriented feedback over spinner-only or cursor-control-only presentation.
+- Progress/log chatter must not contaminate structured JSON stdout or durable operation records. Commands that advertise `--format json` must keep stdout machine-valid; progress belongs on stderr when it is emitted alongside a machine-readable mode. Operation records contain the final bounded semantic result, not progress logs.
+- Default terminal prose is not a machine API. New structured consumers should reuse the shared schema/versioning, exit-category, reason-code, authority, and record helpers rather than inventing command-specific machine contracts.
+- Discovered multi-target sets and structured results must be deterministic. Preserve explicit caller order when it is meaningful; otherwise use a documented stable ordering.
+- Unknown, unavailable, ambiguous, or inconclusive authority must remain explicit. Never report it as current, clean, synchronized, or successful merely to keep a workflow moving.
+
+## Portability and test isolation
+
+Cross-platform behavior must be proven without depending on a maintainer workstation's incidental state.
+
+- Tests must explicitly control the state they depend on, including `HOME`, `PANTHEON_LOCAL_CONFIG`, relevant `PATH` entries, Git author identity for fixture commits, provider/Terminus mocks, and other environment inputs. Do not rely on a developer's global Git config, installed provider tools, authentication, shell aliases, or existing project files to make a fixture pass.
+- Keep portable shell compatible with the older Bash shipped by macOS unless a command is explicitly platform-specific. CI ShellChecks files independently; runtime-resolved shared-library imports should use the narrowest justified ShellCheck annotation rather than relying on multi-file lint context.
+- Windows/WSL validation must account for checkout and transport line endings. Shell payloads executed under Linux must arrive with Unix LF line endings; normalize embedded cross-OS payloads before byte-preserving transport and add regression coverage when Windows checkout conversion could affect execution.
+- Fixtures should prove the actual safety boundary they claim. A missing-tool test, for example, must isolate `PATH` so a globally installed tool cannot silently satisfy the scenario.
+
 ## Pull requests
 
 1. Fork the repository or create a feature branch if you have write access.

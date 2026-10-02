@@ -41,6 +41,7 @@ libexec/
   libexec/pantheon-local-core
   libexec/pantheon-local-config-profile
   libexec/pantheon-local-config-export
+  libexec/pantheon-local-terminal
   libexec/pantheon-local-multidev-create
   libexec/pantheon-local-provider-url
   libexec/pantheon-local-pull

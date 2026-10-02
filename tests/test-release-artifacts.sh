@@ -46,6 +46,7 @@ tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/bin/pantheon-local" >/dev/null 2>&1 |
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-core" >/dev/null 2>&1 || fail 'core module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-config-profile" >/dev/null 2>&1 || fail 'tag-profile module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-config-export" >/dev/null 2>&1 || fail 'config-export module missing from source archive'
+tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-terminal" >/dev/null 2>&1 || fail 'terminal-presentation module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-multidev-create" >/dev/null 2>&1 || fail 'multidev-create module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-readiness" >/dev/null 2>&1 || fail 'readiness module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-setup" >/dev/null 2>&1 || fail 'setup module missing from source archive'

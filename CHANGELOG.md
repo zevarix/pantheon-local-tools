@@ -6,6 +6,10 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+## 0.2.3 — 2026-10-02
+
+Patch release standardizing guided remediation and consent, adding Doctor external-read timing evidence, and hardening canonical release reproducibility while preserving the established v0.2 command/configuration and structured-output contracts.
+
 ### Changed
 
 - Canonicalized final tagged-release source compression through a pinned immutable Ubuntu `linux/amd64` gzip environment so published source archive checksums no longer depend on the maintainer host's gzip implementation; untagged CI/dev builds remain portable and explicitly distinguish host versus canonical compression.

@@ -34,7 +34,7 @@ for expected in \
   'pantheon-local checkout dev (--all | --tag TAG [--tag TAG ...]) [OPTIONS]' \
   'pantheon-local checkout sync SITE.dev [OPTIONS]' \
   'pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]' \
-  'pantheon-local doctor [--format default|json] [--record FILE]' \
+  'pantheon-local doctor [--timing] [--format default|json] [--record FILE]' \
   'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]' \
   'pantheon-local multidev create SITE.SOURCE NEW_ENV' \
   '[--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]' \
@@ -112,10 +112,11 @@ assert_contains "$estate_help" '--format default|json'
 assert_contains "$estate_help" '--record FILE'
 
 doctor_help=$(bash "$CLI" doctor --help)
-assert_contains "$doctor_help" 'pantheon-local doctor [--format default|json] [--record FILE]'
-assert_contains "$doctor_help" 'first-run and troubleshooting diagnostics'
+assert_contains "$doctor_help" 'pantheon-local doctor [--timing] [--format default|json] [--record FILE]'
+assert_contains "$doctor_help" 'Read-only diagnosis plus optional explicitly confirmed guided remediation.'
 assert_contains "$doctor_help" 'PASS  Ready/healthy.'
-assert_contains "$doctor_help" 'Doctor never starts/rebuilds a provider.'
+assert_contains "$doctor_help" 'Diagnosis/report generation is read-only.'
+assert_contains "$doctor_help" '--timing'
 assert_contains "$doctor_help" '--format default'
 assert_contains "$doctor_help" '--record FILE'
 

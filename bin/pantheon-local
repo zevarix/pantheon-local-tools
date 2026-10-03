@@ -73,10 +73,11 @@ Commands:
       Read-only cross-system estate overview combining Terminus environment code
       identity with canonical local checkout Git/provider state.
 
-  pantheon-local doctor [--format default|json] [--record FILE]
+  pantheon-local doctor [--timing] [--format default|json] [--record FILE]
       Read-only diagnosis for tools, config, routing, Pantheon authority,
-      provider prerequisites, and canonical Dev checkouts. Interactive use may
-      offer explicitly confirmed PLT-managed repairs after the report.
+      provider prerequisites, and canonical Dev checkouts. --timing adds
+      stderr-only external-read duration evidence. Interactive use may offer
+      explicitly confirmed PLT-managed repairs after the report.
 
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
       Clone an already-existing Pantheon Multidev into an isolated local

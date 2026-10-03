@@ -53,7 +53,7 @@ Read the tag back and verify it resolves to the intended release commit.
 
 The release artifact builder refuses a normal release build unless `vVERSION` exists and points at the current `HEAD`. CI/testing can opt into untagged builds only through the explicit `PANTHEON_LOCAL_RELEASE_ALLOW_UNTAGGED=1` test boundary.
 
-## 3. Build deterministic release artifacts
+## 3. Build canonical release artifacts
 
 From the exact tagged checkout:
 
@@ -74,9 +74,27 @@ On Debian-family hosts with `dpkg-deb` available it also creates:
 pantheon-local-tools_<VERSION>_all.deb
 ```
 
-The source archive is produced with `git archive` and `gzip -n` using a stable top-level directory. `SHA256SUMS` records the source archive and every package artifact built in that run.
+The source tar payload is produced with `git archive` using a stable top-level directory. Final tagged-release compression is canonicalized by `packaging/release/compress-source-canonical.sh`, which runs `gzip -n` in the pinned immutable container:
 
-Build twice from the same exact ref if release confidence requires an additional reproducibility check; the source archive checksum must match.
+```text
+platform: linux/amd64
+image: ubuntu@sha256:a853f94d226358a79c740cfc7bce0c289748f3fe3488d921d038ccd752c61b60
+network: none
+```
+
+Only the already-created tar stream is passed to that container. The canonical compressor does not inspect the repository and has no network access while compressing.
+
+A normal tagged release build always uses this canonical compressor and refuses a host-gzip override. Therefore the published `.tar.gz` reproducibility contract is:
+
+- same exact Git ref;
+- same pinned canonical compressor image/platform;
+- byte-identical source archive checksum.
+
+Host-native gzip remains available only for untagged development/CI builds created with `PANTHEON_LOCAL_RELEASE_ALLOW_UNTAGGED=1`; those builds default to host compression so macOS/Linux tests do not require Docker. Set `PANTHEON_LOCAL_RELEASE_COMPRESSION=canonical` with that untagged test boundary when explicitly qualifying the canonical path.
+
+Cross-platform host-gzip byte identity is **not** part of the release contract. Different supported hosts may emit different compressed streams for the same byte-identical tar payload. When investigating such a difference, compare the uncompressed tar payload separately and use the canonical compressor output as the publication checksum authority.
+
+`SHA256SUMS` records the source archive and every package artifact built in that run. Build the canonical source archive twice from the same exact ref when qualifying a release; its checksum must match. Debian package byte identity is not currently promised across independent builds; validate its package metadata/payload and publish one exact package/checksum pair from the selected canonical release build.
 
 ## 4. Create the GitHub Release
 

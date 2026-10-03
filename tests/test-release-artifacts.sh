@@ -48,6 +48,7 @@ tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-config-profile
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-config-export" >/dev/null 2>&1 || fail 'config-export module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-terminal" >/dev/null 2>&1 || fail 'terminal-presentation module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-interaction" >/dev/null 2>&1 || fail 'interaction module missing from source archive'
+tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/packaging/release/compress-source-canonical.sh" >/dev/null 2>&1 || fail 'canonical source compressor missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-multidev-create" >/dev/null 2>&1 || fail 'multidev-create module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-readiness" >/dev/null 2>&1 || fail 'readiness module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-setup" >/dev/null 2>&1 || fail 'setup module missing from source archive'
@@ -64,6 +65,21 @@ bash "$EXTRACT/$PREFIX/bin/pantheon-local" config export --help | grep -F 'MUTAT
 bash "$EXTRACT/$PREFIX/bin/pantheon-local" multidev create --help | grep -F 'EXPLICIT REMOTE PANTHEON WRITE' >/dev/null 2>&1 || fail 'source archive multidev create help is unavailable'
 bash "$EXTRACT/$PREFIX/bin/pantheon-local" setup --help | grep -F 'pantheon-local setup' >/dev/null 2>&1 || fail 'source archive setup help is unavailable'
 bash "$EXTRACT/$PREFIX/bin/pantheon-local" readiness --help | grep -F 'pantheon-local readiness' >/dev/null 2>&1 || fail 'source archive readiness help is unavailable'
+
+# A final tagged release may not opt out of the canonical compressor.
+TAGGED_REPO="$TMP_ROOT/tagged-repo"
+git clone -q "$REPO_ROOT" "$TAGGED_REPO"
+git -C "$TAGGED_REPO" tag -d "v$VERSION" >/dev/null 2>&1 || true
+git -C "$TAGGED_REPO" tag "v$VERSION"
+set +e
+TAGGED_OUTPUT=$(PANTHEON_LOCAL_RELEASE_COMPRESSION=host   bash "$TAGGED_REPO/packaging/release/build-artifacts.sh" "$TMP_ROOT/tagged-out" 2>&1)
+TAGGED_RC=$?
+set -e
+[ "$TAGGED_RC" -ne 0 ] || fail 'tagged release build allowed host compression'
+case "$TAGGED_OUTPUT" in
+  *'tagged release builds require canonical compression'*) ;;
+  *) fail 'tagged host-compression refusal did not explain the canonical requirement' ;;
+esac
 
 if command -v dpkg-deb >/dev/null 2>&1; then
   DEB_NAME="pantheon-local-tools_${VERSION}_all.deb"

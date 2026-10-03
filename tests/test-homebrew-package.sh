@@ -111,7 +111,7 @@ assert_eq "$("$FORMULA_CLI" version)" "$expected"
 "$FORMULA_CLI" config export --help | grep -F 'MUTATES PROJECT CONFIGURATION FILES' >/dev/null 2>&1 || fail 'Homebrew config export help is unavailable'
 "$FORMULA_CLI" checkout --help | grep -F 'canonical Pantheon Dev Git checkouts' >/dev/null 2>&1 || fail 'Homebrew checkout help is unavailable'
 "$FORMULA_CLI" estate status --help | grep -F 'cross-system overview' >/dev/null 2>&1 || fail 'Homebrew estate status help is unavailable'
-"$FORMULA_CLI" doctor --help | grep -F 'first-run and troubleshooting diagnostics' >/dev/null 2>&1 || fail 'Homebrew doctor help is unavailable'
+"$FORMULA_CLI" doctor --help | grep -F 'pantheon-local doctor [--timing] [--format default|json] [--record FILE]' >/dev/null 2>&1 || fail 'Homebrew doctor help is unavailable'
 "$FORMULA_CLI" multidev create --help | grep -F 'EXPLICIT REMOTE PANTHEON WRITE' >/dev/null 2>&1 || fail 'Homebrew multidev create help is unavailable'
 "$FORMULA_CLI" setup --help | grep -F 'pantheon-local setup' >/dev/null 2>&1 || fail 'Homebrew setup help is unavailable'
 "$FORMULA_CLI" readiness --help | grep -F 'pantheon-local readiness' >/dev/null 2>&1 || fail 'Homebrew readiness help is unavailable'

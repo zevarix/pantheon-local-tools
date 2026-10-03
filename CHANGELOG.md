@@ -8,9 +8,11 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ### Changed
 
+- Canonicalized final tagged-release source compression through a pinned immutable Ubuntu `linux/amd64` gzip environment so published source archive checksums no longer depend on the maintainer host's gzip implementation; untagged CI/dev builds remain portable and explicitly distinguish host versus canonical compression.
 - Added a shared human-interaction contract with safe-default `[y/N]` confirmation and bounded numbered choices, reused by guided configuration, configuration export, Multidev creation, and Doctor remediation.
 - Interactive `pantheon-local doctor` now classifies actionable findings, offers explicitly confirmed PLT-managed repairs, previews/delegates to the existing owning command, and reruns diagnostics after successful repair; JSON, records, and non-TTY use remain prompt-free.
 - Unmanaged `pantheon-local status` output now points users to Doctor for a safe onboarding/remediation path without changing structured output.
+
 ## 0.2.2 — 2026-10-02
 
 Patch release polishing the shared human-terminal presentation and interactive doctor experience while preserving the established v0.2 command/configuration and structured-output contracts.

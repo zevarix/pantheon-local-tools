@@ -32,7 +32,9 @@ printf '%s\n' "$VERSION" | LC_ALL=C grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-
   fail "VERSION is not a supported SemVer-like value: $VERSION"
 
 require_command git
-require_command gzip
+
+CANONICAL_COMPRESSOR="$REPO_ROOT/packaging/release/compress-source-canonical.sh"
+[ -r "$CANONICAL_COMPRESSOR" ] || fail "canonical source compressor is missing: $CANONICAL_COMPRESSOR"
 
 OUT_DIR=${1:-"$REPO_ROOT/dist"}
 case "$OUT_DIR" in
@@ -46,23 +48,46 @@ HEAD_SHA=$(git -C "$REPO_ROOT" rev-parse HEAD)
 TAG="v$VERSION"
 ARCHIVE_REF=$TAG
 
-if [ "${PANTHEON_LOCAL_RELEASE_ALLOW_UNTAGGED:-0}" = '1' ]; then
+ALLOW_UNTAGGED=${PANTHEON_LOCAL_RELEASE_ALLOW_UNTAGGED:-0}
+if [ "$ALLOW_UNTAGGED" = '1' ]; then
   ARCHIVE_REF=$HEAD_SHA
+  COMPRESSION_MODE=${PANTHEON_LOCAL_RELEASE_COMPRESSION:-host}
+  case "$COMPRESSION_MODE" in
+    host|canonical) ;;
+    *) fail 'PANTHEON_LOCAL_RELEASE_COMPRESSION must be host or canonical' ;;
+  esac
 else
   TAG_SHA=$(git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/$TAG^{commit}" 2>/dev/null || true)
   [ -n "$TAG_SHA" ] || fail "release tag does not exist: $TAG"
   [ "$TAG_SHA" = "$HEAD_SHA" ] || fail "release tag $TAG does not point at current HEAD $HEAD_SHA"
+  COMPRESSION_MODE=canonical
+  if [ -n "${PANTHEON_LOCAL_RELEASE_COMPRESSION:-}" ] && [ "${PANTHEON_LOCAL_RELEASE_COMPRESSION}" != canonical ]; then
+    fail 'tagged release builds require canonical compression'
+  fi
 fi
 
 SOURCE_NAME="pantheon-local-tools-$VERSION.tar.gz"
 SOURCE_PATH="$OUT_DIR/$SOURCE_NAME"
+TMP_TAR="$OUT_DIR/.pantheon-local-tools-$VERSION.tar.tmp.$$"
 TMP_SOURCE="$OUT_DIR/.$SOURCE_NAME.tmp.$$"
-trap 'rm -f "$TMP_SOURCE"' EXIT HUP INT TERM
+trap 'rm -f "$TMP_TAR" "$TMP_SOURCE"' EXIT HUP INT TERM
 
 git -C "$REPO_ROOT" archive \
   --format=tar \
   --prefix="pantheon-local-tools-$VERSION/" \
-  "$ARCHIVE_REF" | gzip -n > "$TMP_SOURCE"
+  "$ARCHIVE_REF" > "$TMP_TAR"
+
+case "$COMPRESSION_MODE" in
+  canonical)
+    bash "$CANONICAL_COMPRESSOR" < "$TMP_TAR" > "$TMP_SOURCE"
+    ;;
+  host)
+    require_command gzip
+    gzip -n < "$TMP_TAR" > "$TMP_SOURCE"
+    ;;
+esac
+
+rm -f "$TMP_TAR"
 mv "$TMP_SOURCE" "$SOURCE_PATH"
 trap - EXIT HUP INT TERM
 
@@ -86,6 +111,7 @@ printf 'Release artifact set\n\n'
 printf 'Version:       %s\n' "$VERSION"
 printf 'Git ref:       %s\n' "$ARCHIVE_REF"
 printf 'Git SHA:       %s\n' "$HEAD_SHA"
+printf 'Compression:   %s\n' "$COMPRESSION_MODE"
 printf 'Source:        %s\n' "$SOURCE_PATH"
 printf 'Source SHA256: %s\n' "$SOURCE_SHA"
 if [ -n "$DEB_PATH" ]; then

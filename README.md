@@ -219,7 +219,7 @@ pantheon-local checkout sync (--all | --tag TAG [--tag TAG ...]) [OPTIONS]
 
 pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]
 
-pantheon-local doctor [--format default|json] [--record FILE]
+pantheon-local doctor [--timing] [--format default|json] [--record FILE]
 
 pantheon-local multidev SITE.ENV
   --provider ddev|lando
@@ -259,7 +259,7 @@ Focused help remains available for nontrivial commands, for example `pantheon-lo
 
 `pantheon-local doctor` is the first-run/troubleshooting gate. Its diagnosis phase is read-only and checks PLT version/config path, Git, checkout root, configured provider prerequisites, Terminus installation/authentication, accessible sites/Tags, route ambiguity, canonical Dev Git access, missing/invalid checkouts, and checkout-local provider/metadata consistency.
 
-PASS/INFO/WARN checks keep exit `0`; FAIL checks use the shared unsafe/ambiguous/authority/operation categories and retain per-check next-action/remediation metadata in JSON. Interactive Doctor may offer PLT-managed fixes after explicit consent; it delegates mutations to the existing owning command, previews when available, never guesses ambiguous choices, and reruns Doctor afterward. JSON/record/non-TTY use remains prompt-free. See [`docs/doctor.md`](docs/doctor.md) and [`docs/interaction.md`](docs/interaction.md).
+PASS/INFO/WARN checks keep exit `0`; FAIL checks use the shared unsafe/ambiguous/authority/operation categories and retain per-check next-action/remediation metadata in JSON. `--timing` adds whole-second duration evidence for external per-site reads to progress diagnostics on stderr only; it does not add timeouts, concurrency, JSON fields, or record fields. Interactive Doctor may offer PLT-managed fixes after explicit consent; it delegates mutations to the existing owning command, previews when available, never guesses ambiguous choices, and reruns Doctor afterward. JSON/record/non-TTY machine surfaces remain prompt-free. See [`docs/doctor.md`](docs/doctor.md) and [`docs/interaction.md`](docs/interaction.md).
 
 ### Canonical Dev checkout and sync
 

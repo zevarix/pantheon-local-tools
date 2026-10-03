@@ -13,11 +13,13 @@ assert_contains() { case "$1" in *"$2"*) ;; *) fail "expected output to contain 
 assert_not_contains() { case "$1" in *"$2"*) fail "expected output not to contain [$2], got [$1]" ;; *) ;; esac; }
 assert_file_not_contains() { if [ -f "$1" ] && grep -F "$2" "$1" >/dev/null 2>&1; then fail "expected $1 not to contain [$2]"; fi; }
 assert_file_contains() { grep -F "$2" "$1" >/dev/null 2>&1 || fail "expected $1 to contain [$2]"; }
+assert_file_matches() { grep -E "$2" "$1" >/dev/null 2>&1 || fail "expected $1 to match [$2]"; }
 
 run_doctor_pty() {
   input=$1
+  shift
   command -v python3 >/dev/null 2>&1 || fail 'python3 is required for doctor PTY tests'
-  python3 - "$CLI" "$input" <<'PY'
+  python3 - "$CLI" "$input" "$@" <<'PY'
 import errno
 import os
 import pty
@@ -25,10 +27,12 @@ import sys
 
 cli = sys.argv[1]
 data = sys.argv[2].encode()
+args = sys.argv[3:]
 env = os.environ.copy()
+env['TERM'] = 'xterm-256color'
 pid, fd = pty.fork()
 if pid == 0:
-    os.execve('/bin/bash', ['bash', cli, 'doctor'], env)
+    os.execve('/bin/bash', ['bash', cli, 'doctor', *args], env)
 
 while data:
     written = os.write(fd, data)
@@ -66,7 +70,7 @@ scenario_init() {
   MOCK_TERMINUS_LOG="$SCENARIO/terminus.log"
   MOCK_PROVIDER_LOG="$SCENARIO/provider.log"
   export HOME PANTHEON_LOCAL_CONFIG MOCK_DATA MOCK_TERMINUS_LOG MOCK_PROVIDER_LOG
-  unset MOCK_AUTH_FAIL MOCK_SITE_LIST_FAIL MOCK_ENV_FAIL_SITE MOCK_TAG_FAIL_SITE MOCK_CONNECTION_FAIL_SITE MOCK_BLOCK_ENV_SITE MOCK_BLOCK_READY_FILE
+  unset MOCK_AUTH_FAIL MOCK_SITE_LIST_FAIL MOCK_ENV_FAIL_SITE MOCK_TAG_FAIL_SITE MOCK_CONNECTION_FAIL_SITE MOCK_BLOCK_ENV_SITE MOCK_BLOCK_READY_FILE MOCK_ENV_DELAY_SITE MOCK_ENV_DELAY_SECONDS
   TMPDIR="$SCENARIO/tmp"
   export TMPDIR
   mkdir -p "$HOME" "$MOCK_BIN" "$MOCK_DATA" "$LOCAL_ROOT" "$TMPDIR"
@@ -102,6 +106,9 @@ case "${1:-}" in
     [ "$site" != "${MOCK_ENV_FAIL_SITE:-}" ] || exit 9
     [ "${3:-}" = '--format=list' ] || exit 2
     [ "${4:-}" = '--field=id' ] || exit 2
+    if [ "$site" = "${MOCK_ENV_DELAY_SITE:-}" ]; then
+      sleep "${MOCK_ENV_DELAY_SECONDS:-2}"
+    fi
     if [ "$site" = "${MOCK_BLOCK_ENV_SITE:-}" ]; then
       [ -n "${MOCK_BLOCK_READY_FILE:-}" ] || exit 2
       : > "$MOCK_BLOCK_READY_FILE"
@@ -271,6 +278,7 @@ assert_file_not_contains "$PROGRESS_STDOUT" 'Doctor:'
 ESC=$(printf '\033')
 assert_file_not_contains "$PROGRESS_STDOUT" "$ESC"
 assert_file_not_contains "$PROGRESS_STDERR" "$ESC"
+assert_file_not_contains "$PROGRESS_STDERR" ' complete in '
 
 JSON_PROGRESS="$SCENARIO/json.err"
 progress_json=$(bash "$CLI" doctor --format json 2>"$JSON_PROGRESS")
@@ -284,6 +292,37 @@ bash "$CLI" doctor --record "$PROGRESS_RECORD" >/dev/null 2>"$RECORD_PROGRESS"
 assert_file_contains "$RECORD_PROGRESS" 'Doctor: discovered 3 accessible sites'
 assert_file_not_contains "$PROGRESS_RECORD" 'Doctor:'
 assert_file_contains "$PROGRESS_RECORD" '"command":"doctor"'
+
+# Optional timing mode measures external per-site reads without changing structured results.
+scenario_init timing
+create_remote timing-site 'Example Group' ddev
+set_sites timing-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+create_checkout timing-site clients ddev >/dev/null
+export MOCK_ENV_DELAY_SITE=timing-site
+export MOCK_ENV_DELAY_SECONDS=2
+TIMING_STDOUT="$SCENARIO/timing.out"
+TIMING_STDERR="$SCENARIO/timing.err"
+bash "$CLI" doctor --timing >"$TIMING_STDOUT" 2>"$TIMING_STDERR"
+assert_file_contains "$TIMING_STDERR" 'Doctor: site 1/1: timing-site — environments'
+assert_file_matches "$TIMING_STDERR" 'Doctor: site 1/1: timing-site — environments complete in [2-9][0-9]*s'
+assert_file_not_contains "$TIMING_STDOUT" 'complete in'
+TIMING_JSON_STDERR="$SCENARIO/timing-json.err"
+timing_json=$(bash "$CLI" doctor --timing --format json 2>"$TIMING_JSON_STDERR")
+assert_contains "$timing_json" '"command":"doctor"'
+assert_not_contains "$timing_json" '"duration"'
+assert_not_contains "$timing_json" '"timing"'
+assert_file_matches "$TIMING_JSON_STDERR" 'Doctor: site 1/1: timing-site — environments complete in [2-9][0-9]*s'
+TIMING_RECORD="$SCENARIO/timing-record.json"
+TIMING_RECORD_STDERR="$SCENARIO/timing-record.err"
+bash "$CLI" doctor --timing --record "$TIMING_RECORD" >/dev/null 2>"$TIMING_RECORD_STDERR"
+assert_file_matches "$TIMING_RECORD_STDERR" 'Doctor: site 1/1: timing-site — environments complete in [2-9][0-9]*s'
+assert_file_not_contains "$TIMING_RECORD" '"duration"'
+assert_file_not_contains "$TIMING_RECORD" '"timing"'
+timing_tty=$(run_doctor_pty '' --timing)
+assert_contains "$timing_tty" 'environments (1s)'
+unset MOCK_ENV_DELAY_SITE MOCK_ENV_DELAY_SECONDS
 
 # Zero-site discovery still produces prompt progress and final diagnostics.
 scenario_init zero-sites

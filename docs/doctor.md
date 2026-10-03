@@ -8,7 +8,9 @@ Its diagnosis/report phase is read-only. It evaluates local prerequisites, effec
 
 ```bash
 pantheon-local doctor
+pantheon-local doctor --timing
 pantheon-local doctor --format json
+pantheon-local doctor --timing --format json
 pantheon-local doctor --record ./doctor-result.json
 ```
 
@@ -38,6 +40,26 @@ Doctor: site 2/34: example-site — tags
 ```
 
 `--format json` emits no progress text by default, so stdout remains one valid JSON document and stderr stays quiet. `--record FILE` stores only the final bounded diagnostic JSON; progress is never persisted in the record.
+
+### Timing evidence
+
+`--timing` is an opt-in troubleshooting surface for identifying slow external reads. It measures whole-second wall time around the external per-site boundaries for environments, organization, Tags, Dev Git URL, and Git remote inspection.
+
+On an interactive terminal, the active step label includes the current elapsed time while the Braille spinner continues, for example:
+
+```text
+Doctor: site 2/34 · example-site — ✓ environments (6s), ✓ organization (2s), ⠹ tags (4s), ○ routing, ○ Dev Git URL, ○ Git remote, ○ local checkout
+```
+
+When stderr is redirected/non-interactive, timing mode emits a deterministic completion line after each timed boundary, for example:
+
+```text
+Doctor: site 2/34: example-site — environments complete in 6s
+```
+
+Timing evidence is diagnostic chatter only. It never changes the final semantic result, JSON stdout, or durable `--record` JSON. `--timing --format json` therefore keeps stdout as one valid JSON document while timing evidence remains on stderr.
+
+`--timing` does not add a timeout, retry policy, or concurrency. Unavailable/failed authority keeps the existing fail-closed reason/category semantics.
 
 Interactive terminals also keep the final aggregation phase visibly active with the same Braille activity indicator while doctor summarizes checks and builds the final result. Finalization reads each stored check once per pass with Bash built-ins rather than launching a separate text-processing subprocess for every field.
 

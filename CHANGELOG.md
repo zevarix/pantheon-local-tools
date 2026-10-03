@@ -12,6 +12,7 @@ The project follows Semantic Versioning for its public command/configuration con
 - Added a shared human-interaction contract with safe-default `[y/N]` confirmation and bounded numbered choices, reused by guided configuration, configuration export, Multidev creation, and Doctor remediation.
 - Interactive `pantheon-local doctor` now classifies actionable findings, offers explicitly confirmed PLT-managed repairs, previews/delegates to the existing owning command, and reruns diagnostics after successful repair; JSON, records, and non-TTY use remain prompt-free.
 - Unmanaged `pantheon-local status` output now points users to Doctor for a safe onboarding/remediation path without changing structured output.
+- Added opt-in `pantheon-local doctor --timing` evidence for external per-site reads, showing live whole-second elapsed time in interactive progress and deterministic completion timing on stderr without changing JSON/records, adding concurrency, or introducing timeouts.
 
 ## 0.2.2 — 2026-10-02
 

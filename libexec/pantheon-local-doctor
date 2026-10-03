@@ -14,6 +14,14 @@ CHECK_DIR=''
 CHECK_SEQ=0
 DOCTOR_PROGRESS=false
 DOCTOR_PROGRESS_INTERACTIVE=false
+DOCTOR_TIMING=false
+DOCTOR_ACTIVE_STEP=''
+DOCTOR_ACTIVE_STEP_STARTED=0
+DOCTOR_STEP_ENVIRONMENTS_SECONDS=''
+DOCTOR_STEP_ORGANIZATION_SECONDS=''
+DOCTOR_STEP_TAGS_SECONDS=''
+DOCTOR_STEP_GIT_URL_SECONDS=''
+DOCTOR_STEP_GIT_REMOTE_SECONDS=''
 DOCTOR_SPINNER_PID=''
 DOCTOR_CURSOR_HIDDEN=false
 DOCTOR_SITE_INDEX=0
@@ -117,6 +125,49 @@ doctor_step_set() {
   esac
 }
 
+doctor_step_is_timed() {
+  case "$1" in
+    environments|organization|tags|git-url|git-remote) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+doctor_step_duration() {
+  case "$1" in
+    environments) printf '%s' "$DOCTOR_STEP_ENVIRONMENTS_SECONDS" ;;
+    organization) printf '%s' "$DOCTOR_STEP_ORGANIZATION_SECONDS" ;;
+    tags) printf '%s' "$DOCTOR_STEP_TAGS_SECONDS" ;;
+    git-url) printf '%s' "$DOCTOR_STEP_GIT_URL_SECONDS" ;;
+    git-remote) printf '%s' "$DOCTOR_STEP_GIT_REMOTE_SECONDS" ;;
+    *) return 1 ;;
+  esac
+}
+
+doctor_step_duration_set() {
+  local step=$1 duration=$2
+  case "$step" in
+    environments) DOCTOR_STEP_ENVIRONMENTS_SECONDS=$duration ;;
+    organization) DOCTOR_STEP_ORGANIZATION_SECONDS=$duration ;;
+    tags) DOCTOR_STEP_TAGS_SECONDS=$duration ;;
+    git-url) DOCTOR_STEP_GIT_URL_SECONDS=$duration ;;
+    git-remote) DOCTOR_STEP_GIT_REMOTE_SECONDS=$duration ;;
+    *) return 1 ;;
+  esac
+}
+
+doctor_step_elapsed() {
+  local step=$1 duration=''
+  [ "$DOCTOR_TIMING" = true ] || return 1
+  doctor_step_is_timed "$step" || return 1
+  if [ "$DOCTOR_ACTIVE_STEP" = "$step" ]; then
+    duration=$((SECONDS - DOCTOR_ACTIVE_STEP_STARTED))
+  else
+    duration=$(doctor_step_duration "$step") || return 1
+    [ -n "$duration" ] || return 1
+  fi
+  printf '%s' "$duration"
+}
+
 doctor_step_label() {
   case "$1" in
     environments) printf '%s' 'environments' ;;
@@ -131,7 +182,7 @@ doctor_step_label() {
 }
 
 doctor_render_step() {
-  local step=$1 frame=$2 status glyph style label
+  local step=$1 frame=$2 status glyph style label duration=''
   status=$(doctor_step_status "$step") || return 1
   label=$(doctor_step_label "$step") || return 1
   if [ "$status" = active ]; then
@@ -141,6 +192,8 @@ doctor_render_step() {
     glyph=$(plt_term_status_glyph "$status")
     style=$(plt_term_status_style "$status")
   fi
+  duration=$(doctor_step_elapsed "$step" 2>/dev/null || true)
+  [ -z "$duration" ] || label="$label (${duration}s)"
   plt_term_style 2 "$style" "$glyph $label"
 }
 
@@ -206,6 +259,13 @@ doctor_site_begin() {
   DOCTOR_STEP_GIT_URL=waiting
   DOCTOR_STEP_GIT_REMOTE=waiting
   DOCTOR_STEP_CHECKOUT=waiting
+  DOCTOR_STEP_ENVIRONMENTS_SECONDS=''
+  DOCTOR_STEP_ORGANIZATION_SECONDS=''
+  DOCTOR_STEP_TAGS_SECONDS=''
+  DOCTOR_STEP_GIT_URL_SECONDS=''
+  DOCTOR_STEP_GIT_REMOTE_SECONDS=''
+  DOCTOR_ACTIVE_STEP=''
+  DOCTOR_ACTIVE_STEP_STARTED=0
   if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
     doctor_cursor_hide
     doctor_render_site_line '⠋'
@@ -218,6 +278,12 @@ doctor_site_step_start() {
   local step=$1 label
   doctor_spinner_stop
   doctor_step_set "$step" active
+  DOCTOR_ACTIVE_STEP=''
+  DOCTOR_ACTIVE_STEP_STARTED=0
+  if [ "$DOCTOR_TIMING" = true ] && doctor_step_is_timed "$step"; then
+    DOCTOR_ACTIVE_STEP=$step
+    DOCTOR_ACTIVE_STEP_STARTED=$SECONDS
+  fi
   if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
     doctor_spinner_start
   else
@@ -227,10 +293,21 @@ doctor_site_step_start() {
 }
 
 doctor_site_step_finish() {
-  local step=$1 status=$2
+  local step=$1 status=$2 duration='' label
   doctor_spinner_stop
+  if [ "$DOCTOR_TIMING" = true ] && [ "$DOCTOR_ACTIVE_STEP" = "$step" ] && doctor_step_is_timed "$step"; then
+    duration=$((SECONDS - DOCTOR_ACTIVE_STEP_STARTED))
+    doctor_step_duration_set "$step" "$duration"
+  fi
+  DOCTOR_ACTIVE_STEP=''
+  DOCTOR_ACTIVE_STEP_STARTED=0
   doctor_step_set "$step" "$status"
-  [ "$DOCTOR_PROGRESS_INTERACTIVE" != true ] || doctor_render_site_line '⠋'
+  if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
+    doctor_render_site_line '⠋'
+  elif [ -n "$duration" ]; then
+    label=$(doctor_step_label "$step")
+    doctor_progress "site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL: $DOCTOR_SITE_NAME — $label $status in ${duration}s"
+  fi
 }
 
 doctor_site_skip_waiting() {
@@ -267,9 +344,9 @@ doctor_scope_progress_status() {
 usage() {
   cat <<'USAGE'
 Usage:
-  pantheon-local doctor [--format default|json] [--record FILE]
+  pantheon-local doctor [--timing] [--format default|json] [--record FILE]
 
-Read-only first-run and troubleshooting diagnostics.
+Read-only diagnosis plus optional explicitly confirmed guided remediation.
 
 Checks include:
   * PLT version and effective configuration path;
@@ -286,14 +363,16 @@ Diagnostic statuses:
   FAIL  A tool/configuration/authority condition prevents a safe workflow.
 
 Safety:
-  * Doctor never starts/rebuilds a provider.
-  * Doctor never clones/pulls/fetches into/merges a checkout.
-  * Doctor never pulls data, exports config, creates credentials, edits config,
-    commits/pushes Git, or mutates Pantheon.
+  * Diagnosis/report generation is read-only.
+  * Interactive guided remediation is separate and requires explicit consent.
+  * Doctor delegates any accepted repair to the existing PLT command that owns it.
+  * Ambiguous choices and unsafe checkout identity are never guessed or rewritten.
 
 Output:
+  --timing          Measure external per-site reads in whole seconds and report
+                    timing only through progress diagnostics on stderr.
   --format default  Diagnostic checklist (default).
-  --format json     Stable structured result.
+  --format json     Stable structured result; timing never changes JSON stdout.
   --record FILE     Write the same JSON result to a new file; never overwrite.
 USAGE
 }
@@ -779,7 +858,7 @@ inspect_checkout_structure() {
 }
 
 doctor_command() {
-  local format=default record_file='' config_path='' version='' platform root='' provider='' mappings='' git_ok=false
+  local format=default record_file='' timing=false config_path='' version='' platform root='' provider='' mappings='' git_ok=false
   local site_total=0 site_index=0
   local failure_rank failure_source_value category source rank candidate_code
   local root_parent terminus_ok=false auth_ok=false sites='' site envs org remote_tags route route_rc tag route_dir destination git_url remote_info remote_branch remote_sha
@@ -797,12 +876,17 @@ doctor_command() {
         record_file=$2; [ -n "$record_file" ] || usage_error '--record requires a non-empty file path'
         shift 2
         ;;
+      --timing)
+        timing=true
+        shift
+        ;;
       -h|--help|help) usage; return 0 ;;
-      *) usage_error 'usage: pantheon-local doctor [--format default|json] [--record FILE]' ;;
+      *) usage_error 'usage: pantheon-local doctor [--timing] [--format default|json] [--record FILE]' ;;
     esac
   done
 
-  if [ "$format" = default ]; then
+  DOCTOR_TIMING=$timing
+  if [ "$format" = default ] || [ "$timing" = true ]; then
     DOCTOR_PROGRESS=true
     plt_term_is_interactive 2 && DOCTOR_PROGRESS_INTERACTIVE=true || DOCTOR_PROGRESS_INTERACTIVE=false
   else

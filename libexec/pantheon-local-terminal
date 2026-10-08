@@ -121,3 +121,9 @@ plt_term_clear_current_line() {
   plt_term_is_interactive "$fd" || return 0
   printf '\r\033[2K'
 }
+
+plt_term_clear_to_end() {
+  local fd=${1:-1}
+  plt_term_is_interactive "$fd" || return 0
+  printf '\033[K'
+}

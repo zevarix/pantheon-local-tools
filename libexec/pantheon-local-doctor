@@ -27,6 +27,7 @@ DOCTOR_SPINNER_PID=''
 DOCTOR_CURSOR_HIDDEN=false
 DOCTOR_SITE_INDEX=0
 DOCTOR_SITE_TOTAL=0
+DOCTOR_TERMINAL_COLUMNS=80
 DOCTOR_SITE_NAME=''
 DOCTOR_STEP_ENVIRONMENTS=waiting
 DOCTOR_STEP_ORGANIZATION=waiting
@@ -182,34 +183,93 @@ doctor_step_label() {
   esac
 }
 
-doctor_render_step() {
-  local step=$1 frame=$2 status glyph style label duration=''
-  status=$(doctor_step_status "$step") || return 1
-  label=$(doctor_step_label "$step") || return 1
-  if [ "$status" = active ]; then
-    glyph=$frame
-    style=active
-  else
-    glyph=$(plt_term_status_glyph "$status")
-    style=$(plt_term_status_style "$status")
-  fi
-  duration=$(doctor_step_elapsed "$step" 2>/dev/null || true)
-  [ -z "$duration" ] || label="$label (${duration}s)"
-  plt_term_style 2 "$style" "$glyph $label"
+doctor_terminal_columns() {
+  local dimensions columns
+  dimensions=$(stty size <&2 2>/dev/null || true)
+  columns=${dimensions##* }
+  case "$columns" in
+    ''|*[!0-9]*) columns=80 ;;
+  esac
+  [ "$columns" -gt 0 ] || columns=80
+  printf '%s' "$columns"
 }
 
 doctor_render_site_line() {
-  local frame=${1:-'⠋'} first=true step
+  local frame=${1:-'⠋'} step status glyph style symbols='' active_step='' last_step=''
+  local label=checking duration='' prefix suffix name mode=full available idx
+  local -a glyphs=() styles=()
+
+  for step in environments organization tags routing git-url git-remote checkout; do
+    status=$(doctor_step_status "$step") || return 1
+    if [ "$status" = active ]; then
+      glyph=$frame
+      style=active
+      active_step=$step
+    else
+      glyph=$(plt_term_status_glyph "$status")
+      style=$(plt_term_status_style "$status")
+      [ "$status" = waiting ] || last_step=$step
+    fi
+    glyphs+=("$glyph")
+    styles+=("$style")
+    symbols="$symbols$glyph"
+  done
+
+  [ -n "$active_step" ] || active_step=$last_step
+  if [ -n "$active_step" ]; then
+    label=$(doctor_step_label "$active_step") || return 1
+    duration=$(doctor_step_elapsed "$active_step" 2>/dev/null || true)
+    [ -z "$duration" ] || label="$label (${duration}s)"
+  fi
+
+  # The prior seven-label rendering could wrap. A carriage return only rewinds
+  # the last physical line, so wrapped spinner updates filled the scrollback.
+  # Keep one bounded line, with seven color-coded status glyphs and the active
+  # step label. Reserve one terminal column to avoid automatic edge wrapping.
+  prefix="Doctor: site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL · "
+  suffix=" — [$symbols] $label"
+  available=$((DOCTOR_TERMINAL_COLUMNS - ${#prefix} - ${#suffix} - 1))
+  if [ "$available" -lt 3 ]; then
+    mode=compact
+    prefix="Doctor: $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL · "
+    suffix=" [$symbols]"
+    available=$((DOCTOR_TERMINAL_COLUMNS - ${#prefix} - ${#suffix} - 1))
+  fi
+  if [ "$available" -lt 3 ]; then
+    mode=minimal
+    prefix="Doctor: $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL"
+  fi
+
+  name=$DOCTOR_SITE_NAME
+  if [ "$mode" != minimal ] && [ "${#name}" -gt "$available" ]; then
+    name="${name:0:$((available - 1))}…"
+  fi
+  if [ "$mode" = minimal ] && [ "${#prefix}" -ge "$DOCTOR_TERMINAL_COLUMNS" ]; then
+    prefix=${prefix:0:$((DOCTOR_TERMINAL_COLUMNS - 1))}
+  fi
+
   {
     plt_term_rewind_current_line 2
-    plt_term_style 2 heading 'Doctor:'
-    printf ' '
-    plt_term_style 2 heading "site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL"
-    printf ' · %s — ' "$DOCTOR_SITE_NAME"
-    for step in environments organization tags routing git-url git-remote checkout; do
-      if [ "$first" = true ]; then first=false; else printf ', '; fi
-      doctor_render_step "$step" "$frame"
-    done
+    plt_term_style 2 heading "$prefix"
+    case "$mode" in
+      full)
+        printf '%s — [' "$name"
+        for idx in 0 1 2 3 4 5 6; do
+          plt_term_style 2 "${styles[$idx]}" "${glyphs[$idx]}"
+        done
+        printf '] %s' "$label"
+        ;;
+      compact)
+        printf '%s [' "$name"
+        for idx in 0 1 2 3 4 5 6; do
+          plt_term_style 2 "${styles[$idx]}" "${glyphs[$idx]}"
+        done
+        printf ']'
+        ;;
+    esac
+    # Erase only any old trailing characters. Clearing the entire line before
+    # every frame previously caused visible flashing in real terminals.
+    plt_term_clear_to_end 2
   } >&2
 }
 
@@ -250,6 +310,7 @@ doctor_spinner_start() {
 }
 
 doctor_site_begin() {
+  DOCTOR_TERMINAL_COLUMNS=$(doctor_terminal_columns)
   DOCTOR_SITE_INDEX=$1
   DOCTOR_SITE_TOTAL=$2
   DOCTOR_SITE_NAME=$3

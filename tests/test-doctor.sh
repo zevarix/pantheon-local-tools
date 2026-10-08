@@ -34,6 +34,13 @@ pid, fd = pty.fork()
 if pid == 0:
     os.execve('/bin/bash', ['bash', cli, 'doctor', *args], env)
 
+cols = int(os.environ.get('DOCTOR_TEST_TTY_COLS', '0'))
+if cols:
+    import fcntl
+    import struct
+    import termios
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 30, cols, 0, 0))
+
 while data:
     written = os.write(fd, data)
     data = data[written:]
@@ -395,6 +402,39 @@ assert_contains "$warning_json" '"remediation_class":"plt-managed","remediation_
 assert_contains "$warning_json" '"reason_code":"accessible-tag-unmapped"'
 assert_contains "$warning_json" '"remediation_class":"user-choice","remediation_action":"config-tag-route"'
 assert_not_contains "$warning_json" 'Fix the'
+
+# Interactive progress must fit narrow terminals without wrapping/reprinting site labels.
+scenario_init narrow-tty
+long_site=example-site-with-a-deliberately-long-machine-name
+create_remote "$long_site" 'Example Group' ddev
+create_remote second-site 'Example Group' ddev
+set_sites "$long_site" second-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+export MOCK_ENV_DELAY_SITE="$long_site"
+export MOCK_ENV_DELAY_SECONDS=2
+NARROW_TTY_CAPTURE="$SCENARIO/narrow-tty.output"
+DOCTOR_TEST_TTY_COLS=60 run_doctor_pty $'\n' > "$NARROW_TTY_CAPTURE"
+unset MOCK_ENV_DELAY_SITE MOCK_ENV_DELAY_SECONDS
+python3 - "$NARROW_TTY_CAPTURE" <<'PYWIDTH'
+import re
+import sys
+
+raw = open(sys.argv[1], 'rb').read().decode('utf-8', errors='replace')
+# Strip VT sequences before checking visible redraw width; CSI erase-to-EOL is zero width.
+plain = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', raw)
+redraws = [part for part in re.split(r'[\r\n]', plain) if part.startswith('Doctor:')]
+first = [part for part in redraws if '1/2' in part and 'site' in part]
+second = [part for part in redraws if '2/2' in part and 'site' in part]
+if len(first) < 2 or not second:
+    raise SystemExit('FAIL: narrow TTY did not exercise both sites and a repeated first-site redraw')
+too_wide = [(len(part), part) for part in redraws if len(part) > 59 and ('1/2' in part or '2/2' in part)]
+if too_wide:
+    width, part = too_wide[0]
+    raise SystemExit('FAIL: doctor progress redraw overflowed 60-column TTY (%d columns): %r' % (width, part))
+if not any('⠋' in part or '⠙' in part for part in first):
+    raise SystemExit('FAIL: narrow TTY lost active spinner state')
+PYWIDTH
 
 # Interactive remediation is opt-in, previewed, delegated, and reassessed.
 scenario_init remediation-decline

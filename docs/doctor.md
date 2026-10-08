@@ -20,10 +20,10 @@ pantheon-local doctor --record ./doctor-result.json
 
 Default terminal mode keeps long remote/estate work visibly active without mixing progress text into structured output.
 
-On an interactive terminal, each site uses one in-place status line. The active substep uses a Braille spinner while completed, failed, and not-yet-started substeps retain visible semantic markers:
+On an interactive terminal, each site uses one width-bounded, in-place status line. Seven ordered glyphs summarize environments, organization, Tags, routing, Dev Git URL, Git remote, and local checkout. The active substep uses a Braille spinner and is named alongside the glyphs; the site name is abbreviated if needed to prevent terminal wrapping:
 
 ```text
-Doctor: site 2/34 · example-site — ✓ environments, ✓ organization, ⠹ tags, ○ routing, ○ Dev Git URL, ○ Git remote, ○ local checkout
+Doctor: site 2/34 · example-site — [✓✓⠹○○○○] tags
 ```
 
 Completed steps are green, the active step is bright cyan, pending/skipped steps are muted, warnings are yellow, and failures are red when color is available. Color is supplemental to glyph/text state, respects `NO_COLOR`, and is disabled for `TERM=dumb`.
@@ -48,7 +48,7 @@ Doctor: site 2/34: example-site — tags
 On an interactive terminal, the active step label includes the current elapsed time while the Braille spinner continues, for example:
 
 ```text
-Doctor: site 2/34 · example-site — ✓ environments (6s), ✓ organization (2s), ⠹ tags (4s), ○ routing, ○ Dev Git URL, ○ Git remote, ○ local checkout
+Doctor: site 2/34 · example-site — [✓✓⠹○○○○] tags (4s)
 ```
 
 When stderr is redirected/non-interactive, timing mode emits a deterministic completion line after each timed boundary, for example:

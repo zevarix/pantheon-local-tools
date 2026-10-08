@@ -206,6 +206,9 @@ pantheon-local config tag get TAG
 pantheon-local config tag set TAG DIRECTORY
 pantheon-local config tag unset TAG
 pantheon-local config tag list
+pantheon-local config tag prefer set PREFERRED OTHER
+pantheon-local config tag prefer unset PREFERRED OTHER
+pantheon-local config tag prefer list
 pantheon-local config tag profile get TAG PROPERTY
 pantheon-local config tag profile set TAG PROPERTY VALUE
 pantheon-local config tag profile unset TAG PROPERTY

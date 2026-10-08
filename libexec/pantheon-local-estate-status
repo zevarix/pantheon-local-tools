@@ -124,7 +124,7 @@ set_review() {
 }
 
 inspect_site() {
-  local site=$1 mappings=$2 selectors_file=$3 root=$4 order_file=$5
+  local site=$1 mappings=$2 preferences=$3 selectors_file=$4 root=$5 order_file=$6
   local file envs remote_tags='' route route_rc tag='' route_dir='' destination=''
   local git_url='' provider_info provider='' provider_source='' origin branch clean relation local_sha remote_info remote_branch remote_git_sha
   local state_site state_env
@@ -164,7 +164,7 @@ inspect_site() {
   fi
 
   route_rc=0
-  route=$(resolve_route "$mappings" "$remote_tags") || route_rc=$?
+  route=$(resolve_route "$mappings" "$remote_tags" "$preferences") || route_rc=$?
   case "$route_rc" in
     0)
       tag=$(printf '%s\n' "$route" | sed -n '1p')
@@ -450,7 +450,7 @@ build_json() {
 }
 
 estate_status_command() {
-  local target='' all=false format=default record_file='' root mappings selectors_file order_file sites site selector exit_code semantic_info semantic reason json record_rc
+  local target='' all=false format=default record_file='' root mappings preferences selectors_file order_file sites site selector exit_code semantic_info semantic reason json record_rc
 
   STATUS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pantheon-local-estate-status.XXXXXX") || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not create temporary status directory'
   trap cleanup EXIT HUP INT TERM
@@ -495,6 +495,7 @@ estate_status_command() {
   require_command git; require_command sed; require_command awk; require_command sort
   root=$(config_root) || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not resolve configured checkout root'
   mappings=$(config_tags) || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not resolve configured Tag routes'
+  preferences=$(config_tag_preferences) || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not resolve configured Tag precedence'
   while IFS= read -r selector; do
     [ -n "$selector" ] || continue
     tag_is_configured "$selector" "$mappings" || die_code "$PLT_EXIT_AMBIGUOUS_CONFIGURATION" "--tag must name a configured Pantheon Tag route: $selector"
@@ -503,12 +504,12 @@ estate_status_command() {
   terminus_preflight
 
   if [ -n "$target" ]; then
-    inspect_site "$target" "$mappings" "$selectors_file" "$root" "$order_file"
+    inspect_site "$target" "$mappings" "$preferences" "$selectors_file" "$root" "$order_file"
   else
     if ! sites=$(terminus site:list --format=list --field=name 2>/dev/null); then die_code "$PLT_EXIT_AUTHORITY_UNAVAILABLE" 'Terminus failed while listing accessible sites'; fi
     printf '%s\n' "$sites" | sed '/^$/d' | LC_ALL=C sort -u | while IFS= read -r site; do
       validate_site "$site"
-      inspect_site "$site" "$mappings" "$selectors_file" "$root" "$order_file"
+      inspect_site "$site" "$mappings" "$preferences" "$selectors_file" "$root" "$order_file"
     done
   fi
 

@@ -53,6 +53,29 @@ On disk, Git represents that mapping in the same tag subsection:
 
 Tag routing remains backward compatible. A route can exist with no configuration strategy at all.
 
+### Overlapping Tags and explicit route precedence
+
+Pantheon sites may carry more than one Tag. If two or more of those Tags also have PLT directory routes, PLT does not silently choose a destination.
+
+When one route should win whenever a specific pair overlaps, store that decision explicitly:
+
+```bash
+pantheon-local config tag prefer set 'Specific Group' 'General Group'
+pantheon-local config tag prefer list
+```
+
+The rule means: **when both configured Tags match the same site, prefer `Specific Group` over `General Group`**. It does not remove either Pantheon Tag and does not remove either directory mapping. A site carrying only one of the Tags is unaffected.
+
+Reverse preferences for the same pair are replaced rather than retained as contradictions. Remove one rule with:
+
+```bash
+pantheon-local config tag prefer unset 'Specific Group' 'General Group'
+```
+
+Removing a Tag route also removes precedence rules that refer to that Tag.
+
+Doctor may recommend a preference when observed Pantheon membership shows one matching Tag's site cohort is a strict subset of the other matching cohort. That recommendation is advisory: the user chooses the preferred route and explicitly confirms before PLT persists the rule. If there is no unique more-specific cohort, Doctor makes no automatic recommendation.
+
 ## Optional Tag profile properties
 
 Issue #68 extends the same `[tag "..."]` subsection with two optional properties consumed by setup/config-readiness work:
@@ -91,9 +114,10 @@ pantheon-local config tag unset 'Example Group'
 
 This avoids leaving profile state that no longer has a routable Pantheon Tag identity.
 
-`pantheon-local config list` continues to print the established root/provider and `tag.TAG=DIRECTORY` route lines and may also print profile lines such as:
+`pantheon-local config list` continues to print the established root/provider and `tag.TAG=DIRECTORY` route lines and may also print route-precedence and profile lines such as:
 
 ```text
+route.preference=Specific Group>General Group
 tag.Example Group.config-strategy=full-export
 tag.Example Group.config-path=config/sync
 ```

@@ -143,7 +143,7 @@ plan_skip() {
 }
 
 plan_site() {
-  local site=$1 mode=$2 mappings=$3 selectors_file=$4 root=$5 order_file=$6
+  local site=$1 mode=$2 mappings=$3 preferences=$4 selectors_file=$5 root=$6 order_file=$7
   local file envs remote_tags route route_rc tag route_dir git_url head_info remote_branch remote_sha
   local destination origin branch dirty relation state_site state_env
   file=$(plan_file_for "$site")
@@ -175,7 +175,7 @@ plan_site() {
   fi
 
   route_rc=0
-  route=$(resolve_route "$mappings" "$remote_tags") || route_rc=$?
+  route=$(resolve_route "$mappings" "$remote_tags" "$preferences") || route_rc=$?
   case "$route_rc" in
     0) ;;
     10)
@@ -514,7 +514,7 @@ build_json_results() {
 }
 
 checkout_command() {
-  local mode=checkout target='' estate=false all=false dry_run=false format=default record_file='' root mappings selectors_file order_file
+  local mode=checkout target='' estate=false all=false dry_run=false format=default record_file='' root mappings preferences selectors_file order_file
   local selector site sites json exit_code record_rc
 
   if [ "${1:-}" = sync ]; then mode=sync; shift; fi
@@ -557,6 +557,7 @@ checkout_command() {
   require_command git; require_command sed; require_command awk; require_command sort
   root=$(config_root)
   mappings=$(config_tags)
+  preferences=$(config_tag_preferences)
 
   [ "$all" = false ] || [ ! -s "$selectors_file" ] || usage_error '--all cannot be combined with --tag'
 
@@ -577,12 +578,12 @@ checkout_command() {
     if ! sites=$(terminus site:list --format=list --field=name 2>/dev/null); then die_code "$PLT_EXIT_AUTHORITY_UNAVAILABLE" 'Terminus failed while listing accessible sites'; fi
     printf '%s\n' "$sites" | sed '/^$/d' | LC_ALL=C sort -u | while IFS= read -r site; do
       validate_site "$site"
-      plan_site "$site" "$mode" "$mappings" "$selectors_file" "$root" "$order_file"
+      plan_site "$site" "$mode" "$mappings" "$preferences" "$selectors_file" "$root" "$order_file"
     done
   else
     [ -n "$target" ] || usage_error 'checkout requires SITE.dev, dev --all/--tag, or sync with one of those selectors'
     site=$(parse_dev_target "$target")
-    plan_site "$site" "$mode" "$mappings" "$selectors_file" "$root" "$order_file"
+    plan_site "$site" "$mode" "$mappings" "$preferences" "$selectors_file" "$root" "$order_file"
   fi
 
   if [ "$dry_run" = false ]; then execute_plan "$mode" "$order_file"; fi

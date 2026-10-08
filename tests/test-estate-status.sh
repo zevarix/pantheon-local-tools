@@ -240,6 +240,12 @@ assert_eq "$ambiguous_rc" '31'
 assert_contains "$ambiguous_json" '"reason_code":"ambiguous-tag-route"'
 assert_contains "$ambiguous_json" '"exit_category":"ambiguous-configuration"'
 
+bash "$CLI" config tag prefer set 'Another Group' 'Example Group'
+preferred_json=$(bash "$CLI" estate status ambiguous-site --format json)
+assert_contains "$preferred_json" '"route":{"status":"resolved","tag":"Another Group"'
+assert_contains "$preferred_json" '/apps/ambiguous-site'
+assert_not_contains "$preferred_json" '"reason_code":"ambiguous-tag-route"'
+
 # Unavailable Pantheon authority is distinct from ordinary drift.
 set +e
 unavailable_json=$(bash "$CLI" estate status unavailable-site --format json 2>&1)

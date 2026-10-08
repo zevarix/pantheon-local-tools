@@ -522,7 +522,77 @@ set -e
 assert_eq "$routing_rc" '31'
 assert_contains "$routing_json" '"reason_code":"site-route-unmapped"'
 assert_contains "$routing_json" '"reason_code":"site-route-ambiguous"'
+assert_contains "$routing_json" '"remediation_class":"user-choice","remediation_action":"config-tag-preference"'
 assert_contains "$routing_json" '"failure_source":"plt-orchestration"'
+assert_contains "$routing_json" 'Another Group -> apps'
+assert_contains "$routing_json" 'Example Group -> clients'
+
+# User-choice-only findings must still open the guided conversation.
+set +e
+routing_decline=$(run_doctor_pty $'
+')
+routing_decline_rc=$?
+set -e
+assert_eq "$routing_decline_rc" '31'
+assert_contains "$routing_decline" '3 items needing your choice'
+assert_contains "$routing_decline" 'Review the 3 items that need your attention now? [y/N]'
+assert_contains "$routing_decline" 'Review skipped. No changes were made.'
+assert_eq "$(bash "$CLI" config tag get 'Example Group')" 'clients'
+assert_eq "$(bash "$CLI" config tag get 'Another Group')" 'apps'
+
+set +e
+routing_review=$(run_doctor_pty $'y
+2
+y
+')
+routing_review_rc=$?
+set -e
+assert_eq "$routing_review_rc" '31'
+assert_contains "$routing_review" 'Review the 3 items that need your attention now? [y/N]'
+assert_contains "$routing_review" 'Guided review'
+assert_contains "$routing_review" 'Choice 1/3'
+assert_contains "$routing_review" 'Which route should PLT prefer when these Tags overlap for ambiguous-site?'
+assert_contains "$routing_review" 'Prefer Example Group -> clients'
+assert_contains "$routing_review" 'Prefer Another Group -> apps'
+assert_contains "$routing_review" 'Leave this overlap unresolved for now'
+assert_contains "$routing_review" "pantheon-local config tag prefer set 'Another Group' 'Example Group'"
+assert_contains "$routing_review" 'Save Another Group as the preferred route wherever these Tags overlap? [y/N]'
+assert_contains "$routing_review" 'Saved route preference: Another Group'
+assert_contains "$routing_review" 'Running doctor again...'
+assert_contains "$routing_review" 'canonical route resolved for ambiguous-site via Another Group'
+assert_contains "$(bash "$CLI" config tag prefer list)" 'Another Group>Example Group'
+assert_eq "$(bash "$CLI" config tag get 'Example Group')" 'clients'
+assert_eq "$(bash "$CLI" config tag get 'Another Group')" 'apps'
+
+# A strict-subset Tag cohort is recommended as the more-specific route, but still requires explicit choice and confirmation.
+scenario_init route-specificity
+create_remote general-site 'General Group' ddev
+create_remote specific-site $'General Group\nSpecific Group' ddev
+set_sites general-site specific-site
+configure_base ddev
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+GENERAL_DEST=$(create_checkout general-site general ddev)
+SPECIFIC_DEST=$(create_checkout specific-site specific ddev)
+
+set +e
+specificity_review=$(run_doctor_pty $'y\n2\ny\n')
+specificity_review_rc=$?
+set -e
+assert_eq "$specificity_review_rc" '0'
+assert_contains "$specificity_review" 'Review the 1 item that needs your attention now? [y/N]'
+assert_contains "$specificity_review" 'Recommendation: prefer Specific Group because its observed site cohort is a strict subset'
+assert_contains "$specificity_review" 'Prefer General Group -> general (2 observed sites)'
+assert_contains "$specificity_review" 'Prefer Specific Group -> specific (1 observed sites) — recommended: most specific observed cohort'
+assert_contains "$specificity_review" "pantheon-local config tag prefer set 'Specific Group' 'General Group'"
+assert_contains "$specificity_review" 'Save Specific Group as the preferred route wherever these Tags overlap? [y/N]'
+assert_contains "$specificity_review" 'Saved route preference: Specific Group'
+assert_contains "$specificity_review" 'Running doctor again...'
+assert_contains "$specificity_review" 'canonical route resolved for specific-site via Specific Group'
+assert_contains "$specificity_review" 'Doctor: all checks passed.'
+assert_contains "$(bash "$CLI" config tag prefer list)" 'Specific Group>General Group'
+[ -d "$GENERAL_DEST/.git" ] || fail 'general checkout disappeared during route preference review'
+[ -d "$SPECIFIC_DEST/.git" ] || fail 'specific checkout disappeared during route preference review'
 
 # Provider auto-detection ambiguity is reported from the checkout itself.
 scenario_init provider-ambiguity

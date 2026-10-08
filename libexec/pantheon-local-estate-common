@@ -22,6 +22,7 @@ validate_site() {
 
 config_root() { estate_require_core || return 1; "$CORE" config get root; }
 config_tags() { estate_require_core || return 1; "$CORE" config tag list; }
+config_tag_preferences() { estate_require_core || return 1; "$CORE" config tag prefer list; }
 
 tag_is_configured() {
   local wanted=$1 mappings=$2 line tag
@@ -109,27 +110,87 @@ remote_head_info() {
   printf '%s\n%s\n' "$branch" "$sha"
 }
 
-resolve_route() {
-  local mappings=$1 remote_tags=$2 line configured_tag route_dir
-  local matches=0 matched_tag='' matched_dir=''
-  if [ -z "$mappings" ]; then printf '\n\n'; return 0; fi
+route_matches() {
+  local mappings=$1 remote_tags=$2 line configured_tag
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     configured_tag=${line%%=*}
-    route_dir=${line#*=}
     if remote_tag_contains "$configured_tag" "$remote_tags"; then
-      matches=$((matches + 1))
-      matched_tag=$configured_tag
-      matched_dir=$route_dir
+      printf '%s\n' "$line"
     fi
   done <<EOF
 $mappings
 EOF
-  case "$matches" in
-    1) printf '%s\n%s\n' "$matched_tag" "$matched_dir" ;;
-    0) return 10 ;;
-    *) return 11 ;;
+}
+
+route_preference_contains() {
+  local preferred=$1 other=$2 preferences=$3 line
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$line" = "$preferred>$other" ] && return 0
+  done <<EOF
+$preferences
+EOF
+  return 1
+}
+
+resolve_route() {
+  local mappings=$1 remote_tags=$2 preferences=${3:-}
+  local matches matched_count=0 line configured_tag route_dir
+  local candidate_line candidate_tag candidate_dir other_line other_tag preferred_all winner_count=0 winner_tag='' winner_dir=''
+
+  if [ -z "$mappings" ]; then
+    printf '\n\n'
+    return 0
+  fi
+
+  matches=$(route_matches "$mappings" "$remote_tags")
+  while IFS= read -r line; do
+    [ -n "$line" ] && matched_count=$((matched_count + 1))
+  done <<EOF
+$matches
+EOF
+
+  case "$matched_count" in
+    0)
+      return 10
+      ;;
+    1)
+      line=$(printf '%s\n' "$matches" | sed -n '1p')
+      configured_tag=${line%%=*}
+      route_dir=${line#*=}
+      printf '%s\n%s\n' "$configured_tag" "$route_dir"
+      return 0
+      ;;
   esac
+
+  while IFS= read -r candidate_line; do
+    [ -n "$candidate_line" ] || continue
+    candidate_tag=${candidate_line%%=*}
+    candidate_dir=${candidate_line#*=}
+    preferred_all=true
+    while IFS= read -r other_line; do
+      [ -n "$other_line" ] || continue
+      other_tag=${other_line%%=*}
+      [ "$other_tag" = "$candidate_tag" ] && continue
+      if ! route_preference_contains "$candidate_tag" "$other_tag" "$preferences"; then
+        preferred_all=false
+        break
+      fi
+    done <<EOF
+$matches
+EOF
+    if [ "$preferred_all" = true ]; then
+      winner_count=$((winner_count + 1))
+      winner_tag=$candidate_tag
+      winner_dir=$candidate_dir
+    fi
+  done <<EOF
+$matches
+EOF
+
+  [ "$winner_count" -eq 1 ] || return 11
+  printf '%s\n%s\n' "$winner_tag" "$winner_dir"
 }
 
 site_code_hash() {

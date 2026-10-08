@@ -137,9 +137,12 @@ Doctor reports configured Tag routes and validates their relative directory valu
 For every accessible site it checks whether routing is resolvable:
 
 - with no configured Tag routes, sites use `<root>/<site>`;
-- with configured routes, each site must match exactly one configured Pantheon Tag;
+- with configured routes, each site must resolve to one configured Pantheon Tag route;
 - zero matches is an unmapped-route failure;
-- multiple matches is an ambiguous-route failure.
+- multiple matches resolve only when explicit Tag precedence identifies one unique winner;
+- unresolved multiple matches are an ambiguous-route failure.
+
+For an unresolved overlap, guided review shows the concrete matching Tag routes. Doctor may recommend a preferred Tag when its observed site cohort is a strict subset of every other matching cohort, but the recommendation is never silently applied. The user can accept the recommendation, choose another matching route, or leave the overlap unresolved; saving a preference requires an additional explicit confirmation.
 
 Doctor also reports accessible Pantheon Tags that have no configured local route as `WARN`. Such a Tag does not automatically make a site's resolved route invalid when another configured Tag uniquely owns that site.
 

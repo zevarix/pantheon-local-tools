@@ -12,6 +12,7 @@ mkdir -p "$HOME"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 assert_eq() { [ "$1" = "$2" ] || fail "expected [$2], got [$1]"; }
 assert_contains() { case "$1" in *"$2"*) ;; *) fail "expected output to contain [$2], got [$1]" ;; esac; }
+assert_not_contains() { case "$1" in *"$2"*) fail "expected output not to contain [$2], got [$1]" ;; *) ;; esac; }
 
 run_guided_init() {
   input=$1
@@ -146,6 +147,21 @@ bash "$CLI" config tag set 'Client Sites.v2' 'clients/main'
 assert_eq "$(bash "$CLI" config tag get 'Client Sites.v2')" 'clients/main'
 assert_contains "$(bash "$CLI" config tag list)" 'Client Sites.v2=clients/main'
 
+bash "$CLI" config tag set 'General Sites' general
+bash "$CLI" config tag set 'Other Sites' other
+bash "$CLI" config tag prefer set 'Client Sites.v2' 'General Sites'
+assert_contains "$(bash "$CLI" config tag prefer list)" 'Client Sites.v2>General Sites'
+bash "$CLI" config tag prefer set 'General Sites' 'Client Sites.v2'
+assert_contains "$(bash "$CLI" config tag prefer list)" 'General Sites>Client Sites.v2'
+assert_not_contains "$(bash "$CLI" config tag prefer list)" 'Client Sites.v2>General Sites'
+bash "$CLI" config tag prefer set 'Other Sites' 'General Sites'
+assert_contains "$(bash "$CLI" config tag prefer list)" 'Other Sites>General Sites'
+bash "$CLI" config tag prefer unset 'General Sites' 'Client Sites.v2'
+assert_not_contains "$(bash "$CLI" config tag prefer list)" 'General Sites>Client Sites.v2'
+assert_contains "$(bash "$CLI" config tag prefer list)" 'Other Sites>General Sites'
+if bash "$CLI" config tag prefer set 'Same' 'Same' >/dev/null 2>&1; then fail 'self preference was accepted'; fi
+if bash "$CLI" config tag prefer set 'Client Sites.v2' 'Missing Route' >/dev/null 2>&1; then fail 'preference to an unconfigured route was accepted'; fi
+
 if bash "$CLI" config tag set Unsafe '/absolute/path' >/dev/null 2>&1; then fail 'absolute tag directory was accepted'; fi
 if bash "$CLI" config tag set Unsafe '../escape' >/dev/null 2>&1; then fail '.. tag directory was accepted'; fi
 if bash "$CLI" config tag set Unsafe 'foo\\bar' >/dev/null 2>&1; then fail 'backslash tag directory was accepted'; fi
@@ -154,11 +170,18 @@ output=$(bash "$CLI" config list)
 assert_contains "$output" "root=$HOME/Pantheon Sites"
 assert_contains "$output" 'provider=lando'
 assert_contains "$output" 'tag.Client Sites.v2=clients/main'
+assert_contains "$output" 'route.preference=Other Sites>General Sites'
 if printf '%s\n' "$output" | grep -q 'site-prefix'; then fail 'removed site-prefix setting is still exposed'; fi
 
 bash "$CLI" config unset provider
 assert_eq "$(bash "$CLI" config get provider)" 'auto'
+bash "$CLI" config tag prefer set 'Client Sites.v2' 'General Sites'
 bash "$CLI" config tag unset 'Client Sites.v2'
+assert_not_contains "$(bash "$CLI" config tag prefer list)" 'Client Sites.v2>General Sites'
+bash "$CLI" config tag unset 'General Sites'
+assert_not_contains "$(bash "$CLI" config tag prefer list)" 'Other Sites>General Sites'
+bash "$CLI" config tag unset 'Other Sites'
 assert_eq "$(bash "$CLI" config tag list)" ''
+assert_eq "$(bash "$CLI" config tag prefer list)" ''
 
 printf 'config tests passed\n'

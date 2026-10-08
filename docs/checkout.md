@@ -64,7 +64,7 @@ the canonical checkout destination is:
 
 With no configured Tag routes, canonical checkouts live directly under `<root>/<site>`.
 
-When Tag routes exist, a site must match exactly one configured route. Zero matches or multiple matches are `BLOCKED`; PLT never guesses a destination.
+When Tag routes exist, a site must resolve to one configured route. Zero matches are `BLOCKED`. Multiple matches are also `BLOCKED` unless explicit `config tag prefer` rules identify one unique winner across all matching routes. PLT never infers precedence from Tag names or directory names.
 
 `--tag TAG` selects only sites carrying the named configured route. Repeating `--tag` uses OR selection. Estate results are ordered deterministically by site name.
 

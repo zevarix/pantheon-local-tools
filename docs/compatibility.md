@@ -41,6 +41,9 @@ pantheon-local config tag get TAG
 pantheon-local config tag set TAG DIRECTORY
 pantheon-local config tag unset TAG
 pantheon-local config tag list
+pantheon-local config tag prefer set PREFERRED OTHER
+pantheon-local config tag prefer unset PREFERRED OTHER
+pantheon-local config tag prefer list
 pantheon-local config tag profile get TAG PROPERTY
 pantheon-local config tag profile set TAG PROPERTY VALUE
 pantheon-local config tag profile unset TAG PROPERTY
@@ -98,13 +101,14 @@ The following user configuration concepts are public:
 - `root` — absolute local root for Pantheon checkouts;
 - `provider` — `auto`, `ddev`, or `lando`;
 - Pantheon Tag-to-directory mappings managed through `config tag`;
+- optional explicit pairwise Tag route precedence managed through `config tag prefer`, used only when multiple configured routes match one site;
 - optional Pantheon Tag profile properties managed through `config tag profile`:
   - `config-strategy` — `full-export` or `overlay-delta`;
   - `config-path` — a validated project-relative configuration path.
 
 `pantheon-local config init` is a convenience layer over the same configuration model. With no flags in a terminal, it guides root/provider selection, validates all proposed values, summarizes them, confirms before writing, and uses the normal configuration setters. With `--root` and/or `--provider`, it is non-interactive and changes only values explicitly supplied by the caller. Existing `config get/set/unset/list/path` and `config tag` commands remain first-class granular controls.
 
-Tag profile properties extend an existing Tag route and use the same Git-compatible `[tag "..."]` subsection. A profile setter does not implicitly create a Tag route. Existing directory-only Tag configuration remains valid, and a Tag route does not need a strategy/path unless a later workflow explicitly requires one. Removing a Tag route through `config tag unset TAG` also removes its optional profile properties so stale strategy/path state is not left behind.
+Explicit route precedence is declarative local routing state. It does not edit Pantheon Tags and applies only when both named configured routes match the same site. A preference setter requires both routes to exist, replaces the reverse preference for the same pair, and route removal cleans up preferences involving that Tag.\n\nTag profile properties extend an existing Tag route and use the same Git-compatible `[tag "..."]` subsection. A profile setter does not implicitly create a Tag route. Existing directory-only Tag configuration remains valid, and a Tag route does not need a strategy/path unless a later workflow explicitly requires one. Removing a Tag route through `config tag unset TAG` also removes its optional profile properties so stale strategy/path state is not left behind.
 
 The initial strategy vocabulary is deliberately bounded to `full-export` and `overlay-delta`. The configured `config-path` is data, not a built-in path assumption: `config/sync`, `config/site-overrides`, and organization-specific directories are examples only. The `overlay-delta` label does not make a directory a complete export and does not authorize a blanket Drupal config export.
 

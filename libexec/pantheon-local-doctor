@@ -22,6 +22,7 @@ DOCTOR_STEP_ORGANIZATION_SECONDS=''
 DOCTOR_STEP_TAGS_SECONDS=''
 DOCTOR_STEP_GIT_URL_SECONDS=''
 DOCTOR_STEP_GIT_REMOTE_SECONDS=''
+DOCTOR_SITE_TAGS_FILE=''
 DOCTOR_SPINNER_PID=''
 DOCTOR_CURSOR_HIDDEN=false
 DOCTOR_SITE_INDEX=0
@@ -409,7 +410,7 @@ single_line() {
 }
 
 check_add() {
-  local id=$1 status=$2 reason=$3 category=$4 source=$5 message=$6 next=$7 scope=$8 file
+  local id=$1 status=$2 reason=$3 category=$4 source=$5 message=$6 next=$7 scope=$8 detail=${9:-} file
   CHECK_SEQ=$((CHECK_SEQ + 1))
   file=$(printf '%s/check-%04d' "$CHECK_DIR" "$CHECK_SEQ")
   {
@@ -421,6 +422,7 @@ check_add() {
     single_line "$message"; printf '\n'
     single_line "$next"; printf '\n'
     single_line "$scope"; printf '\n'
+    single_line "$detail"; printf '\n'
   } > "$file"
   printf '%s\n' "$file" >> "$CHECK_DIR/order"
 }
@@ -436,7 +438,196 @@ check_load() {
     IFS= read -r CHECK_MESSAGE || CHECK_MESSAGE=''
     IFS= read -r CHECK_NEXT || CHECK_NEXT=''
     IFS= read -r CHECK_SCOPE || CHECK_SCOPE=''
+    IFS= read -r CHECK_DETAIL || CHECK_DETAIL=''
   } < "$file"
+}
+
+doctor_route_matches_summary() {
+  local mappings=$1 remote_tags=$2 line configured_tag route_dir summary=''
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    configured_tag=${line%%=*}
+    route_dir=${line#*=}
+    if remote_tag_contains "$configured_tag" "$remote_tags"; then
+      [ -z "$summary" ] || summary="$summary; "
+      summary="$summary$configured_tag -> $route_dir"
+    fi
+  done <<EOF
+$mappings
+EOF
+  printf '%s' "$summary"
+}
+
+doctor_route_match_tags() {
+  local matches=$1 line tag result=''
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    tag=${line%%=*}
+    if [ -z "$result" ]; then result=$tag; else result="$result|$tag"; fi
+  done <<EOF
+$matches
+EOF
+  printf '%s' "$result"
+}
+
+doctor_mapping_directory_for_tag() {
+  local wanted=$1 mapping_list=$2 line tag
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    tag=${line%%=*}
+    [ "$tag" = "$wanted" ] || continue
+    printf '%s' "${line#*=}"
+    return 0
+  done <<EOF
+$mapping_list
+EOF
+  return 1
+}
+
+doctor_site_has_observed_tag() {
+  local wanted_site=$1 wanted_tag=$2 observed_site observed_tag
+  [ -n "$DOCTOR_SITE_TAGS_FILE" ] && [ -f "$DOCTOR_SITE_TAGS_FILE" ] || return 1
+  while IFS=$'\t' read -r observed_site observed_tag; do
+    [ "$observed_site" = "$wanted_site" ] && [ "$observed_tag" = "$wanted_tag" ] && return 0
+  done < "$DOCTOR_SITE_TAGS_FILE"
+  return 1
+}
+
+doctor_tag_site_count() {
+  local wanted_tag=$1 observed_site observed_tag count=0
+  [ -n "$DOCTOR_SITE_TAGS_FILE" ] && [ -f "$DOCTOR_SITE_TAGS_FILE" ] || { printf '0'; return; }
+  while IFS=$'\t' read -r observed_site observed_tag; do
+    [ "$observed_tag" = "$wanted_tag" ] && count=$((count + 1))
+  done < "$DOCTOR_SITE_TAGS_FILE"
+  printf '%s' "$count"
+}
+
+doctor_tag_is_strict_subset() {
+  local candidate=$1 other=$2 observed_site observed_tag any_candidate=false other_extra=false
+  [ -n "$DOCTOR_SITE_TAGS_FILE" ] && [ -f "$DOCTOR_SITE_TAGS_FILE" ] || return 1
+  while IFS=$'\t' read -r observed_site observed_tag; do
+    [ "$observed_tag" = "$candidate" ] || continue
+    any_candidate=true
+    doctor_site_has_observed_tag "$observed_site" "$other" || return 1
+  done < "$DOCTOR_SITE_TAGS_FILE"
+  [ "$any_candidate" = true ] || return 1
+  while IFS=$'\t' read -r observed_site observed_tag; do
+    [ "$observed_tag" = "$other" ] || continue
+    if ! doctor_site_has_observed_tag "$observed_site" "$candidate"; then
+      other_extra=true
+      break
+    fi
+  done < "$DOCTOR_SITE_TAGS_FILE"
+  [ "$other_extra" = true ]
+}
+
+doctor_recommended_preference_from_detail() {
+  local detail=$1 old_ifs=$IFS candidate other candidate_ok winners=0 winner=''
+  local -a tags
+  [ -n "$detail" ] || return 1
+  IFS='|' read -r -a tags <<< "$detail"
+  IFS=$old_ifs
+  for candidate in "${tags[@]}"; do
+    candidate_ok=true
+    for other in "${tags[@]}"; do
+      [ "$candidate" = "$other" ] && continue
+      if ! doctor_tag_is_strict_subset "$candidate" "$other"; then
+        candidate_ok=false
+        break
+      fi
+    done
+    if [ "$candidate_ok" = true ]; then
+      winners=$((winners + 1))
+      winner=$candidate
+    fi
+  done
+  [ "$winners" -eq 1 ] || return 1
+  printf '%s' "$winner"
+}
+
+doctor_offer_route_preference() {
+  local site=$1 detail=$2 choice confirm_rc count selected preferred recommendation='' tag dir i tag_count label default_choice
+  local old_ifs=$IFS
+  local -a tags options
+
+  [ -n "$detail" ] || return 0
+  IFS='|' read -r -a tags <<< "$detail"
+  IFS=$old_ifs
+  count=${#tags[@]}
+  [ "$count" -gt 1 ] || return 0
+  recommendation=$(doctor_recommended_preference_from_detail "$detail" 2>/dev/null || true)
+
+  options=()
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    tag=${tags[$i]}
+    dir=$(doctor_mapping_directory_for_tag "$tag" "$mappings") || dir='(route unavailable)'
+    tag_count=$(doctor_tag_site_count "$tag")
+    label="Prefer $tag -> $dir ($tag_count observed sites)"
+    if [ -n "$recommendation" ] && [ "$tag" = "$recommendation" ]; then
+      label="$label — recommended: most specific observed cohort"
+    fi
+    options[${#options[@]}]="$label"
+    i=$((i + 1))
+  done
+  options[${#options[@]}]='Leave this overlap unresolved for now'
+  default_choice=$((count + 1))
+
+  printf '\n'
+  printf '  These Pantheon Tags can coexist. PLT needs an explicit precedence rule to choose a local route.\n'
+  if [ -n "$recommendation" ]; then
+    printf '  Recommendation: prefer %s because its observed site cohort is a strict subset of the other matching route cohort(s).\n' "$recommendation"
+  else
+    printf '  Recommendation: none; the observed cohorts do not identify one uniquely more-specific route.\n'
+  fi
+  printf '  A saved preference applies wherever the same configured Tags overlap; it does not change Pantheon Tags or remove route mappings.\n\n'
+
+  if ! plt_interact_choose "Which route should PLT prefer when these Tags overlap for $site?" "$default_choice" "${options[@]}"; then
+    return 1
+  fi
+  choice=$PLT_INTERACT_CHOICE
+  if [ "$choice" -gt "$count" ]; then
+    plt_term_style 1 muted '  Left unresolved. No changes were made.'
+    printf '\n'
+    return 0
+  fi
+
+  selected=$((choice - 1))
+  preferred=${tags[$selected]}
+
+  printf '\n'
+  plt_term_style 1 muted '  Preview:'
+  printf '\n'
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    tag=${tags[$i]}
+    if [ "$tag" != "$preferred" ]; then
+      printf "    pantheon-local config tag prefer set '%s' '%s'\n" "$preferred" "$tag"
+    fi
+    i=$((i + 1))
+  done
+  printf '\n'
+
+  if plt_interact_confirm "Save $preferred as the preferred route wherever these Tags overlap?"; then
+    :
+  else
+    confirm_rc=$?
+    [ "$confirm_rc" -ne 2 ] || return 1
+    plt_term_style 1 muted '  Preference not saved.'
+    printf '\n'
+    return 0
+  fi
+
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    tag=${tags[$i]}
+    [ "$tag" = "$preferred" ] || "$CORE" config tag prefer set "$preferred" "$tag"
+    i=$((i + 1))
+  done
+
+  plt_term_style 1 success "  Saved route preference: $preferred"
+  printf '\n'
+  doctor_reassess
 }
 
 doctor_remediation_class_loaded() {
@@ -474,7 +665,8 @@ doctor_remediation_action_loaded() {
     checkout-missing) printf '%s' checkout-create ;;
     root-config-invalid|root-not-directory|root-parent-unwritable) printf '%s' config-root ;;
     provider-config-invalid) printf '%s' config-provider ;;
-    tag-route-invalid|site-route-unmapped|site-route-ambiguous|accessible-tag-unmapped) printf '%s' config-tag-route ;;
+    site-route-ambiguous) printf '%s' config-tag-preference ;;
+    tag-route-invalid|site-route-unmapped|accessible-tag-unmapped) printf '%s' config-tag-route ;;
     provider-auto-ambiguous|provider-auto-undetermined) printf '%s' checkout-provider-choice ;;
     terminus-unauthenticated) printf '%s' terminus-auth ;;
     git-unavailable) printf '%s' install-git ;;
@@ -661,8 +853,64 @@ doctor_apply_managed_remediations() {
   return 0
 }
 
+doctor_review_nonmanaged_findings() {
+  local choice=$1 external=$2 manual=$3 file class choice_index=0 external_index=0 manual_index=0 scope_label=''
+
+  printf '\n'
+  plt_term_style 1 heading 'Guided review'
+  printf '\n'
+
+  while IFS= read -r file <&3; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    class=$(doctor_remediation_class_loaded)
+    case "$class" in
+      user-choice)
+        choice_index=$((choice_index + 1))
+        printf '\n'
+        plt_term_style 1 heading "Choice $choice_index/$choice"
+        printf '\n'
+        case "$CHECK_SCOPE" in
+          site:*) scope_label=${CHECK_SCOPE#site:}; printf '  Site:    %s\n' "$scope_label" ;;
+          tag:*) scope_label=${CHECK_SCOPE#tag:}; printf '  Tag:     %s\n' "$scope_label" ;;
+          *) scope_label=$CHECK_SCOPE; [ -z "$scope_label" ] || printf '  Scope:   %s\n' "$scope_label" ;;
+        esac
+        printf '  Finding: %s\n' "$CHECK_MESSAGE"
+        [ -z "$CHECK_NEXT" ] || printf '  Next:    %s\n' "$CHECK_NEXT"
+        if [ "$CHECK_REASON" = site-route-ambiguous ]; then
+          doctor_offer_route_preference "$scope_label" "$CHECK_DETAIL" || return $?
+        fi
+        ;;
+      external-action)
+        external_index=$((external_index + 1))
+        printf '\n'
+        plt_term_style 1 heading "External action $external_index/$external"
+        printf '\n'
+        printf '  Finding: %s\n' "$CHECK_MESSAGE"
+        [ -z "$CHECK_NEXT" ] || printf '  Next:    %s\n' "$CHECK_NEXT"
+        ;;
+      manual-recovery)
+        manual_index=$((manual_index + 1))
+        printf '\n'
+        plt_term_style 1 heading "Manual recovery $manual_index/$manual"
+        printf '\n'
+        case "$CHECK_SCOPE" in
+          site:*) scope_label=${CHECK_SCOPE#site:}; printf '  Site:    %s\n' "$scope_label" ;;
+          *) scope_label=$CHECK_SCOPE; [ -z "$scope_label" ] || printf '  Scope:   %s\n' "$scope_label" ;;
+        esac
+        printf '  Finding: %s\n' "$CHECK_MESSAGE"
+        [ -z "$CHECK_NEXT" ] || printf '  Next:    %s\n' "$CHECK_NEXT"
+        ;;
+    esac
+  done 3< "$CHECK_DIR/order"
+
+  printf '\n'
+  plt_term_style 1 muted 'Guided review complete. No unconfirmed changes were made.'
+  printf '\n'
+}
+
 doctor_offer_remediation() {
-  local counts managed choice external manual confirm_rc
+  local counts managed choice external manual confirm_rc review_total
   counts=$(doctor_remediation_counts)
   IFS=' ' read -r managed choice external manual <<EOF
 $counts
@@ -675,17 +923,30 @@ EOF
   doctor_print_remediation_summary "$managed" "$choice" "$external" "$manual"
 
   [ "${PANTHEON_LOCAL_DOCTOR_REASSESS:-0}" != 1 ] || return 0
-  [ "$managed" -gt 0 ] || return 0
 
-  if plt_interact_confirm "Fix the $(doctor_remediation_count_text "$managed" 'PLT-managed item' 'PLT-managed items') now?"; then
-    doctor_apply_managed_remediations "$managed"
-    return $?
+  if [ "$managed" -gt 0 ]; then
+    if plt_interact_confirm "Fix the $(doctor_remediation_count_text "$managed" 'PLT-managed item' 'PLT-managed items') now?"; then
+      doctor_apply_managed_remediations "$managed" || return $?
+    else
+      confirm_rc=$?
+      [ "$confirm_rc" -ne 2 ] || return 0
+      plt_term_style 1 muted 'No repairs were performed.'
+      printf '\n'
+    fi
+  fi
+
+  review_total=$((choice + external + manual))
+  [ "$review_total" -gt 0 ] || return 0
+
+  if plt_interact_confirm "Review the $(doctor_remediation_count_text "$review_total" 'item that needs your attention' 'items that need your attention') now?"; then
+    doctor_review_nonmanaged_findings "$choice" "$external" "$manual"
+    return 0
   else
     confirm_rc=$?
   fi
 
   [ "$confirm_rc" -ne 2 ] || return 0
-  plt_term_style 1 muted 'No repairs were performed.'
+  plt_term_style 1 muted 'Review skipped. No changes were made.'
   printf '\n'
   return 0
 }
@@ -858,10 +1119,10 @@ inspect_checkout_structure() {
 }
 
 doctor_command() {
-  local format=default record_file='' timing=false config_path='' version='' platform root='' provider='' mappings='' git_ok=false
+  local format=default record_file='' timing=false config_path='' version='' platform root='' provider='' mappings='' preferences='' git_ok=false
   local site_total=0 site_index=0
   local failure_rank failure_source_value category source rank candidate_code
-  local root_parent terminus_ok=false auth_ok=false sites='' site envs org remote_tags route route_rc tag route_dir destination git_url remote_info remote_branch remote_sha
+  local root_parent terminus_ok=false auth_ok=false sites='' site envs org remote_tags route route_rc route_matches route_match_lines route_match_tags tag route_dir destination git_url remote_info remote_branch remote_sha
   local tag_line mapped_tag mapped_dir tags_seen_file tags_unique_file line exit_code semantic reason failure_source json record_rc
 
   while [ "$#" -gt 0 ]; do
@@ -904,7 +1165,9 @@ doctor_command() {
   : > "$CHECK_DIR/order"
   tags_seen_file="$CHECK_DIR/tags-seen"
   tags_unique_file="$CHECK_DIR/tags-unique"
+  DOCTOR_SITE_TAGS_FILE="$CHECK_DIR/site-tags"
   : > "$tags_seen_file"
+  : > "$DOCTOR_SITE_TAGS_FILE"
 
   platform=$(doctor_platform)
   check_add platform PASS platform-detected '' plt "platform: $platform" '' global
@@ -971,6 +1234,7 @@ doctor_command() {
     esac
 
     mappings=$(doctor_tag_mappings)
+    preferences=$("$CORE" config tag prefer list 2>/dev/null || true)
     if [ -n "$mappings" ]; then
       while IFS= read -r tag_line; do
         [ -n "$tag_line" ] || continue
@@ -1063,7 +1327,11 @@ EOF
       doctor_site_step_start tags
       if remote_tags=$(site_remote_tags_for_org "$site" "$org"); then
         doctor_site_step_finish tags complete
-        while IFS= read -r line; do [ -n "$line" ] && printf '%s\n' "$line" >> "$tags_seen_file"; done <<EOF
+        while IFS= read -r line; do
+          [ -n "$line" ] || continue
+          printf '%s\n' "$line" >> "$tags_seen_file"
+          printf '%s\t%s\n' "$site" "$line" >> "$DOCTOR_SITE_TAGS_FILE"
+        done <<EOF
 $remote_tags
 EOF
       else
@@ -1074,8 +1342,11 @@ EOF
       fi
 
       doctor_site_step_start routing
+      route_match_lines=$(route_matches "$mappings" "$remote_tags")
+      route_match_tags=$(doctor_route_match_tags "$route_match_lines")
+      route_matches=$(doctor_route_matches_summary "$mappings" "$remote_tags")
       route_rc=0
-      route=$(resolve_route "$mappings" "$remote_tags") || route_rc=$?
+      route=$(resolve_route "$mappings" "$remote_tags" "$preferences") || route_rc=$?
       tag=''; route_dir=''; destination=''
       case "$route_rc" in
         0)
@@ -1098,7 +1369,7 @@ EOF
           ;;
         11)
           doctor_site_step_finish routing failure
-          check_add "site-$site-route" FAIL site-route-ambiguous ambiguous-configuration plt-orchestration "site $site matches more than one configured local Tag route" 'leave exactly one configured local Tag route matching this site' "site:$site"
+          check_add "site-$site-route" FAIL site-route-ambiguous ambiguous-configuration plt-orchestration "site $site matches more than one configured local Tag route: ${route_matches:-<unknown>}" 'confirm which configured Tag should take precedence when these routes overlap, adjust the routing configuration, or leave the overlap unresolved' "site:$site" "$route_match_tags"
           doctor_site_end
           continue
           ;;

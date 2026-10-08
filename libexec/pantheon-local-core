@@ -30,6 +30,9 @@ Usage:
   pantheon-local config tag set TAG DIRECTORY
   pantheon-local config tag unset TAG
   pantheon-local config tag list
+  pantheon-local config tag prefer set PREFERRED OTHER
+  pantheon-local config tag prefer unset PREFERRED OTHER
+  pantheon-local config tag prefer list
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
 
 Configuration keys:
@@ -231,6 +234,7 @@ tag_unset() {
   [ -f "$file" ] || return 0
   key=$(tag_git_key "$tag")
   git config --file "$file" --unset-all "$key" >/dev/null 2>&1 || true
+  tag_preference_remove_tag "$tag"
 }
 
 tag_list() {
@@ -248,12 +252,110 @@ tag_list() {
   done
 }
 
+tag_preference_remove_tag() {
+  local tag=$1 file existing line preferred other
+  require_command git
+  file=$(config_path)
+  [ -f "$file" ] || return 0
+  existing=$(git config --file "$file" --get-all route.preference 2>/dev/null || true)
+  git config --file "$file" --unset-all route.preference >/dev/null 2>&1 || true
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    preferred=${line%%>*}
+    other=${line#*>}
+    if [ "$preferred" = "$tag" ] || [ "$other" = "$tag" ]; then
+      continue
+    fi
+    git config --file "$file" --add route.preference "$line"
+  done <<EOF
+$existing
+EOF
+}
+
+tag_preference_list_raw() {
+  local file
+  require_command git
+  file=$(config_path)
+  [ -f "$file" ] || return 0
+  git config --file "$file" --get-all route.preference 2>/dev/null || true
+}
+
+tag_preference_list() {
+  tag_preference_list_raw | LC_ALL=C sort -u
+}
+
+tag_preference_set() {
+  local preferred=$1 other=$2 file existing line
+  require_command git
+  validate_tag "$preferred"
+  validate_tag "$other"
+  [ "$preferred" != "$other" ] || die 'preferred and other Tag must differ'
+  tag_get "$preferred" >/dev/null
+  tag_get "$other" >/dev/null
+  ensure_config_parent
+  file=$(config_path)
+  existing=$(tag_preference_list_raw)
+  git config --file "$file" --unset-all route.preference >/dev/null 2>&1 || true
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      "$preferred>$other"|"$other>$preferred") continue ;;
+    esac
+    git config --file "$file" --add route.preference "$line"
+  done <<EOF
+$existing
+EOF
+  git config --file "$file" --add route.preference "$preferred>$other"
+}
+
+tag_preference_unset() {
+  local preferred=$1 other=$2 file existing line
+  require_command git
+  validate_tag "$preferred"
+  validate_tag "$other"
+  file=$(config_path)
+  [ -f "$file" ] || return 0
+  existing=$(tag_preference_list_raw)
+  git config --file "$file" --unset-all route.preference >/dev/null 2>&1 || true
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$line" = "$preferred>$other" ] && continue
+    git config --file "$file" --add route.preference "$line"
+  done <<EOF
+$existing
+EOF
+}
+
+tag_prefer_command() {
+  local action=${1:-}
+  case "$action" in
+    set)
+      [ "$#" -eq 3 ] || die 'usage: pantheon-local config tag prefer set PREFERRED OTHER'
+      tag_preference_set "$2" "$3"
+      ;;
+    unset)
+      [ "$#" -eq 3 ] || die 'usage: pantheon-local config tag prefer unset PREFERRED OTHER'
+      tag_preference_unset "$2" "$3"
+      ;;
+    list)
+      [ "$#" -eq 1 ] || die 'usage: pantheon-local config tag prefer list'
+      tag_preference_list
+      ;;
+    ''|-h|--help|help) usage ;;
+    *) die "unknown config tag prefer command: $action" ;;
+  esac
+}
+
 config_list() {
   printf 'root=%s\n' "$(config_get root)"
   printf 'provider=%s\n' "$(config_get provider)"
   tag_list | while IFS= read -r line; do
     [ -n "$line" ] || continue
     printf 'tag.%s\n' "$line"
+  done
+  tag_preference_list | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    printf 'route.preference=%s\n' "$line"
   done
 }
 
@@ -437,6 +539,10 @@ tag_command() {
       [ "$#" -eq 1 ] || die 'usage: pantheon-local config tag list'
       tag_list
       ;;
+    prefer)
+      shift
+      tag_prefer_command "$@"
+      ;;
     ''|-h|--help|help) usage ;;
     *) die "unknown config tag command: $action" ;;
   esac
@@ -505,10 +611,23 @@ EOF
   return 1
 }
 
+tag_preference_contains() {
+  local preferred=$1 other=$2 preferences=$3 line
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$line" = "$preferred>$other" ] && return 0
+  done <<EOF
+$preferences
+EOF
+  return 1
+}
+
 resolve_tag_route() {
-  local site=$1 mappings org remote_tags line mapped_tag mapped_dir
-  local matched_tag='' matched_dir='' matches=0
+  local site=$1 mappings preferences org remote_tags matched_lines='' line mapped_tag mapped_dir
+  local matched_count=0 matched_tag='' matched_dir='' candidate_line candidate_tag candidate_dir other_line other_tag
+  local preferred_all winner_count=0 winner_tag='' winner_dir=''
   mappings=$(tag_list)
+  preferences=$(tag_preference_list)
 
   if [ -z "$mappings" ]; then
     printf '\n\n'
@@ -525,18 +644,54 @@ resolve_tag_route() {
     mapped_tag=${line%%=*}
     mapped_dir=${line#*=}
     if tag_in_remote_list "$mapped_tag" "$remote_tags"; then
-      matches=$((matches + 1))
+      matched_count=$((matched_count + 1))
       matched_tag=$mapped_tag
       matched_dir=$mapped_dir
+      if [ -z "$matched_lines" ]; then
+        matched_lines=$line
+      else
+        matched_lines="$matched_lines
+$line"
+      fi
     fi
   done <<EOF
 $mappings
 EOF
 
-  case "$matches" in
-    1) printf '%s\n%s\n' "$matched_tag" "$matched_dir" ;;
+  case "$matched_count" in
     0) die "site $site has no Pantheon Tag matching a configured local Tag route" ;;
-    *) die "site $site matches more than one configured Pantheon Tag route; refusing to guess" ;;
+    1) printf '%s\n%s\n' "$matched_tag" "$matched_dir"; return ;;
+  esac
+
+  while IFS= read -r candidate_line; do
+    [ -n "$candidate_line" ] || continue
+    candidate_tag=${candidate_line%%=*}
+    candidate_dir=${candidate_line#*=}
+    preferred_all=true
+    while IFS= read -r other_line; do
+      [ -n "$other_line" ] || continue
+      other_tag=${other_line%%=*}
+      [ "$other_tag" = "$candidate_tag" ] && continue
+      if ! tag_preference_contains "$candidate_tag" "$other_tag" "$preferences"; then
+        preferred_all=false
+        break
+      fi
+    done <<EOF
+$matched_lines
+EOF
+    if [ "$preferred_all" = true ]; then
+      winner_count=$((winner_count + 1))
+      winner_tag=$candidate_tag
+      winner_dir=$candidate_dir
+    fi
+  done <<EOF
+$matched_lines
+EOF
+
+  case "$winner_count" in
+    1) printf '%s\n%s\n' "$winner_tag" "$winner_dir" ;;
+    0) die "site $site matches more than one configured Pantheon Tag route; set explicit precedence with pantheon-local config tag prefer set PREFERRED OTHER" ;;
+    *) die "site $site matches contradictory configured Tag preferences; review pantheon-local config tag prefer list" ;;
   esac
 }
 

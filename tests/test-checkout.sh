@@ -241,6 +241,17 @@ set -e
 assert_eq "$ambiguous_rc" '31'
 assert_contains "$ambiguous_output" 'BLOCKED'
 assert_contains "$ambiguous_output" 'ambiguous-tag-route'
+
+bash "$CLI" config tag prefer set 'Another Group' 'Example Group'
+set +e
+preferred_json=$(bash "$CLI" checkout beta-site.dev --dry-run --format json 2>&1)
+preferred_rc=$?
+set -e
+assert_eq "$preferred_rc" '0'
+assert_contains "$preferred_json" '"tag":"Another Group"'
+assert_contains "$preferred_json" '/apps/beta-site'
+assert_not_contains "$preferred_json" 'ambiguous-tag-route'
+
 set +e
 unmapped_output=$(bash "$CLI" checkout gamma-site.dev --dry-run 2>&1)
 unmapped_rc=$?

@@ -100,6 +100,10 @@ Commands:
       planning and can emit/record the stable JSON plan; real creation confirms
       unless --yes is supplied.
 
+  pantheon-local provider init --provider ddev|lando [--dry-run]
+      Initialize missing base DDEV/Lando configuration for a canonical Dev
+      checkout after explicit review. Never starts providers or pulls data.
+
   pantheon-local setup [--provider ddev|lando] [--dry-run]
       Bootstrap an existing PLT-managed Drupal checkout using its recorded
       Pantheon environment: start provider, Composer install, guarded local
@@ -220,6 +224,7 @@ PULL="$LIBEXEC_DIR/pantheon-local-pull"
 READINESS="$LIBEXEC_DIR/pantheon-local-readiness"
 SETUP="$LIBEXEC_DIR/pantheon-local-setup"
 STATUS="$LIBEXEC_DIR/pantheon-local-status"
+PROVIDER_INIT="$LIBEXEC_DIR/pantheon-local-provider-init"
 
 command=${1:-}
 case "$command" in
@@ -240,6 +245,12 @@ case "$command" in
     [ -x "$READINESS" ] || die "readiness module is missing or not executable: $READINESS"
     shift
     exec "$READINESS" "$@"
+    ;;
+  provider)
+    [ "${2:-}" = init ] || die 'usage: pantheon-local provider init --provider ddev|lando [--dry-run]'
+    [ -x "$PROVIDER_INIT" ] || die "provider-init module is missing or not executable: $PROVIDER_INIT"
+    shift 2
+    exec "$PROVIDER_INIT" "$@"
     ;;
   setup)
     [ -x "$SETUP" ] || die "setup module is missing or not executable: $SETUP"

@@ -126,8 +126,12 @@ case "${1:-}" in
   site:info)
     site=${2:?}
     [ "$site" != "${MOCK_TAG_FAIL_SITE:-}" ] || exit 9
-    [ "${3:-}" = '--field=organization' ] || exit 2
-    printf '%s\n' 'Example Org'
+    case "${3:-}" in
+      --field=organization) printf '%s\n' 'Example Org' ;;
+      --field=framework) printf '%s\n' drupal8 ;;
+      --field=id) printf '%s\n' aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee ;;
+      *) exit 2 ;;
+    esac
     ;;
   tag:list)
     site=${2:?}
@@ -158,6 +162,12 @@ create_mock_provider() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$0 $*" >> "${MOCK_PROVIDER_LOG:?}"
+if [ "${MOCK_DDEV_CONFIG_ENABLED:-false}" = true ] && [ "${1:-}" = config ]; then
+  mkdir -p .ddev/providers
+  printf 'name: example-site\ntype: drupal11\ndocroot: web\n' > .ddev/config.yaml
+  printf '# Pantheon provider fixture\n' > .ddev/providers/pantheon.yaml
+  exit 0
+fi
 exit 9
 MOCK
   chmod +x "$MOCK_BIN/$provider"
@@ -175,6 +185,11 @@ create_remote() {
   case "$provider" in
     ddev) mkdir -p "$source/.ddev"; printf 'name: %s\ntype: drupal11\n' "$site" > "$source/.ddev/config.yaml" ;;
     lando) printf 'name: %s\nrecipe: pantheon\n' "$site" > "$source/.lando.yml" ;;
+    none)
+      mkdir -p "$source/web"
+      printf '<?php\n' > "$source/web/index.php"
+      printf '%s\n' '{"require":{"drupal/core-recommended":"^11.4"}}' > "$source/composer.json"
+      ;;
   esac
   git -C "$source" add .
   git -C "$source" commit -qm 'Initial Dev'
@@ -778,14 +793,14 @@ git config --file "$DIRECT_PROVIDER_DEST/.git/pantheon-local-tools/state" --unse
 direct_before=$(git -C "$DIRECT_PROVIDER_DEST" rev-parse HEAD)
 config_before=$(git hash-object "$PANTHEON_LOCAL_CONFIG")
 set +e
-direct_ddev=$(run_doctor_pty $'y\n1\n')
+direct_ddev=$(run_doctor_pty $'y\n1\n\n')
 direct_ddev_rc=$?
 set -e
 assert_eq "$direct_ddev_rc" '31'
 assert_contains "$direct_ddev" 'Choice 1/1'
 assert_contains "$direct_ddev" 'Which provider should direct-provider-site use?'
-assert_contains "$direct_ddev" 'Selected: DDEV (guidance only; no setting or project file was changed)'
-assert_contains "$direct_ddev" 'Next: configure the canonical checkout with a reviewed .ddev/config.yaml.'
+assert_contains "$direct_ddev" 'Preview: initialize ddev for'
+assert_contains "$direct_ddev" 'Provider configuration not created.'
 assert_not_contains "$direct_ddev" 'Running Doctor again...'
 assert_eq "$(git hash-object "$PANTHEON_LOCAL_CONFIG")" "$config_before"
 assert_eq "$(git -C "$DIRECT_PROVIDER_DEST" rev-parse HEAD)" "$direct_before"
@@ -793,12 +808,12 @@ assert_eq "$(git -C "$DIRECT_PROVIDER_DEST" rev-parse HEAD)" "$direct_before"
 [ ! -e "$DIRECT_PROVIDER_DEST/.lando.yml" ] || fail 'direct DDEV choice created Lando configuration'
 [ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'direct DDEV choice started a provider'
 set +e
-direct_lando=$(run_doctor_pty $'y\n2\n')
+direct_lando=$(run_doctor_pty $'y\n2\n\n')
 direct_lando_rc=$?
 set -e
 assert_eq "$direct_lando_rc" '31'
-assert_contains "$direct_lando" 'Selected: Lando (guidance only; no setting or project file was changed)'
-assert_contains "$direct_lando" 'Next: configure the canonical checkout with a reviewed .lando.yml.'
+assert_contains "$direct_lando" 'Preview: initialize lando for'
+assert_contains "$direct_lando" 'Provider configuration not created.'
 set +e
 direct_skip=$(run_doctor_pty $'y\n\n')
 direct_skip_rc=$?
@@ -807,6 +822,50 @@ assert_eq "$direct_skip_rc" '31'
 assert_contains "$direct_skip" 'Provider remains unresolved. No files or settings were changed.'
 [ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'direct provider choice invoked DDEV/Lando'
 assert_eq "$(git hash-object "$PANTHEON_LOCAL_CONFIG")" "$config_before"
+
+# A new provider configuration is created only after a separate Yes.
+scenario_init direct-ddev-initialization
+create_remote init-ddev-site 'Example Group' none
+set_sites init-ddev-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+INIT_DDEV_DEST=$(create_checkout init-ddev-site clients ddev)
+git config --file "$INIT_DDEV_DEST/.git/pantheon-local-tools/state" --unset-all local.provider
+export MOCK_DDEV_CONFIG_ENABLED=true
+set +e
+init_ddev_output=$(run_doctor_pty $'y\n1\ny\n')
+init_ddev_rc=$?
+set -e
+unset MOCK_DDEV_CONFIG_ENABLED
+assert_eq "$init_ddev_rc" '31'
+assert_contains "$init_ddev_output" 'Preview: initialize ddev for init-ddev-site'
+assert_contains "$init_ddev_output" 'Create ddev project configuration for init-ddev-site now? [y/N]'
+assert_contains "$init_ddev_output" 'Verified ddev provider configuration (not started)'
+[ -f "$INIT_DDEV_DEST/.ddev/config.yaml" ] || fail 'consented DDEV project config missing'
+[ -f "$INIT_DDEV_DEST/.ddev/providers/pantheon.yaml" ] || fail 'consented DDEV Pantheon provider missing'
+[ ! -s "$MOCK_PROVIDER_LOG" ] && fail 'consented DDEV config command was not invoked'
+grep -F ' config ' "$MOCK_PROVIDER_LOG" >/dev/null || fail 'expected ddev config generation'
+if grep -E '(start|pull|rebuild|composer|drush)' "$MOCK_PROVIDER_LOG" >/dev/null; then fail 'Doctor unexpectedly started provider/data workflow'; fi
+
+scenario_init direct-lando-initialization
+create_remote init-lando-site 'Example Group' none
+set_sites init-lando-site
+configure_base lando
+bash "$CLI" config tag set 'Example Group' clients
+INIT_LANDO_DEST=$(create_checkout init-lando-site clients lando)
+git config --file "$INIT_LANDO_DEST/.git/pantheon-local-tools/state" --unset-all local.provider
+set +e
+init_lando_output=$(run_doctor_pty $'y\n2\ny\n')
+init_lando_rc=$?
+set -e
+assert_eq "$init_lando_rc" '31'
+assert_contains "$init_lando_output" 'Preview: initialize lando for init-lando-site'
+assert_contains "$init_lando_output" 'Create lando project configuration for init-lando-site now? [y/N]'
+assert_contains "$init_lando_output" 'Verified lando provider configuration (not started)'
+[ -f "$INIT_LANDO_DEST/.lando.yml" ] || fail 'consented Pantheon Lando recipe missing'
+grep -Fx 'recipe: pantheon' "$INIT_LANDO_DEST/.lando.yml" >/dev/null || fail 'Lando recipe incorrect'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'Lando init ran provider runtime'
+assert_file_contains "$MOCK_TERMINUS_LOG" 'terminus|site:info|init-lando-site|--field=id'
 
 # After a confirmed route preference, continue read-only diagnostics for the
 # same site (Dev Git + checkout/provider), without a 34-site/full-estate rescan.
@@ -887,7 +946,7 @@ bash "$CLI" config tag set 'Specific Group' specific
 NO_PROVIDER_DEST=$(create_checkout no-provider-site specific ddev)
 git config --file "$NO_PROVIDER_DEST/.git/pantheon-local-tools/state" --unset-all local.provider
 set +e
-no_provider_output=$(run_doctor_pty $'y\n2\ny\n2\n\n')
+no_provider_output=$(run_doctor_pty $'y\n2\ny\n2\n\n\n')
 no_provider_rc=$?
 set -e
 assert_eq "$no_provider_rc" '31'
@@ -895,10 +954,10 @@ assert_contains "$no_provider_output" 'Continuing checks for no-provider-site'
 assert_contains "$no_provider_output" 'Why: checkout no-provider-site contains neither DDEV nor Lando project configuration'
 assert_contains "$no_provider_output" 'Provider: unresolved (review DDEV/Lando project configuration)'
 assert_contains "$no_provider_output" 'Which provider should no-provider-site use?'
-assert_contains "$no_provider_output" 'DDEV — use a reviewed .ddev/config.yaml'
-assert_contains "$no_provider_output" 'Lando — use a reviewed .lando.yml'
-assert_contains "$no_provider_output" 'Selected: Lando (guidance only; no setting or project file was changed)'
-assert_contains "$no_provider_output" 'Next: configure the canonical checkout with a reviewed .lando.yml.'
+assert_contains "$no_provider_output" 'DDEV — initialize the missing project configuration'
+assert_contains "$no_provider_output" 'Lando — initialize the missing Pantheon project recipe'
+assert_contains "$no_provider_output" 'Preview: initialize lando for'
+assert_contains "$no_provider_output" 'Provider configuration not created.'
 assert_contains "$no_provider_output" 'No provider or Docker runtime was started by Doctor.'
 [ ! -e "$NO_PROVIDER_DEST/.lando.yml" ] || fail 'provider choice generated Lando config'
 [ ! -e "$NO_PROVIDER_DEST/.ddev/config.yaml" ] || fail 'provider choice generated DDEV config'
@@ -915,12 +974,12 @@ bash "$CLI" config tag set 'Specific Group' specific
 CHOOSE_DDEV_DEST=$(create_checkout choose-ddev-site specific ddev)
 git config --file "$CHOOSE_DDEV_DEST/.git/pantheon-local-tools/state" --unset-all local.provider
 set +e
-choose_ddev_output=$(run_doctor_pty $'y\n2\ny\n1\n\n')
+choose_ddev_output=$(run_doctor_pty $'y\n2\ny\n1\n\n\n')
 choose_ddev_rc=$?
 set -e
 assert_eq "$choose_ddev_rc" '31'
-assert_contains "$choose_ddev_output" 'Selected: DDEV (guidance only; no setting or project file was changed)'
-assert_contains "$choose_ddev_output" 'Next: configure the canonical checkout with a reviewed .ddev/config.yaml.'
+assert_contains "$choose_ddev_output" 'Preview: initialize ddev for'
+assert_contains "$choose_ddev_output" 'Provider configuration not created.'
 [ ! -e "$CHOOSE_DDEV_DEST/.ddev/config.yaml" ] || fail 'DDEV guidance created project configuration'
 [ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'DDEV guidance started provider'
 
@@ -951,7 +1010,7 @@ configure_base auto
 bash "$CLI" config tag set 'General Group' general
 bash "$CLI" config tag set 'Specific Group' specific
 set +e
-result=$(run_doctor_pty $'y\n2\ny\ny\n1\n\n')
+result=$(run_doctor_pty $'y\n2\ny\ny\n1\n\n\n')
 rc=$?
 set -e
 assert_eq "$rc" '31'
@@ -959,7 +1018,7 @@ assert_contains "$result" 'Continuing checks for example-provider-site'
 assert_contains "$result" 'Create the canonical Dev checkout for example-provider-site now? [y/N]'
 assert_contains "$result" 'Verifying checkout for example-provider-site'
 assert_contains "$result" 'Which provider should example-provider-site use?'
-assert_contains "$result" 'Selected: DDEV (guidance only; no setting or project file was changed)'
+assert_contains "$result" 'Preview: initialize ddev for'
 assert_contains "$result" 'Full estate scan skipped.'
 [ -d "$LOCAL_ROOT/specific/example-provider-site/.git" ] || fail 'authorized canonical checkout was not created'
 [ ! -e "$LOCAL_ROOT/specific/example-provider-site/.ddev/config.yaml" ] || fail 'DDEV config was synthesized'

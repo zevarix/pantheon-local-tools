@@ -20,7 +20,11 @@ Patch release standardizing guided remediation and consent, adding Doctor extern
 - Added explicit pairwise Tag-route precedence for legitimate overlapping Pantheon Tags. Doctor now guides user-choice/manual-recovery findings instead of stopping after the summary, can recommend a more-specific strict-subset Tag cohort, requires user choice plus confirmation before saving precedence, and shares the resulting route decision with checkout and estate status.
 - Fixed interactive Doctor line wrapping with auto/full/compact layout options; guided Tag preference reviews use the shared semantic terminal style, explain failed/skipped checks, and preserve current timing after opted-in reassessment.
 - Made Doctor Git remote probing non-interactive for standard SSH, with connect/idle limits and distinct, actionable host-key/authentication/network failures. No SSH host keys are accepted automatically.
-- Guided Doctor Tag-route remediation continues directly into the same site's Dev Git/checkout/provider checks, offers consent-gated checkout creation when missing, and verifies the created checkout locally without a whole-estate scan or implicit Docker startup. A missing provider configuration is now an explicit default-safe DDEV/Lando/Leave-unresolved choice with local-only verification guidance; no provider files are generated.
+- Guided Doctor Tag-route remediation continues directly into the same site's Dev Git/checkout/provider checks, offers consent-gated checkout creation when missing, and verifies the created checkout locally without a whole-estate scan or implicit Docker startup.
+- Added create-only `pantheon-local provider init` for missing base DDEV/Lando
+  project configuration. Doctor previews, asks again before creating files,
+  then locally verifies the resulting provider without starting Docker.
+ A missing provider configuration is now an explicit default-safe DDEV/Lando/Leave-unresolved choice with local-only verification guidance; no provider files are generated.
 
 ## 0.2.2 — 2026-10-02
 

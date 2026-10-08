@@ -876,19 +876,69 @@ doctor_cached_site_tags() {
 
 # Provider selection at this point is advice, not authority to modify the
 # provider-owned project recipe or start a container. Neither config file exists.
+doctor_provider_checkout_path() {
+  local site=$1 tags preference route directory
+  tags=$(doctor_cached_site_tags "$site") || return 1
+  preference=$("$CORE" config tag prefer list 2>/dev/null) || return 1
+  route=$(resolve_route "$mappings" "$tags" "$preference") || return 1
+  directory=$(printf '%s\n' "$route" | sed -n '2p')
+  [ -z "$directory" ] || route_directory_valid "$directory" || return 1
+  if [ -z "$directory" ]; then
+    printf '%s/%s' "$root" "$site"
+  else
+    printf '%s/%s/%s' "$root" "$directory" "$site"
+  fi
+}
+
+doctor_provider_other_failure() {
+  local site=$1 file
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    [ "$CHECK_SCOPE" = "site:$site" ] || continue
+    [ "$CHECK_STATUS" = FAIL ] || continue
+    case "$CHECK_REASON" in
+      provider-auto-undetermined) ;;
+      *) return 0 ;;
+    esac
+  done < "$CHECK_DIR/order"
+  return 1
+}
+
+doctor_verify_initialized_provider() {
+  local site=$1 destination=$2 selected=$3 parent=$CHECK_DIR file resolved=false
+  local CHECK_DIR
+  CHECK_DIR=$(mktemp -d "$parent/provider-verify.XXXXXX") || return 1
+  : > "$CHECK_DIR/order"
+  inspect_checkout_provider "$site" "$destination"
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    if [ "$CHECK_REASON" = checkout-provider-resolved ] && [ "$CHECK_SOURCE" = "$selected" ]; then
+      resolved=true
+    fi
+    if [ "$CHECK_STATUS" = FAIL ]; then
+      printf '  Verification incomplete: %s\n' "$CHECK_MESSAGE"
+      [ -z "$CHECK_NEXT" ] || printf '  Next: %s\n' "$CHECK_NEXT"
+      return 1
+    fi
+  done < "$CHECK_DIR/order"
+  [ "$resolved" = true ] || return 1
+  plt_term_style 1 success "  Verified $selected provider configuration (not started)"
+  printf '\n'
+}
 doctor_followup_offer_provider() {
-  local site=$1 destination=$2 choice='' option=''
+  local site=$1 destination=$2 option='' choice preview_rc=0 action_rc=0 confirm_rc
   local -a choices
   plt_interact_can_prompt || return 0
   printf '\n'
   plt_term_style 1 heading "Choose a local development provider for $site"
   printf '\n'
-  printf '  Neither .ddev/config.yaml nor .lando.yml exists in the canonical checkout.\n'
-  [ -z "$destination" ] || printf '  Checkout: %s\n' "$destination"
-  printf '  Choosing a provider will show the required next step, not create files or start Docker.\n\n'
+  printf '  Neither DDEV nor Lando project configuration exists for this checkout.\n'
+  printf '  Provider initialization is separate from starting Docker and pulling data.\n\n'
   choices=(
-    'DDEV — use a reviewed .ddev/config.yaml project configuration'
-    'Lando — use a reviewed .lando.yml project configuration'
+    'DDEV — initialize the missing project configuration'
+    'Lando — initialize the missing Pantheon project recipe'
     'Leave unresolved for now (no changes)'
   )
   if ! plt_interact_choose "Which provider should $site use?" 3 "${choices[@]}"; then
@@ -896,26 +946,57 @@ doctor_followup_offer_provider() {
   fi
   choice=$PLT_INTERACT_CHOICE
   case "$choice" in
-    1)
-      option=ddev
-      printf '\n'
-      plt_term_style 1 info '  Selected: DDEV (guidance only; no setting or project file was changed)'
-      printf '\n  Next: configure the canonical checkout with a reviewed .ddev/config.yaml.\n'
-      printf '  Verify locally with pantheon-local status from this checkout (no estate scan).\n'
-      ;;
-    2)
-      option=lando
-      printf '\n'
-      plt_term_style 1 info '  Selected: Lando (guidance only; no setting or project file was changed)'
-      printf '\n  Next: configure the canonical checkout with a reviewed .lando.yml.\n'
-      printf '  Verify locally with pantheon-local status from this checkout (no estate scan).\n'
-      ;;
+    1) option=ddev ;;
+    2) option=lando ;;
     *)
       plt_term_style 1 muted '  Provider remains unresolved. No files or settings were changed.'
+      printf '\n'
+      return 0
       ;;
   esac
+  if [ -z "$destination" ]; then
+    destination=$(doctor_provider_checkout_path "$site") || {
+      plt_term_style 1 warning '  Checkout route cannot be verified from cached site Tags; no files changed.'
+      printf '\n'
+      return 0
+    }
+  fi
+  if doctor_provider_other_failure "$site"; then
+    plt_term_style 1 warning '  Checkout has other failed checks; review those before creating provider files.'
+    printf '\n'
+    return 0
+  fi
   printf '\n'
-  [ -z "$option" ] || printf '  PLT does not generate the base provider recipe or start provider containers during Doctor.\n'
+  plt_term_style 1 heading "Preview: initialize $option for $site"
+  printf '\n'
+  printf '  pantheon-local provider init --provider %s --dry-run\n\n' "$option"
+  (cd "$destination" && "$PROJECT_ROOT/bin/pantheon-local" provider init --provider "$option" --dry-run) || preview_rc=$?
+  if [ "$preview_rc" -ne 0 ]; then
+    plt_term_style 1 warning '  Preview failed; no provider files created. Review the reported prerequisites.'
+    printf '\n'
+    return 0
+  fi
+  if plt_interact_confirm "Create $option project configuration for $site now?"; then
+    :
+  else
+    confirm_rc=$?
+    [ "$confirm_rc" -ne 2 ] || return 1
+    plt_term_style 1 muted '  Provider configuration not created.'
+    printf '\n'
+    return 0
+  fi
+  (cd "$destination" && "$PROJECT_ROOT/bin/pantheon-local" provider init --provider "$option") || action_rc=$?
+  if [ "$action_rc" -ne 0 ]; then
+    plt_term_style 1 failure '  Provider initialization did not complete; no Docker or setup action started.'
+    printf '\n'
+    return 0
+  fi
+  doctor_verify_initialized_provider "$site" "$destination" "$option" || {
+    plt_term_style 1 warning '  Provider files were created, but verification still needs attention.'
+    printf '\n'
+  }
+  plt_term_style 1 muted '  Review the new project files before separately authorizing a provider start.'
+  printf '\n'
 }
 
 doctor_followup_show_checkout() {

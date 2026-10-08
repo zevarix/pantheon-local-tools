@@ -6,6 +6,27 @@ Commands such as `pantheon-local multidev`, `pantheon-local pull`, and `pantheon
 
 The initial release is being validated against Drupal projects. The shared Pantheon/Terminus core should remain framework-neutral where doing so does not weaken validation or safety.
 
+## First-time base provider initialization
+
+For an existing canonical Dev checkout missing all DDEV/Lando base recipes and
+local overrides, `pantheon-local provider init` provides a create-only path.
+It complements the existing Multidev local overrides, not replaces them:
+
+- DDEV: validate project Drupal type/docroot, preview, then delegate to
+  `ddev config` inside a local staging directory. Install generated
+  `.ddev/` only after confirming both project and Pantheon-provider YAML.
+- Lando: obtain the site's Pantheon ID and framework using read-only Terminus,
+  validate both, preview a minimal `.lando.yml` with the documented
+  `recipe: pantheon` and `config.framework/id/site` fields, then
+  create it without replacing any existing project file.
+- Doctor requires an explicit provider choice, preview, separate confirmation
+  and local verification of the initialized provider. No provider start,
+  Composer, database pull, or Drush is implied.
+
+Provider-owned project settings, recipes, custom services and local overrides
+remain authoritative. This new operation only creates missing base
+configuration. Files remain uncommitted for review.
+
 ## Why providers
 
 Drupal.org recommends DDEV for Drupal local development, while many existing Pantheon projects use Lando. The tool should not require a team to standardize on one local container stack before it can use the shared Pantheon workflow helpers.

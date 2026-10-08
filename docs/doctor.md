@@ -247,14 +247,23 @@ Provider detection is read-only. Doctor reports whether DDEV or Lando
 configuration exists, or why neither/both can be selected. **If the canonical
 checkout exists but has neither `.ddev/config.yaml` nor `.lando.yml`, guided
 review explicitly offers DDEV, Lando, or Leave unresolved (the default).**
-The selected option supplies provider-specific next steps but is **guidance
-only**; no persistent provider preference, project files, or provider-owned
-configuration are created. After establishing the chosen provider's project
-configuration, `pantheon-local status` from that checkout can verify local
-provider detection without rescanning the whole Pantheon estate.
+This applies both to findings discovered during the **original estate scan**
+and to site-specific continuation after a corrected Tag route, without
+requiring another full estate scan. After choosing DDEV or Lando, Doctor delegates to the owning initializer:
+first `pantheon-local provider init --provider ddev|lando --dry-run`,
+then an additional safe-default `[y/N]` confirmation, then the corresponding
+real initialization command only if confirmed. DDEV configuration is generated
+through `ddev config`; Lando receives a Pantheon recipe with its ID/framework
+verified through read-only Terminus. Its configuration is checked again locally.
 
-Doctor never automatically generates provider files, starts Docker or provider
-runtimes, installs Composer packages, runs Drush, or imports a database.
+If the document root or Drupal major cannot be established reliably, the
+preview refuses to guess; use explicit `--docroot`/`--project-type` flags
+after reviewing the project. Existing provider configuration or overrides are
+never overwritten. No global PLT provider preference is changed.
+
+Doctor never automatically starts Docker or provider runtimes, installs
+Composer packages, runs Drush, or imports a database. Config generation alone
+does not mean Drupal is running or its database synchronized.
 Conflicting recorded metadata or two competing provider configurations remain
 unsafe and require separate review; Doctor does not silently overwrite them.
 Unresolved external authority and unsafe local checkout state fail closed.

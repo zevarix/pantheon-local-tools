@@ -4,6 +4,12 @@
 
 The command is intentionally checkout-local. Run it from the checkout root or any subdirectory after `pantheon-local multidev SITE.ENV` has created the checkout and recorded its Pantheon identity.
 
+For a canonical Dev checkout missing base provider config, first run
+`pantheon-local provider init --provider ddev|lando --dry-run`, review the
+result, then explicitly invoke the real `provider init` command to create
+project config. This does not start Docker or invoke any setup phase.
+The existing `setup` command still performs its separate preflight.
+
 ## Command
 
 ```bash

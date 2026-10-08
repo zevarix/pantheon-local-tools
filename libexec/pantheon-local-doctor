@@ -24,12 +24,14 @@ DOCTOR_STEP_GIT_URL_SECONDS=''
 DOCTOR_STEP_GIT_REMOTE_SECONDS=''
 DOCTOR_SITE_TAGS_FILE=''
 DOCTOR_SPINNER_PID=''
+DOCTOR_SPINNER_STOP_FILE=''
 DOCTOR_CURSOR_HIDDEN=false
 DOCTOR_SITE_INDEX=0
 DOCTOR_SITE_TOTAL=0
 DOCTOR_TERMINAL_COLUMNS=80
 DOCTOR_LAYOUT=auto
 DOCTOR_SITE_FINISHED=false
+DOCTOR_PREFERENCE_CHANGED=false
 DOCTOR_SITE_NAME=''
 DOCTOR_STEP_ENVIRONMENTS=waiting
 DOCTOR_STEP_ORGANIZATION=waiting
@@ -74,9 +76,13 @@ doctor_finalizer_start() {
   fi
   doctor_cursor_hide
   doctor_spinner_stop
+  DOCTOR_SPINNER_STOP_FILE="$CHECK_DIR/spinner-stop"
+  rm -f "$DOCTOR_SPINNER_STOP_FILE"
   (
-    trap 'exit 0' HUP INT TERM
-    while :; do
+    stop_requested=false
+    trap 'stop_requested=true' HUP TERM
+    trap '' INT
+    while [ "$stop_requested" = false ] && [ ! -e "$DOCTOR_SPINNER_STOP_FILE" ] && kill -0 "$$" 2>/dev/null; do
       {
         plt_term_rewind_current_line 2
         plt_term_style 2 heading 'Doctor:'
@@ -84,7 +90,7 @@ doctor_finalizer_start() {
         plt_term_style 2 active "$(plt_term_spinner_frame "$frame_index")"
       } >&2
       frame_index=$((frame_index + 1))
-      sleep 0.1
+      sleep 0.1 || :
     done
   ) &
   DOCTOR_SPINNER_PID=$!
@@ -412,9 +418,14 @@ doctor_cursor_show() {
 
 doctor_spinner_stop() {
   if [ -n "$DOCTOR_SPINNER_PID" ]; then
-    kill -TERM "$DOCTOR_SPINNER_PID" 2>/dev/null || true
+    # Cooperative stop avoids signalling Bash mid-render and leaving partial
+    # trap diagnostics interleaved with the animated terminal row.
+    if [ -n "$DOCTOR_SPINNER_STOP_FILE" ]; then
+      : > "$DOCTOR_SPINNER_STOP_FILE" 2>/dev/null || true
+    fi
     wait "$DOCTOR_SPINNER_PID" 2>/dev/null || true
     DOCTOR_SPINNER_PID=''
+    DOCTOR_SPINNER_STOP_FILE=''
   fi
 }
 
@@ -422,12 +433,16 @@ doctor_spinner_start() {
   local frame_index=0
   [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ] || return 0
   doctor_spinner_stop
+  DOCTOR_SPINNER_STOP_FILE="$CHECK_DIR/spinner-stop"
+  rm -f "$DOCTOR_SPINNER_STOP_FILE"
   (
-    trap 'exit 0' HUP INT TERM
-    while :; do
+    stop_requested=false
+    trap 'stop_requested=true' HUP TERM
+    trap '' INT
+    while [ "$stop_requested" = false ] && [ ! -e "$DOCTOR_SPINNER_STOP_FILE" ] && kill -0 "$$" 2>/dev/null; do
       doctor_render_site_line "$(plt_term_spinner_frame "$frame_index")"
       frame_index=$((frame_index + 1))
-      sleep 0.1
+      sleep 0.1 || :
     done
   ) &
   DOCTOR_SPINNER_PID=$!
@@ -726,8 +741,78 @@ doctor_recommended_preference_from_detail() {
   printf '%s' "$winner"
 }
 
+doctor_remote_head_info() {
+  local git_url=$1 error_path=$2 result='' ssh_command=''
+  # No interactive host-key, password, or key-passphrase questions during
+  # Doctor diagnostics. Leave custom user-supplied GIT_SSH_COMMAND untouched.
+  # Standard SSH probes bound connection and idle waits without trusting keys.
+  case "$git_url" in
+    ssh://*|*@*:*)
+      if [ -z "${GIT_SSH_COMMAND:-}" ]; then
+        ssh_command='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ConnectionAttempts=1 -o ServerAliveInterval=10 -o ServerAliveCountMax=2'
+        result=$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="$ssh_command" remote_head_info "$git_url" "$error_path") || return 1
+      else
+        result=$(GIT_TERMINAL_PROMPT=0 remote_head_info "$git_url" "$error_path") || return 1
+      fi
+      ;;
+    *)
+      result=$(GIT_TERMINAL_PROMPT=0 remote_head_info "$git_url" "$error_path") || return 1
+      ;;
+  esac
+  printf '%s' "$result"
+}
+
+doctor_add_git_remote_failure() {
+  local site=$1 error_path=$2 stderr_text='' code='dev-git-remote-unavailable'
+  local category=authority-unavailable message="canonical Dev Git repository is not readable for $site"
+  local next='verify Git/SSH access to Pantheon and retry doctor'
+  [ ! -f "$error_path" ] || stderr_text=$(cat "$error_path" 2>/dev/null || true)
+  case "$stderr_text" in
+    *'REMOTE HOST IDENTIFICATION HAS CHANGED'*)
+      code=git-ssh-host-key-changed
+      category=unsafe-local-state
+      message="SSH host key changed while checking the Dev Git repository for $site"
+      next='independently verify the SSH host fingerprint with the provider before changing trusted SSH host keys; do not disable host-key checking'
+      ;;
+    *'Host key verification failed'*|*'authenticity of host'*)
+      code=git-ssh-host-key-untrusted
+      message="SSH host key needs verification for the Dev Git repository of $site"
+      next='verify the SSH host fingerprint against the provider documentation and trust it manually through the SSH client; do not disable host-key checking'
+      ;;
+    *'Permission denied'*|*'Authentication failed'*)
+      code=git-ssh-authentication-unavailable
+      message="SSH credentials cannot access the Dev Git repository for $site"
+      next='check the authorized SSH key and agent before retrying; Doctor does not prompt for credentials'
+      ;;
+    *'timed out'*|*'Connection refused'*|*'No route to host'*|*'Could not resolve hostname'*)
+      code=git-remote-network-unavailable
+      message="Git network access is unavailable for the Dev repository of $site"
+      next='check SSH connectivity and network/DNS availability before retrying this site'
+      ;;
+  esac
+  check_add "site-$site-git-remote" FAIL "$code" "$category" git "$message" "$next" "site:$site"
+}
+
+doctor_cached_route_resolution() {
+  local wanted_site=$1 observed_site observed_tag observed_tags='' fresh_preferences resolution tag directory
+  [ -n "$DOCTOR_SITE_TAGS_FILE" ] && [ -f "$DOCTOR_SITE_TAGS_FILE" ] || return 1
+  while IFS=$'\t' read -r observed_site observed_tag; do
+    [ "$observed_site" = "$wanted_site" ] || continue
+    [ -n "$observed_tag" ] || continue
+    observed_tags="$observed_tags${observed_tags:+
+}$observed_tag"
+  done < "$DOCTOR_SITE_TAGS_FILE"
+  [ -n "$observed_tags" ] || return 1
+  fresh_preferences=$("$CORE" config tag prefer list 2>/dev/null) || return 1
+  resolution=$(resolve_route "$mappings" "$observed_tags" "$fresh_preferences") || return 1
+  tag=$(printf '%s\n' "$resolution" | sed -n '1p')
+  directory=$(printf '%s\n' "$resolution" | sed -n '2p')
+  [ -n "$tag" ] || return 1
+  printf '%s -> %s' "$tag" "${directory:-[root]}"
+}
+
 doctor_offer_route_preference() {
-  local site=$1 detail=$2 choice confirm_rc count selected preferred recommendation='' tag dir i tag_count label default_choice
+  local site=$1 detail=$2 choice confirm_rc count selected preferred recommendation='' tag dir i tag_count label default_choice already_resolved=''
   local old_ifs=$IFS
   local -a tags options
 
@@ -736,6 +821,13 @@ doctor_offer_route_preference() {
   IFS=$old_ifs
   count=${#tags[@]}
   [ "$count" -gt 1 ] || return 0
+  already_resolved=$(doctor_cached_route_resolution "$site" 2>/dev/null || true)
+  if [ -n "$already_resolved" ]; then
+    printf '\n'
+    plt_term_style 1 success "  Already resolved from this run's Tag observations: $site -> $already_resolved"
+    printf '\n'
+    return 0
+  fi
   recommendation=$(doctor_recommended_preference_from_detail "$detail" 2>/dev/null || true)
 
   options=()
@@ -755,13 +847,19 @@ doctor_offer_route_preference() {
   default_choice=$((count + 1))
 
   printf '\n'
-  printf '  These Pantheon Tags can coexist. PLT needs an explicit precedence rule to choose a local route.\n'
+  plt_term_style 1 heading 'Tag-route precedence'
+  printf '\n'
+  plt_term_style 1 muted '  Pantheon Tags can coexist; PLT needs an explicit local route preference.'
+  printf '\n'
   if [ -n "$recommendation" ]; then
-    printf '  Recommendation: prefer %s because its observed site cohort is a strict subset of the other matching route cohort(s).\n' "$recommendation"
+    plt_term_style 1 info "  Suggested: $recommendation (most-specific observed Tag cohort)"
+    printf '\n'
+    printf '  Reason: its observed site cohort is a strict subset of the other matching route cohort(s).\n'
   else
-    printf '  Recommendation: none; the observed cohorts do not identify one uniquely more-specific route.\n'
+    plt_term_style 1 warning '  No unique recommendation from the observed Tag cohorts.'
+    printf '\n'
   fi
-  printf '  A saved preference applies wherever the same configured Tags overlap; it does not change Pantheon Tags or remove route mappings.\n\n'
+  printf '  Scope: local PLT routing only; no Pantheon Tags or directory mappings are removed.\n\n'
 
   if ! plt_interact_choose "Which route should PLT prefer when these Tags overlap for $site?" "$default_choice" "${options[@]}"; then
     return 1
@@ -808,7 +906,21 @@ doctor_offer_route_preference() {
 
   plt_term_style 1 success "  Saved route preference: $preferred"
   printf '\n'
-  doctor_reassess
+  local resolved=''
+  resolved=$(doctor_cached_route_resolution "$site" 2>/dev/null || true)
+  case "$resolved" in
+    "$preferred -> "*)
+      plt_term_style 1 success "  Cached Tag membership: $site now resolves via $resolved"
+      printf '\n'
+      ;;
+    *)
+      plt_term_style 1 warning '  The saved setting could not be verified from the observed Tag membership.'
+      printf '\n'
+      ;;
+  esac
+  plt_term_style 1 muted '  Remote Git reachability and local checkouts have not been rechecked.'
+  printf '\n'
+  DOCTOR_PREFERENCE_CHANGED=true
 }
 
 doctor_remediation_class_loaded() {
@@ -946,12 +1058,32 @@ doctor_print_remediation_summary() {
 }
 
 doctor_reassess() {
+  local confirm_rc
   printf '\n'
-  plt_term_style 1 heading 'Running doctor again...'
-  printf '\n\n'
+  plt_term_style 1 heading 'Reassess diagnostics'
+  printf '\n'
+  plt_term_style 1 muted 'A full Doctor scan contacts the Pantheon estate and checks remote Git repositories again.'
+  printf '\n'
+  if plt_interact_confirm 'Run the full Doctor scan now?'; then
+    :
+  else
+    confirm_rc=$?
+    [ "$confirm_rc" -ne 2 ] || return 0
+    plt_term_style 1 info 'Full scan skipped. Local changes were retained; remote diagnostics were not refreshed.'
+    printf '\n'
+    plt_term_style 1 muted 'To check remote Git and local checkouts later: pantheon-local doctor'
+    printf '\n'
+    return 0
+  fi
+  printf '\n'
+  plt_term_style 1 heading 'Running Doctor again...'
+  printf '\n'
   cleanup
   trap - EXIT HUP INT TERM
   export PANTHEON_LOCAL_DOCTOR_REASSESS=1
+  if [ "$DOCTOR_TIMING" = true ]; then
+    exec "$PROJECT_ROOT/bin/pantheon-local" doctor --timing
+  fi
   exec "$PROJECT_ROOT/bin/pantheon-local" doctor
 }
 
@@ -1088,6 +1220,11 @@ doctor_review_nonmanaged_findings() {
   printf '\n'
   plt_term_style 1 muted 'Guided review complete. No unconfirmed changes were made.'
   printf '\n'
+  if [ "$DOCTOR_PREFERENCE_CHANGED" = true ]; then
+    plt_term_style 1 info 'Saved preferences have been checked against observed Tag membership.'
+    printf '\n'
+    doctor_reassess
+  fi
 }
 
 doctor_offer_remediation() {
@@ -1304,7 +1441,7 @@ doctor_command() {
   local site_total=0 site_index=0
   local failure_rank failure_source_value category source rank candidate_code
   local root_parent terminus_ok=false auth_ok=false sites='' site envs org remote_tags route route_rc route_matches route_match_lines route_match_tags tag route_dir destination git_url remote_info remote_branch remote_sha
-  local tag_line mapped_tag mapped_dir tags_seen_file tags_unique_file line exit_code semantic reason failure_source json record_rc
+  local tag_line mapped_tag mapped_dir tags_seen_file tags_unique_file line exit_code semantic reason failure_source json record_rc remote_error_file
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -1582,12 +1719,13 @@ EOF
       doctor_site_step_finish git-url complete
 
       doctor_site_step_start git-remote
-      remote_info=$(remote_head_info "$git_url" 2>/dev/null || true)
+      remote_error_file="$CHECK_DIR/git-remote-$(printf '%04d' "$site_index").stderr"
+      remote_info=$(doctor_remote_head_info "$git_url" "$remote_error_file" || true)
       remote_branch=$(printf '%s\n' "$remote_info" | sed -n '1p')
       remote_sha=$(printf '%s\n' "$remote_info" | sed -n '2p')
       if [ -z "$remote_branch" ] || [ -z "$remote_sha" ]; then
         doctor_site_step_finish git-remote failure
-        check_add "site-$site-git-remote" FAIL dev-git-remote-unavailable authority-unavailable git "canonical Dev Git repository is not readable for $site" 'verify Git/SSH access to Pantheon and retry doctor' "site:$site"
+        doctor_add_git_remote_failure "$site" "$remote_error_file"
         doctor_site_end
         continue
       fi

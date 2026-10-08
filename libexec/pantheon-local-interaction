@@ -10,6 +10,17 @@
 # shellcheck disable=SC2034 # Shared result is read by sourcing callers.
 PLT_INTERACT_CHOICE=''
 
+# Prefer the shared terminal style when sourced by a PLT command. Keep the
+# interaction helper independently testable/usable without terminal styling.
+plt_interact_style() {
+  local style=$1 value=$2
+  if command -v plt_term_style >/dev/null 2>&1; then
+    plt_term_style 2 "$style" "$value" >&2
+  else
+    printf '%s' "$value" >&2
+  fi
+}
+
 plt_interact_can_prompt_for() {
   local stdin_tty=$1 stdout_tty=$2 stderr_tty=$3
   [ "$stdin_tty" = true ] && [ "$stdout_tty" = true ] && [ "$stderr_tty" = true ]
@@ -29,7 +40,7 @@ plt_interact_confirm() {
   plt_interact_can_prompt || return 2
 
   while :; do
-    printf '%s [y/N] ' "$prompt" >&2
+    plt_interact_style active "$prompt [y/N] "
     IFS= read -r answer || return 1
     case "$answer" in
       y|Y|yes|Yes|YES) return 0 ;;
@@ -49,7 +60,8 @@ plt_interact_choose() {
   [ "$count" -gt 0 ] || return 1
   plt_interact_can_prompt || return 2
 
-  printf '%s\n' "$prompt" >&2
+  plt_interact_style heading "$prompt"
+  printf '\n' >&2
   index=1
   for choice in "$@"; do
     printf '  %s) %s\n' "$index" "$choice" >&2
@@ -58,9 +70,9 @@ plt_interact_choose() {
 
   while :; do
     if [ -n "$default_index" ]; then
-      printf 'Choice [%s]: ' "$default_index" >&2
+      plt_interact_style active "Choice [$default_index]: "
     else
-      printf 'Choice: ' >&2
+      plt_interact_style active 'Choice: '
     fi
     IFS= read -r choice || return 1
     [ -n "$choice" ] || choice=$default_index

@@ -53,4 +53,25 @@ plt_interact_choose 'Provider:' '' 'Auto' 'DDEV' 'Lando' <<'EOF'
 EOF
 assert_eq "$PLT_INTERACT_CHOICE" '3'
 
+# Shared prompt styling is optional and must not alter typed choice semantics.
+# shellcheck disable=SC2317,SC2329 # Test-local terminal stub.
+styled_prompt=$( (
+  plt_term_style() { printf '[%s] %s' "$2" "$3"; }
+  plt_interact_confirm 'Proceed?' <<< 'n'
+) 2>&1 ) || :
+case "$styled_prompt" in
+  *'[active] Proceed? [y/N] '*) ;;
+  *) fail 'confirmation did not use shared semantic terminal styling' ;;
+esac
+
+# shellcheck disable=SC2317,SC2329 # Test-local terminal stub.
+styled_choice=$( (
+  plt_term_style() { printf '[%s] %s' "$2" "$3"; }
+  plt_interact_choose 'Provider:' 2 'Auto' 'DDEV' 'Lando' <<< ''
+) 2>&1 ) || fail 'styled choice did not accept default'
+case "$styled_choice" in
+  *'[heading] Provider:'*'[active] Choice [2]: '*) ;;
+  *) fail 'numbered choice did not use shared heading/active styles' ;;
+esac
+
 printf 'interaction tests passed\n'

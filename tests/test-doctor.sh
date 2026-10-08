@@ -77,7 +77,7 @@ scenario_init() {
   MOCK_TERMINUS_LOG="$SCENARIO/terminus.log"
   MOCK_PROVIDER_LOG="$SCENARIO/provider.log"
   export HOME PANTHEON_LOCAL_CONFIG MOCK_DATA MOCK_TERMINUS_LOG MOCK_PROVIDER_LOG
-  unset MOCK_AUTH_FAIL MOCK_SITE_LIST_FAIL MOCK_ENV_FAIL_SITE MOCK_TAG_FAIL_SITE MOCK_CONNECTION_FAIL_SITE MOCK_BLOCK_ENV_SITE MOCK_BLOCK_READY_FILE MOCK_ENV_DELAY_SITE MOCK_ENV_DELAY_SECONDS
+  unset MOCK_AUTH_FAIL MOCK_SITE_LIST_FAIL MOCK_ENV_FAIL_SITE MOCK_TAG_FAIL_SITE MOCK_CONNECTION_FAIL_SITE MOCK_BLOCK_ENV_SITE MOCK_BLOCK_READY_FILE MOCK_ENV_DELAY_SITE MOCK_ENV_DELAY_SECONDS MOCK_SSH_GIT_SITE GIT_SSH_COMMAND
   TMPDIR="$SCENARIO/tmp"
   export TMPDIR
   mkdir -p "$HOME" "$MOCK_BIN" "$MOCK_DATA" "$LOCAL_ROOT" "$TMPDIR"
@@ -140,7 +140,11 @@ case "${1:-}" in
     [ "${3:-}" = '--field=git_url' ] || exit 2
     site=${target%.dev}
     [ "$site" != "${MOCK_CONNECTION_FAIL_SITE:-}" ] || exit 9
-    cat "${MOCK_DATA:?}/$site.git-url"
+    if [ "$site" = "${MOCK_SSH_GIT_SITE:-}" ]; then
+      printf '%s\n' 'ssh://git@example.invalid:2222/example.git'
+    else
+      cat "${MOCK_DATA:?}/$site.git-url"
+    fi
     ;;
   *) printf 'unexpected terminus command: %s\n' "${1:-}" >&2; exit 2 ;;
 esac
@@ -560,15 +564,16 @@ set_sites example-site
 configure_base ddev
 bash "$CLI" config tag set 'Example Group' clients
 ACCEPT_DEST="$LOCAL_ROOT/clients/example-site"
-accept_output=$(run_doctor_pty $'y\ny\n')
+accept_output=$(run_doctor_pty $'y\ny\n\n')
 assert_contains "$accept_output" 'Doctor found 1 item that needs attention.'
 assert_contains "$accept_output" 'PLT can fix now:'
 assert_contains "$accept_output" 'Create canonical Dev checkout for example-site'
 assert_contains "$accept_output" 'pantheon-local checkout example-site.dev --dry-run'
 assert_contains "$accept_output" 'Create the canonical Dev checkout for example-site now? [y/N]'
 assert_contains "$accept_output" 'Repairs complete.'
-assert_contains "$accept_output" 'Running doctor again...'
-assert_contains "$accept_output" 'Doctor: all checks passed.'
+assert_contains "$accept_output" 'Run the full Doctor scan now? [y/N]'
+assert_contains "$accept_output" 'Full scan skipped.'
+assert_not_contains "$accept_output" 'Running Doctor again...'
 [ -d "$ACCEPT_DEST/.git" ] || fail 'guided doctor remediation did not create the canonical checkout'
 assert_eq "$(git config --file "$ACCEPT_DEST/.git/pantheon-local-tools/state" --get pantheon.site)" 'example-site'
 assert_eq "$(git config --file "$ACCEPT_DEST/.git/pantheon-local-tools/state" --get pantheon.environment)" 'dev'
@@ -687,6 +692,7 @@ set +e
 routing_review=$(run_doctor_pty $'y
 2
 y
+
 ')
 routing_review_rc=$?
 set -e
@@ -701,8 +707,10 @@ assert_contains "$routing_review" 'Leave this overlap unresolved for now'
 assert_contains "$routing_review" "pantheon-local config tag prefer set 'Another Group' 'Example Group'"
 assert_contains "$routing_review" 'Save Another Group as the preferred route wherever these Tags overlap? [y/N]'
 assert_contains "$routing_review" 'Saved route preference: Another Group'
-assert_contains "$routing_review" 'Running doctor again...'
-assert_contains "$routing_review" 'canonical route resolved for ambiguous-site via Another Group'
+assert_contains "$routing_review" 'Cached Tag membership: ambiguous-site now resolves via Another Group -> apps'
+assert_contains "$routing_review" 'Run the full Doctor scan now? [y/N]'
+assert_contains "$routing_review" 'Full scan skipped.'
+assert_not_contains "$routing_review" 'Running Doctor again...'
 assert_contains "$(bash "$CLI" config tag prefer list)" 'Another Group>Example Group'
 assert_eq "$(bash "$CLI" config tag get 'Example Group')" 'clients'
 assert_eq "$(bash "$CLI" config tag get 'Another Group')" 'apps'
@@ -719,23 +727,91 @@ GENERAL_DEST=$(create_checkout general-site general ddev)
 SPECIFIC_DEST=$(create_checkout specific-site specific ddev)
 
 set +e
-specificity_review=$(run_doctor_pty $'y\n2\ny\n')
+specificity_review=$(run_doctor_pty $'y\n2\ny\n\n')
 specificity_review_rc=$?
 set -e
-assert_eq "$specificity_review_rc" '0'
+assert_eq "$specificity_review_rc" '31'
 assert_contains "$specificity_review" 'Review the 1 item that needs your attention now? [y/N]'
-assert_contains "$specificity_review" 'Recommendation: prefer Specific Group because its observed site cohort is a strict subset'
+assert_contains "$specificity_review" 'Suggested: Specific Group (most-specific observed Tag cohort)'
 assert_contains "$specificity_review" 'Prefer General Group -> general (2 observed sites)'
 assert_contains "$specificity_review" 'Prefer Specific Group -> specific (1 observed sites) — recommended: most specific observed cohort'
 assert_contains "$specificity_review" "pantheon-local config tag prefer set 'Specific Group' 'General Group'"
 assert_contains "$specificity_review" 'Save Specific Group as the preferred route wherever these Tags overlap? [y/N]'
 assert_contains "$specificity_review" 'Saved route preference: Specific Group'
-assert_contains "$specificity_review" 'Running doctor again...'
-assert_contains "$specificity_review" 'canonical route resolved for specific-site via Specific Group'
-assert_contains "$specificity_review" 'Doctor: all checks passed.'
+assert_contains "$specificity_review" 'Cached Tag membership: specific-site now resolves via Specific Group -> specific'
+assert_contains "$specificity_review" 'Full scan skipped.'
+assert_not_contains "$specificity_review" 'Running Doctor again...'
 assert_contains "$(bash "$CLI" config tag prefer list)" 'Specific Group>General Group'
 [ -d "$GENERAL_DEST/.git" ] || fail 'general checkout disappeared during route preference review'
 [ -d "$SPECIFIC_DEST/.git" ] || fail 'specific checkout disappeared during route preference review'
+
+# An explicit Yes at the rescan boundary still performs fresh diagnostics.
+bash "$CLI" config tag prefer unset 'Specific Group' 'General Group'
+set +e
+rescan_accept=$(run_doctor_pty $'y\n2\ny\ny\n')
+rescan_accept_rc=$?
+set -e
+assert_eq "$rescan_accept_rc" '0'
+assert_contains "$rescan_accept" 'Run the full Doctor scan now? [y/N]'
+assert_contains "$rescan_accept" 'Running Doctor again...'
+assert_contains "$rescan_accept" 'Doctor: all checks passed.'
+
+# One saved pairwise preference can resolve many originally ambiguous sites
+# from the same observed estate without prompting again or rescanning the estate.
+scenario_init repeated-overlap
+create_remote general-only 'General Group' ddev
+create_remote shared-one $'General Group\nSpecific Group' ddev
+create_remote shared-two $'General Group\nSpecific Group' ddev
+set_sites general-only shared-one shared-two
+configure_base ddev
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+create_checkout general-only general ddev >/dev/null
+create_checkout shared-one specific ddev >/dev/null
+create_checkout shared-two specific ddev >/dev/null
+set +e
+overlap_output=$(run_doctor_pty $'y\n2\ny\n\n')
+overlap_rc=$?
+set -e
+assert_eq "$overlap_rc" '31'
+assert_contains "$overlap_output" 'Saved route preference: Specific Group'
+assert_contains "$overlap_output" 'Already resolved from this run'
+assert_contains "$overlap_output" 'shared-two -> Specific Group -> specific'
+assert_eq "$(bash "$CLI" config tag prefer list)" 'Specific Group>General Group'
+choose_count=$(printf '%s\n' "$overlap_output" | grep -F -c 'Which route should PLT prefer when these Tags overlap' || true)
+assert_eq "$choose_count" '1'
+rescan_count=$(printf '%s\n' "$overlap_output" | grep -F -c 'Run the full Doctor scan now?' || true)
+assert_eq "$rescan_count" '1'
+assert_contains "$overlap_output" 'Full scan skipped.'
+assert_not_contains "$overlap_output" 'Running Doctor again...'
+
+# A failing SSH host-key check is classified without trusting any new host.
+scenario_init ssh-host-key
+create_remote key-site 'Example Group' ddev
+set_sites key-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+export MOCK_SSH_GIT_SITE=key-site
+MOCK_SSH_LOG="$SCENARIO/ssh-args.log"
+export MOCK_SSH_LOG
+cat > "$MOCK_BIN/ssh" <<'SSHMOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${MOCK_SSH_LOG:?}"
+printf '%s\n' 'Host key verification failed.' >&2
+exit 255
+SSHMOCK
+chmod +x "$MOCK_BIN/ssh"
+set +e
+ssh_host_json=$(bash "$CLI" doctor --format json)
+ssh_host_rc=$?
+set -e
+assert_eq "$ssh_host_rc" '32'
+assert_contains "$ssh_host_json" '"reason_code":"git-ssh-host-key-untrusted"'
+assert_contains "$ssh_host_json" 'verify the SSH host fingerprint'
+assert_file_contains "$MOCK_SSH_LOG" 'StrictHostKeyChecking=yes'
+assert_file_contains "$MOCK_SSH_LOG" 'ConnectTimeout=20'
+[ ! -e "$HOME/.ssh/known_hosts" ] || fail 'Doctor silently accepted an untrusted SSH host key'
+unset MOCK_SSH_GIT_SITE MOCK_SSH_LOG
 
 # Provider auto-detection ambiguity is reported from the checkout itself.
 scenario_init provider-ambiguity

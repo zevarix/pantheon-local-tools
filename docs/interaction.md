@@ -112,7 +112,7 @@ If the user opts in, Doctor:
 3. asks again at the mutation boundary;
 4. delegates to the owning command rather than reimplementing it;
 5. respects the owning command's exit/result semantics;
-6. reruns Doctor read-only after a successful repair.
+6. verifies the owning command result, then offers (but never silently starts) another complete Doctor scan. The confirmation defaults to No because it may contact every accessible remote site. Repeated Tag overlaps are deduplicated using observed Tag membership, so guided review needs one preference per unique overlap and one optional rescan afterward.
 
 Doctor does not automatically choose among ambiguous routes/providers or rewrite unsafe checkout identity.
 

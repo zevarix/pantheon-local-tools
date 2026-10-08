@@ -83,13 +83,17 @@ Doctor: site 2/34: example-site — environments complete in 6s
 
 Timing evidence is diagnostic chatter only. It never changes the final semantic result, JSON stdout, or durable `--record` JSON. `--timing --format json` therefore keeps stdout as one valid JSON document while timing evidence remains on stderr.
 
-`--timing` does not add a timeout, retry policy, or concurrency. Unavailable/failed authority keeps the existing fail-closed reason/category semantics.
+`--timing` itself adds no retry policy or concurrency. Standard Doctor SSH Git remote checks use non-interactive key verification and SSH connect/idle limits rather than hanging indefinitely at a password or unknown-host prompt. A custom `GIT_SSH_COMMAND` is respected and may implement its own transport limits. A host-key mismatch is never automatically trusted; Doctor reports a specific next action without editing `known_hosts`. An SSH connect/idle limit is not a guaranteed total wall-clock deadline for every possible Git transport.
 
 Interactive terminals also keep the final aggregation phase visibly active with the same Braille activity indicator while doctor summarizes checks and builds the final result. Finalization reads each stored check once per pass with Bash built-ins rather than launching a separate text-processing subprocess for every field.
 
 ## Interactive report
 
 On an interactive stdout terminal, the final diagnostic report is grouped into Global, Sites, and Tags sections and uses the same semantic glyph/color vocabulary. Redirected/non-interactive stdout keeps the deterministic plain table form without ANSI sequences. WARN/FAIL details and their smallest known next actions remain visible in both forms.
+
+### Repeat scans and local cache
+
+After a saved routing preference or an explicitly confirmed PLT-managed repair, Doctor summarizes what it verified. It **does not** automatically repeat the full estate-wide scan. When multiple sites share the same overlapping Tag pair, one saved precedence rule is reused across the observed sites rather than asking for the same choice again; the review offers just **one** optional full rescan after all local preference changes. A separate `[y/N]` confirmation defaults to No; answer Yes only when a fresh set of network checks is wanted. Cached observed Tag membership can verify a local preference within the current process, but skipped Git or checkout checks remain unverified until a fresh scan.
 
 ## Cancellation
 
@@ -220,7 +224,7 @@ When PLT-managed findings exist, Doctor summarizes them and asks whether to fix 
 3. asks again before mutation;
 4. delegates to the owning command rather than reimplementing it;
 5. verifies through that command's normal result/exit contract;
-6. reruns Doctor read-only after successful repair.
+6. verifies the result and offers a full Doctor scan, explicitly confirmed with `[y/N]` defaulting to No. After a local Tag-route preference, Doctor first resolves the route from the Tag membership already observed in the current run; this cached verification does not claim fresh remote Git or checkout health.
 
 The initial supported PLT-managed remediation is a missing canonical Dev checkout, delegated to `pantheon-local checkout SITE.dev`. Ambiguous Tag/provider decisions and unsafe checkout identity are never auto-selected or rewritten.
 

@@ -14,10 +14,12 @@ Patch release standardizing guided remediation and consent, adding Doctor extern
 
 - Canonicalized final tagged-release source compression through a pinned immutable Ubuntu `linux/amd64` gzip environment so published source archive checksums no longer depend on the maintainer host's gzip implementation; untagged CI/dev builds remain portable and explicitly distinguish host versus canonical compression.
 - Added a shared human-interaction contract with safe-default `[y/N]` confirmation and bounded numbered choices, reused by guided configuration, configuration export, Multidev creation, and Doctor remediation.
-- Interactive `pantheon-local doctor` now classifies actionable findings, offers explicitly confirmed PLT-managed repairs, previews/delegates to the existing owning command, and reruns diagnostics after successful repair; JSON, records, and non-TTY use remain prompt-free.
+- Interactive `pantheon-local doctor` now classifies actionable findings, offers explicitly confirmed PLT-managed repairs, previews/delegates to the existing owning command, and offers a full estate rescan only by explicit `[y/N]` confirmation after a successful repair. Saved Tag-route preferences are validated against observed membership without recontacting the estate; repeated matches reuse the same precedence rule and offer one optional rescan after review. JSON, records, and non-TTY use remain prompt-free.
 - Unmanaged `pantheon-local status` output now points users to Doctor for a safe onboarding/remediation path without changing structured output.
 - Added opt-in `pantheon-local doctor --timing` evidence for external per-site reads, showing live whole-second elapsed time in interactive progress and deterministic completion timing on stderr without changing JSON/records, adding concurrency, or introducing timeouts.
 - Added explicit pairwise Tag-route precedence for legitimate overlapping Pantheon Tags. Doctor now guides user-choice/manual-recovery findings instead of stopping after the summary, can recommend a more-specific strict-subset Tag cohort, requires user choice plus confirmation before saving precedence, and shares the resulting route decision with checkout and estate status.
+- Fixed interactive Doctor line wrapping with auto/full/compact layout options; guided Tag preference reviews use the shared semantic terminal style, explain failed/skipped checks, and preserve current timing after opted-in reassessment.
+- Made Doctor Git remote probing non-interactive for standard SSH, with connect/idle limits and distinct, actionable host-key/authentication/network failures. No SSH host keys are accepted automatically.
 
 ## 0.2.2 — 2026-10-02
 

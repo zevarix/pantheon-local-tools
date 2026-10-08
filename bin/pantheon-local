@@ -28,8 +28,8 @@ Commands:
       Remove one stored configuration value so its default applies again.
 
   pantheon-local config list
-      Print effective root/provider values, Pantheon Tag routes, and configured
-      tag-profile properties.
+      Print effective root/provider values, Pantheon Tag routes, route
+      precedence rules, and configured tag-profile properties.
 
   pantheon-local config tag get TAG
       Print the local directory mapped to a Pantheon Tag.
@@ -43,6 +43,15 @@ Commands:
 
   pantheon-local config tag list
       List all configured Pantheon Tag directory mappings.
+
+  pantheon-local config tag prefer set PREFERRED OTHER
+      Prefer one configured Tag route when both Tags match the same site.
+
+  pantheon-local config tag prefer unset PREFERRED OTHER
+      Remove one explicit Tag-over-Tag route preference.
+
+  pantheon-local config tag prefer list
+      List explicit Tag route precedence rules as PREFERRED>OTHER.
 
   pantheon-local config tag profile get TAG PROPERTY
       Print a configured tag-profile property.

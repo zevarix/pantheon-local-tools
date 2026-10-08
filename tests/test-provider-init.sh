@@ -14,6 +14,11 @@ cat > "$TMP/bin/ddev" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'ddev|%s\n' "$*" >> "$MOCK_LOG"
+# Each provider creation must use temporary DDEV global settings, never HOME.
+case "${DDEV_XDG_CONFIG_HOME:-}" in
+  */.plt-provider-init.*/ddev-global) ;;
+  *) printf 'DDEV global registry was not isolated\n' >&2; exit 93 ;;
+esac
 [ "${1:-}" = config ] || exit 91
 [ "${MOCK_DDEV_FAIL:-false}" != true ] || exit 9
 mkdir -p .ddev/providers
@@ -63,6 +68,7 @@ if [ ! -f "$TMP/ddev/.ddev/config.yaml" ] || [ ! -f "$TMP/ddev/.ddev/providers/p
   fail 'DDEV generated incomplete config'
 fi
 grep -F 'ddev|config --auto --project-type=drupal11 --docroot=web --project-name=example-site' "$MOCK_LOG" >/dev/null || fail 'DDEV command incorrect'
+if find "$TMP/ddev" -maxdepth 1 -name '.plt-provider-init.*' -print -quit | grep -q .; then fail 'successful DDEV config retained staging/global registry'; fi
 if (cd "$TMP/ddev" && bash "$CLI" provider init --provider ddev) >/dev/null 2>&1; then fail 'DDEV overwrite permitted'; fi
 preview=$(cd "$TMP/lando" && bash "$CLI" provider init --provider lando --dry-run)
 contains "$preview" 'framework: drupal8'

@@ -146,7 +146,11 @@ trap 'exit 143' TERM
 case "$provider" in
   ddev)
     STAGE_DIR=$(mktemp -d "$root/.plt-provider-init.XXXXXX") || die 'could not prepare local staging'
-    (cd "$STAGE_DIR" && ddev config --auto --project-type="$project_type" --docroot="$docroot" --project-name="$site") || die 'DDEV configuration failed; project unchanged'
+    # DDEV config registers project names with the global DDEV registry even
+    # when no containers start. Isolate the registry so the source-generation
+    # stage cannot collide with an existing real checkout.
+    mkdir -p "$STAGE_DIR/ddev-global" || die 'could not prepare isolated DDEV settings'
+    (cd "$STAGE_DIR" && DDEV_XDG_CONFIG_HOME="$STAGE_DIR/ddev-global" ddev config --auto --project-type="$project_type" --docroot="$docroot" --project-name="$site") || die 'DDEV configuration failed; project unchanged'
     if [ ! -f "$STAGE_DIR/.ddev/config.yaml" ] || [ ! -f "$STAGE_DIR/.ddev/providers/pantheon.yaml" ]; then
       die 'DDEV project/Pantheon files absent after generation'
     fi

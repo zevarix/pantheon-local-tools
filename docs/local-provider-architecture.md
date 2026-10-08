@@ -13,8 +13,12 @@ local overrides, `pantheon-local provider init` provides a create-only path.
 It complements the existing Multidev local overrides, not replaces them:
 
 - DDEV: validate project Drupal type/docroot, preview, then delegate to
-  `ddev config` inside a local staging directory. Install generated
-  `.ddev/` only after confirming both project and Pantheon-provider YAML.
+  `ddev config` inside a local staging directory using an **isolated
+  `DDEV_XDG_CONFIG_HOME`**. DDEV normally registers project names globally
+  during configuration, even before starting a container; this isolated
+  temporary registry prevents collisions with existing real checkouts.
+  Install generated `.ddev/` only after verifying both project and Pantheon
+  provider YAML, then remove the temporary registry.
 - Lando: obtain the site's Pantheon ID and framework using read-only Terminus,
   validate both, preview a minimal `.lando.yml` with the documented
   `recipe: pantheon` and `config.framework/id/site` fields, then

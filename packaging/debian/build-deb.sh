@@ -51,6 +51,7 @@ install -m 0644 "$REPO_ROOT/libexec/pantheon-local-output" "$APP_ROOT/libexec/pa
 install -m 0644 "$REPO_ROOT/libexec/pantheon-local-terminal" "$APP_ROOT/libexec/pantheon-local-terminal"
 install -m 0644 "$REPO_ROOT/libexec/pantheon-local-interaction" "$APP_ROOT/libexec/pantheon-local-interaction"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-provider-url" "$APP_ROOT/libexec/pantheon-local-provider-url"
+install -m 0755 "$REPO_ROOT/libexec/pantheon-local-provider-init" "$APP_ROOT/libexec/pantheon-local-provider-init"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-pull" "$APP_ROOT/libexec/pantheon-local-pull"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-readiness" "$APP_ROOT/libexec/pantheon-local-readiness"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-setup" "$APP_ROOT/libexec/pantheon-local-setup"

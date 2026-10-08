@@ -44,6 +44,7 @@ libexec/
   libexec/pantheon-local-terminal
   libexec/pantheon-local-multidev-create
   libexec/pantheon-local-provider-url
+  libexec/pantheon-local-provider-init
   libexec/pantheon-local-pull
   libexec/pantheon-local-readiness
   libexec/pantheon-local-setup

@@ -59,7 +59,9 @@ contains "$preview" 'ddev config --auto --project-type=drupal11 --docroot=web --
 [ ! -s "$MOCK_LOG" ] || fail 'dry-run called DDEV'
 output=$(cd "$TMP/ddev" && bash "$CLI" provider init --provider ddev)
 contains "$output" 'Created ddev project configuration (not started).'
-[ -f "$TMP/ddev/.ddev/config.yaml" ] && [ -f "$TMP/ddev/.ddev/providers/pantheon.yaml" ] || fail 'DDEV generated incomplete config'
+if [ ! -f "$TMP/ddev/.ddev/config.yaml" ] || [ ! -f "$TMP/ddev/.ddev/providers/pantheon.yaml" ]; then
+  fail 'DDEV generated incomplete config'
+fi
 grep -F 'ddev|config --auto --project-type=drupal11 --docroot=web --project-name=example-site' "$MOCK_LOG" >/dev/null || fail 'DDEV command incorrect'
 if (cd "$TMP/ddev" && bash "$CLI" provider init --provider ddev) >/dev/null 2>&1; then fail 'DDEV overwrite permitted'; fi
 preview=$(cd "$TMP/lando" && bash "$CLI" provider init --provider lando --dry-run)

@@ -87,10 +87,14 @@ site=$(git config --file "$state" --get pantheon.site 2>/dev/null || true)
 environment=$(git config --file "$state" --get pantheon.environment 2>/dev/null || true)
 kind=$(git config --file "$state" --get checkout.kind 2>/dev/null || true)
 valid_site "$site" || die 'invalid recorded site'
-[ "$environment" = dev ] && [ "$kind" = canonical-dev ] || die 'only canonical Dev checkout can be initialized'
+if [ "$environment" != dev ] || [ "$kind" != canonical-dev ]; then
+  die 'only canonical Dev checkout can be initialized'
+fi
 recorded_provider=$(git config --file "$state" --get local.provider 2>/dev/null || true)
 [ -z "$recorded_provider" ] || [ "$recorded_provider" = "$provider" ] || die 'recorded provider conflicts with requested provider; review existing checkout identity'
-[ ! -e "$root/.ddev" ] && [ ! -L "$root/.ddev" ] && [ ! -e "$root/.lando.yml" ] && [ ! -L "$root/.lando.yml" ] && [ ! -e "$root/.lando.local.yml" ] && [ ! -L "$root/.lando.local.yml" ] || die 'existing provider configuration/override detected; will not overwrite'
+if [ -e "$root/.ddev" ] || [ -L "$root/.ddev" ] || [ -e "$root/.lando.yml" ] || [ -L "$root/.lando.yml" ] || [ -e "$root/.lando.local.yml" ] || [ -L "$root/.lando.local.yml" ]; then
+  die 'existing provider configuration/override detected; will not overwrite'
+fi
 [ -z "$(git -C "$root" status --porcelain --untracked-files=no)" ] || die 'tracked local changes exist; review them before provider initialization'
 
 if [ "$provider" = ddev ]; then
@@ -109,7 +113,9 @@ if [ "$provider" = ddev ]; then
   fi
   valid_project_type "$project_type" || die 'unsupported Drupal project type'
 else
-  [ -z "$docroot_override" ] && [ -z "$project_override" ] || die 'Lando Pantheon recipe does not take DDEV docroot/project-type flags'
+  if [ -n "$docroot_override" ] || [ -n "$project_override" ]; then
+    die 'Lando Pantheon recipe does not take DDEV docroot/project-type flags'
+  fi
   framework=$(read_pantheon "$site" framework)
   id=$(read_pantheon "$site" id)
   valid_site "$framework" || die 'invalid Pantheon framework'
@@ -141,7 +147,9 @@ case "$provider" in
   ddev)
     STAGE_DIR=$(mktemp -d "$root/.plt-provider-init.XXXXXX") || die 'could not prepare local staging'
     (cd "$STAGE_DIR" && ddev config --auto --project-type="$project_type" --docroot="$docroot" --project-name="$site") || die 'DDEV configuration failed; project unchanged'
-    [ -f "$STAGE_DIR/.ddev/config.yaml" ] && [ -f "$STAGE_DIR/.ddev/providers/pantheon.yaml" ] || die 'DDEV project/Pantheon files absent after generation'
+    if [ ! -f "$STAGE_DIR/.ddev/config.yaml" ] || [ ! -f "$STAGE_DIR/.ddev/providers/pantheon.yaml" ]; then
+      die 'DDEV project/Pantheon files absent after generation'
+    fi
     [ ! -e "$root/.ddev" ] || die 'DDEV config appeared during generation; refusing overwrite'
     mv "$STAGE_DIR/.ddev" "$root/.ddev" || die 'could not install DDEV config'
     ;;

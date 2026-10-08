@@ -226,6 +226,45 @@ When PLT-managed findings exist, Doctor summarizes them and asks whether to fix 
 5. verifies through that command's normal result/exit contract;
 6. verifies the result and offers a full Doctor scan, explicitly confirmed with `[y/N]` defaulting to No. After a local Tag-route preference, Doctor first resolves the route from the Tag membership already observed in the current run; this cached verification does not claim fresh remote Git or checkout health.
 
+### Finish the same site after resolving a Tag route
+
+Initial Doctor diagnostics stop for a site when the local Tag route is
+ambiguous, leaving Git and checkout steps *not checked*. During interactive
+guided review, a confirmed Tag precedence rule lets Doctor **resume the same
+site**, using the Dev and Tag evidence already collected. It then checks only
+that site's Dev Git URL, bounded Git authority, canonical checkout and local
+DDEV/Lando provider configuration. It does not repeat discovery or inspect
+the other site's remote endpoints.
+
+A missing checkout results in a scoped checkout preview, using the existing
+`pantheon-local checkout SITE.dev --dry-run` owner command, followed by
+a separate safe-default `[y/N]` confirmation. A declined checkout is
+untouched; an accepted checkout is delegated to the existing command, then
+verified locally for origin, branch, PLT identity and provider configuration.
+No full estate scan is needed to reveal the next dependency.
+
+Provider detection is read-only. Doctor reports whether DDEV or Lando
+configuration exists, or why neither/both can be selected. **If the canonical
+checkout exists but has neither `.ddev/config.yaml` nor `.lando.yml`, guided
+review explicitly offers DDEV, Lando, or Leave unresolved (the default).**
+The selected option supplies provider-specific next steps but is **guidance
+only**; no persistent provider preference, project files, or provider-owned
+configuration are created. After establishing the chosen provider's project
+configuration, `pantheon-local status` from that checkout can verify local
+provider detection without rescanning the whole Pantheon estate.
+
+Doctor never automatically generates provider files, starts Docker or provider
+runtimes, installs Composer packages, runs Drush, or imports a database.
+Conflicting recorded metadata or two competing provider configurations remain
+unsafe and require separate review; Doctor does not silently overwrite them.
+Unresolved external authority and unsafe local checkout state fail closed.
+
+The original terminal report and optional structured JSON/record remain the
+**pre-remediation snapshot**. Live site-continuation findings are explicitly
+labeled, kept separate from the original check set, and do not change its
+machine-readable schema. The optional complete estate rescan remains a
+separately confirmed operation, default No.
+
 The initial supported PLT-managed remediation is a missing canonical Dev checkout, delegated to `pantheon-local checkout SITE.dev`. Ambiguous Tag/provider decisions and unsafe checkout identity are never auto-selected or rewritten.
 
 `--format json`, `--record`, and redirected/non-TTY use never prompt or mutate through guided remediation.

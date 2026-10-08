@@ -621,7 +621,7 @@ assert_contains "$accept_output" 'pantheon-local checkout example-site.dev --dry
 assert_contains "$accept_output" 'Create the canonical Dev checkout for example-site now? [y/N]'
 assert_contains "$accept_output" 'Repairs complete.'
 assert_contains "$accept_output" 'Run the full Doctor scan now? [y/N]'
-assert_contains "$accept_output" 'Full scan skipped.'
+assert_contains "$accept_output" 'Full estate scan skipped.'
 assert_not_contains "$accept_output" 'Running Doctor again...'
 [ -d "$ACCEPT_DEST/.git" ] || fail 'guided doctor remediation did not create the canonical checkout'
 assert_eq "$(git config --file "$ACCEPT_DEST/.git/pantheon-local-tools/state" --get pantheon.site)" 'example-site'
@@ -742,6 +742,7 @@ routing_review=$(run_doctor_pty $'y
 2
 y
 
+
 ')
 routing_review_rc=$?
 set -e
@@ -758,11 +759,231 @@ assert_contains "$routing_review" 'Save Another Group as the preferred route whe
 assert_contains "$routing_review" 'Saved route preference: Another Group'
 assert_contains "$routing_review" 'Cached Tag membership: ambiguous-site now resolves via Another Group -> apps'
 assert_contains "$routing_review" 'Run the full Doctor scan now? [y/N]'
-assert_contains "$routing_review" 'Full scan skipped.'
+assert_contains "$routing_review" 'Full estate scan skipped.'
 assert_not_contains "$routing_review" 'Running Doctor again...'
 assert_contains "$(bash "$CLI" config tag prefer list)" 'Another Group>Example Group'
 assert_eq "$(bash "$CLI" config tag get 'Example Group')" 'clients'
 assert_eq "$(bash "$CLI" config tag get 'Another Group')" 'apps'
+
+# An initial scan can already have resolved the Tag route and inspected the
+# checkout. Guided review must offer DDEV/Lando immediately for a checkout
+# containing neither provider configuration; no Tag repair or rescan required.
+scenario_init direct-provider-choice
+create_remote direct-provider-site 'Example Group' none
+set_sites direct-provider-site
+configure_base lando
+bash "$CLI" config tag set 'Example Group' clients
+DIRECT_PROVIDER_DEST=$(create_checkout direct-provider-site clients lando)
+git config --file "$DIRECT_PROVIDER_DEST/.git/pantheon-local-tools/state" --unset-all local.provider
+direct_before=$(git -C "$DIRECT_PROVIDER_DEST" rev-parse HEAD)
+config_before=$(git hash-object "$PANTHEON_LOCAL_CONFIG")
+set +e
+direct_ddev=$(run_doctor_pty $'y\n1\n')
+direct_ddev_rc=$?
+set -e
+assert_eq "$direct_ddev_rc" '31'
+assert_contains "$direct_ddev" 'Choice 1/1'
+assert_contains "$direct_ddev" 'Which provider should direct-provider-site use?'
+assert_contains "$direct_ddev" 'Selected: DDEV (guidance only; no setting or project file was changed)'
+assert_contains "$direct_ddev" 'Next: configure the canonical checkout with a reviewed .ddev/config.yaml.'
+assert_not_contains "$direct_ddev" 'Running Doctor again...'
+assert_eq "$(git hash-object "$PANTHEON_LOCAL_CONFIG")" "$config_before"
+assert_eq "$(git -C "$DIRECT_PROVIDER_DEST" rev-parse HEAD)" "$direct_before"
+[ ! -e "$DIRECT_PROVIDER_DEST/.ddev/config.yaml" ] || fail 'direct DDEV choice created provider configuration'
+[ ! -e "$DIRECT_PROVIDER_DEST/.lando.yml" ] || fail 'direct DDEV choice created Lando configuration'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'direct DDEV choice started a provider'
+set +e
+direct_lando=$(run_doctor_pty $'y\n2\n')
+direct_lando_rc=$?
+set -e
+assert_eq "$direct_lando_rc" '31'
+assert_contains "$direct_lando" 'Selected: Lando (guidance only; no setting or project file was changed)'
+assert_contains "$direct_lando" 'Next: configure the canonical checkout with a reviewed .lando.yml.'
+set +e
+direct_skip=$(run_doctor_pty $'y\n\n')
+direct_skip_rc=$?
+set -e
+assert_eq "$direct_skip_rc" '31'
+assert_contains "$direct_skip" 'Provider remains unresolved. No files or settings were changed.'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'direct provider choice invoked DDEV/Lando'
+assert_eq "$(git hash-object "$PANTHEON_LOCAL_CONFIG")" "$config_before"
+
+# After a confirmed route preference, continue read-only diagnostics for the
+# same site (Dev Git + checkout/provider), without a 34-site/full-estate rescan.
+scenario_init same-site-continuation
+create_remote example-route-site $'General Group\nSpecific Group' ddev
+set_sites example-route-site
+configure_base ddev
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+SAME_SITE_DEST=$(create_checkout example-route-site specific ddev)
+set +e
+same_site_output=$(run_doctor_pty $'y\n2\ny\n\n')
+same_site_rc=$?
+set -e
+assert_eq "$same_site_rc" '31'
+assert_contains "$same_site_output" 'Saved route preference: Specific Group'
+assert_contains "$same_site_output" 'Continuing checks for example-route-site'
+assert_contains "$same_site_output" 'Dev Git: reachable for this site'
+assert_contains "$same_site_output" 'Provider: ddev'
+assert_contains "$same_site_output" 'Local checkout: checked'
+assert_contains "$same_site_output" 'Full estate scan skipped.'
+assert_not_contains "$same_site_output" 'Running Doctor again...'
+assert_file_contains "$MOCK_TERMINUS_LOG" 'terminus|connection:info|example-route-site.dev|--field=git_url'
+[ -d "$SAME_SITE_DEST/.git" ] || fail 'same-site continuation changed the checkout'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'same-site continuation started a provider'
+
+# When checkout is missing, offer its owning command without creating it by
+# default or silently starting a provider, then explain what is still needed.
+scenario_init same-site-missing-checkout
+create_remote missing-route-site $'General Group\nSpecific Group' ddev
+set_sites missing-route-site
+configure_base ddev
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+set +e
+missing_site_output=$(run_doctor_pty $'y\n2\ny\n\n\n')
+missing_site_rc=$?
+set -e
+assert_eq "$missing_site_rc" '31'
+assert_contains "$missing_site_output" 'Continuing checks for missing-route-site'
+assert_contains "$missing_site_output" 'Why: canonical Dev checkout is missing for missing-route-site'
+assert_contains "$missing_site_output" 'pantheon-local checkout missing-route-site.dev --dry-run'
+assert_contains "$missing_site_output" 'Create the canonical Dev checkout for missing-route-site now? [y/N]'
+assert_contains "$missing_site_output" 'Checkout not created.'
+assert_contains "$missing_site_output" 'Full estate scan skipped.'
+[ ! -e "$LOCAL_ROOT/specific/missing-route-site" ] || fail 'missing checkout was created without consent'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'missing checkout preview started a provider'
+
+# Explicit checkout consent completes the same site's checkout/provider
+# inspection. The owning checkout command may clone, but Doctor never starts
+# DDEV, Lando, Composer or Docker.
+scenario_init same-site-checkout-accept
+create_remote create-route-site $'General Group\nSpecific Group' ddev
+set_sites create-route-site
+configure_base ddev
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+set +e
+created_site_output=$(run_doctor_pty $'y\n2\ny\ny\n\n')
+created_site_rc=$?
+set -e
+assert_eq "$created_site_rc" '31'
+assert_contains "$created_site_output" 'Continuing checks for create-route-site'
+assert_contains "$created_site_output" 'Create the canonical Dev checkout for create-route-site now? [y/N]'
+assert_contains "$created_site_output" 'Verifying checkout for create-route-site'
+assert_contains "$created_site_output" 'Provider: ddev (detected, not started)'
+[ -d "$LOCAL_ROOT/specific/create-route-site/.git" ] || fail 'authorized checkout was not created'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'checkout follow-up started a provider'
+
+# When the project has neither provider configuration, Doctor remains on that
+# site and explains the missing decision rather than changing a global setting.
+scenario_init same-site-provider-unresolved
+create_remote no-provider-site $'General Group\nSpecific Group' none
+set_sites no-provider-site
+configure_base auto
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+NO_PROVIDER_DEST=$(create_checkout no-provider-site specific ddev)
+git config --file "$NO_PROVIDER_DEST/.git/pantheon-local-tools/state" --unset-all local.provider
+set +e
+no_provider_output=$(run_doctor_pty $'y\n2\ny\n2\n\n')
+no_provider_rc=$?
+set -e
+assert_eq "$no_provider_rc" '31'
+assert_contains "$no_provider_output" 'Continuing checks for no-provider-site'
+assert_contains "$no_provider_output" 'Why: checkout no-provider-site contains neither DDEV nor Lando project configuration'
+assert_contains "$no_provider_output" 'Provider: unresolved (review DDEV/Lando project configuration)'
+assert_contains "$no_provider_output" 'Which provider should no-provider-site use?'
+assert_contains "$no_provider_output" 'DDEV — use a reviewed .ddev/config.yaml'
+assert_contains "$no_provider_output" 'Lando — use a reviewed .lando.yml'
+assert_contains "$no_provider_output" 'Selected: Lando (guidance only; no setting or project file was changed)'
+assert_contains "$no_provider_output" 'Next: configure the canonical checkout with a reviewed .lando.yml.'
+assert_contains "$no_provider_output" 'No provider or Docker runtime was started by Doctor.'
+[ ! -e "$NO_PROVIDER_DEST/.lando.yml" ] || fail 'provider choice generated Lando config'
+[ ! -e "$NO_PROVIDER_DEST/.ddev/config.yaml" ] || fail 'provider choice generated DDEV config'
+[ -z "$(git config --file "$NO_PROVIDER_DEST/.git/pantheon-local-tools/state" --get local.provider 2>/dev/null || true)" ] || fail 'provider guidance unexpectedly wrote checkout metadata'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'provider ambiguity started a provider'
+
+# Explicit DDEV choice remains local guidance, never silent project setup.
+scenario_init same-site-provider-ddev-choice
+create_remote choose-ddev-site $'General Group\nSpecific Group' none
+set_sites choose-ddev-site
+configure_base auto
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+CHOOSE_DDEV_DEST=$(create_checkout choose-ddev-site specific ddev)
+git config --file "$CHOOSE_DDEV_DEST/.git/pantheon-local-tools/state" --unset-all local.provider
+set +e
+choose_ddev_output=$(run_doctor_pty $'y\n2\ny\n1\n\n')
+choose_ddev_rc=$?
+set -e
+assert_eq "$choose_ddev_rc" '31'
+assert_contains "$choose_ddev_output" 'Selected: DDEV (guidance only; no setting or project file was changed)'
+assert_contains "$choose_ddev_output" 'Next: configure the canonical checkout with a reviewed .ddev/config.yaml.'
+[ ! -e "$CHOOSE_DDEV_DEST/.ddev/config.yaml" ] || fail 'DDEV guidance created project configuration'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'DDEV guidance started provider'
+
+# The default provider answer leaves unsafe/ambiguous state unchanged.
+scenario_init same-site-provider-decline
+create_remote leave-provider-site $'General Group\nSpecific Group' none
+set_sites leave-provider-site
+configure_base auto
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+LEAVE_PROVIDER_DEST=$(create_checkout leave-provider-site specific ddev)
+git config --file "$LEAVE_PROVIDER_DEST/.git/pantheon-local-tools/state" --unset-all local.provider
+set +e
+leave_provider_output=$(run_doctor_pty $'y\n2\ny\n\n\n')
+leave_provider_rc=$?
+set -e
+assert_eq "$leave_provider_rc" '31'
+assert_contains "$leave_provider_output" 'Which provider should leave-provider-site use?'
+assert_contains "$leave_provider_output" 'Provider remains unresolved. No files or settings were changed.'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'declined provider choice started provider'
+
+# A missing checkout followed by its explicit creation must ask DDEV/Lando
+# if the cloned project contains neither provider configuration.
+scenario_init missing-project-provider-after-checkout
+create_remote example-provider-site $'General Group\nSpecific Group' none
+set_sites example-provider-site
+configure_base auto
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+set +e
+result=$(run_doctor_pty $'y\n2\ny\ny\n1\n\n')
+rc=$?
+set -e
+assert_eq "$rc" '31'
+assert_contains "$result" 'Continuing checks for example-provider-site'
+assert_contains "$result" 'Create the canonical Dev checkout for example-provider-site now? [y/N]'
+assert_contains "$result" 'Verifying checkout for example-provider-site'
+assert_contains "$result" 'Which provider should example-provider-site use?'
+assert_contains "$result" 'Selected: DDEV (guidance only; no setting or project file was changed)'
+assert_contains "$result" 'Full estate scan skipped.'
+[ -d "$LOCAL_ROOT/specific/example-provider-site/.git" ] || fail 'authorized canonical checkout was not created'
+[ ! -e "$LOCAL_ROOT/specific/example-provider-site/.ddev/config.yaml" ] || fail 'DDEV config was synthesized'
+[ ! -e "$LOCAL_ROOT/specific/example-provider-site/.lando.yml" ] || fail 'Lando config was synthesized'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'Doctor started a provider'
+# Per-site continuation fails closed on Git connection authority without
+# creating checkouts or silently probing any other site after the route fix.
+scenario_init same-site-git-url-unavailable
+create_remote blocked-route-site $'General Group\nSpecific Group' ddev
+set_sites blocked-route-site
+configure_base ddev
+bash "$CLI" config tag set 'General Group' general
+bash "$CLI" config tag set 'Specific Group' specific
+export MOCK_CONNECTION_FAIL_SITE=blocked-route-site
+set +e
+blocked_site_output=$(run_doctor_pty $'y\n2\ny\n\n')
+blocked_site_rc=$?
+set -e
+assert_eq "$blocked_site_rc" '31'
+assert_contains "$blocked_site_output" 'Continuing checks for blocked-route-site'
+assert_contains "$blocked_site_output" 'Why: canonical Dev Git URL is unavailable for blocked-route-site'
+assert_not_contains "$blocked_site_output" 'Create the canonical Dev checkout for blocked-route-site now?'
+[ ! -e "$LOCAL_ROOT/specific/blocked-route-site" ] || fail 'unavailable authority created a checkout'
+unset MOCK_CONNECTION_FAIL_SITE
 
 # A strict-subset Tag cohort is recommended as the more-specific route, but still requires explicit choice and confirmation.
 scenario_init route-specificity
@@ -788,7 +1009,7 @@ assert_contains "$specificity_review" "pantheon-local config tag prefer set 'Spe
 assert_contains "$specificity_review" 'Save Specific Group as the preferred route wherever these Tags overlap? [y/N]'
 assert_contains "$specificity_review" 'Saved route preference: Specific Group'
 assert_contains "$specificity_review" 'Cached Tag membership: specific-site now resolves via Specific Group -> specific'
-assert_contains "$specificity_review" 'Full scan skipped.'
+assert_contains "$specificity_review" 'Full estate scan skipped.'
 assert_not_contains "$specificity_review" 'Running Doctor again...'
 assert_contains "$(bash "$CLI" config tag prefer list)" 'Specific Group>General Group'
 [ -d "$GENERAL_DEST/.git" ] || fail 'general checkout disappeared during route preference review'
@@ -831,7 +1052,7 @@ choose_count=$(printf '%s\n' "$overlap_output" | grep -F -c 'Which route should 
 assert_eq "$choose_count" '1'
 rescan_count=$(printf '%s\n' "$overlap_output" | grep -F -c 'Run the full Doctor scan now?' || true)
 assert_eq "$rescan_count" '1'
-assert_contains "$overlap_output" 'Full scan skipped.'
+assert_contains "$overlap_output" 'Full estate scan skipped.'
 assert_not_contains "$overlap_output" 'Running Doctor again...'
 
 # A failing SSH host-key check is classified without trusting any new host.

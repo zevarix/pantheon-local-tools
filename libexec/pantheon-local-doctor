@@ -11,6 +11,7 @@ TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
 INTERACTION_LIB="$SCRIPT_DIR/pantheon-local-interaction"
 ESTATE_COMMON="$SCRIPT_DIR/pantheon-local-estate-common"
 CHECK_DIR=''
+DOCTOR_ROOT_CHECK_DIR=''
 CHECK_SEQ=0
 DOCTOR_PROGRESS=false
 DOCTOR_PROGRESS_INTERACTIVE=false
@@ -34,6 +35,7 @@ DOCTOR_PROGRESS_LAYOUT=compact
 DOCTOR_PROGRESS_FULL_COLUMNS=0
 DOCTOR_SITE_FINISHED=false
 DOCTOR_PREFERENCE_CHANGED=false
+DOCTOR_SITE_FOLLOWUP_PERFORMED=false
 DOCTOR_SITE_NAME=''
 DOCTOR_STEP_ENVIRONMENTS=waiting
 DOCTOR_STEP_ORGANIZATION=waiting
@@ -610,8 +612,15 @@ USAGE
 cleanup() {
   doctor_spinner_stop
   doctor_cursor_show
-  [ -z "$CHECK_DIR" ] || rm -rf "$CHECK_DIR"
+  # A site follow-up may shadow CHECK_DIR. Always remove the owning root,
+  # including if Ctrl-C interrupts a nested diagnostic.
+  if [ -n "$DOCTOR_ROOT_CHECK_DIR" ]; then
+    rm -rf "$DOCTOR_ROOT_CHECK_DIR"
+  elif [ -n "$CHECK_DIR" ]; then
+    rm -rf "$CHECK_DIR"
+  fi
   CHECK_DIR=''
+  DOCTOR_ROOT_CHECK_DIR=''
 }
 
 doctor_signal_exit() {
@@ -851,6 +860,250 @@ doctor_cached_route_resolution() {
   printf '%s -> %s' "$tag" "${directory:-[root]}"
 }
 
+# Reuse in-run Pantheon Tag observations for one site's downstream diagnostics.
+doctor_cached_site_tags() {
+  local wanted=$1 observed_site observed_tag found=''
+  [ -n "$DOCTOR_SITE_TAGS_FILE" ] && [ -f "$DOCTOR_SITE_TAGS_FILE" ] || return 1
+  while IFS=$'\t' read -r observed_site observed_tag; do
+    [ "$observed_site" = "$wanted" ] || continue
+    [ -n "$observed_tag" ] || continue
+    found="$found${found:+
+}$observed_tag"
+  done < "$DOCTOR_SITE_TAGS_FILE"
+  [ -n "$found" ] || return 1
+  printf '%s' "$found"
+}
+
+# Provider selection at this point is advice, not authority to modify the
+# provider-owned project recipe or start a container. Neither config file exists.
+doctor_followup_offer_provider() {
+  local site=$1 destination=$2 choice='' option=''
+  local -a choices
+  plt_interact_can_prompt || return 0
+  printf '\n'
+  plt_term_style 1 heading "Choose a local development provider for $site"
+  printf '\n'
+  printf '  Neither .ddev/config.yaml nor .lando.yml exists in the canonical checkout.\n'
+  [ -z "$destination" ] || printf '  Checkout: %s\n' "$destination"
+  printf '  Choosing a provider will show the required next step, not create files or start Docker.\n\n'
+  choices=(
+    'DDEV — use a reviewed .ddev/config.yaml project configuration'
+    'Lando — use a reviewed .lando.yml project configuration'
+    'Leave unresolved for now (no changes)'
+  )
+  if ! plt_interact_choose "Which provider should $site use?" 3 "${choices[@]}"; then
+    return 0
+  fi
+  choice=$PLT_INTERACT_CHOICE
+  case "$choice" in
+    1)
+      option=ddev
+      printf '\n'
+      plt_term_style 1 info '  Selected: DDEV (guidance only; no setting or project file was changed)'
+      printf '\n  Next: configure the canonical checkout with a reviewed .ddev/config.yaml.\n'
+      printf '  Verify locally with pantheon-local status from this checkout (no estate scan).\n'
+      ;;
+    2)
+      option=lando
+      printf '\n'
+      plt_term_style 1 info '  Selected: Lando (guidance only; no setting or project file was changed)'
+      printf '\n  Next: configure the canonical checkout with a reviewed .lando.yml.\n'
+      printf '  Verify locally with pantheon-local status from this checkout (no estate scan).\n'
+      ;;
+    *)
+      plt_term_style 1 muted '  Provider remains unresolved. No files or settings were changed.'
+      ;;
+  esac
+  printf '\n'
+  [ -z "$option" ] || printf '  PLT does not generate the base provider recipe or start provider containers during Doctor.\n'
+}
+
+doctor_followup_show_checkout() {
+  local site=$1 file overall seen=false provider='' provider_failure=false provider_missing=false
+  overall=$(doctor_checkout_progress_status "$site") || return 1
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    case "$CHECK_SCOPE" in "site:$site") ;; *) continue ;; esac
+    case "$CHECK_REASON" in
+      checkout-provider-resolved) provider=$CHECK_SOURCE ;;
+      provider-auto-undetermined)
+        provider_failure=true
+        provider_missing=true
+        ;;
+      provider-auto-ambiguous|recorded-provider-unsupported|recorded-provider-config-missing) provider_failure=true ;;
+    esac
+    case "$CHECK_ID" in
+      "checkout-$site"|"checkout-$site"-*|"provider-site-$site"-*) seen=true ;;
+    esac
+  done < "$CHECK_DIR/order"
+  [ "$seen" = true ] || return 0
+  case "$overall" in
+    complete)
+      plt_term_style 1 success '  Local checkout: checked'
+      printf '\n'
+      ;;
+    warning)
+      plt_term_style 1 warning '  Local checkout: needs attention'
+      printf '\n'
+      ;;
+    *)
+      plt_term_style 1 failure '  Local checkout: blocked'
+      printf '\n'
+      ;;
+  esac
+  if [ -n "$provider" ]; then
+    plt_term_style 1 info "  Provider: $provider (detected, not started)"
+    printf '\n'
+  elif [ "$provider_failure" = true ]; then
+    plt_term_style 1 warning '  Provider: unresolved (review DDEV/Lando project configuration)'
+    printf '\n'
+    printf '  Doctor cannot safely choose a provider or start containers automatically.\n'
+  fi
+  if [ "$provider_missing" = true ]; then
+    doctor_followup_offer_provider "$site" "$destination"
+  fi
+}
+
+doctor_followup_verify_checkout() {
+  local site=$1 destination=$2 git_url=$3 branch=$4 parent=$CHECK_DIR
+  local CHECK_DIR
+  CHECK_DIR=$(mktemp -d "$parent/checkout-verify.XXXXXX") || return 1
+  : > "$CHECK_DIR/order"
+  printf '\n'
+  plt_term_style 1 heading "Verifying checkout for $site"
+  printf '\n'
+  inspect_checkout_structure "$site" "$destination" "$git_url" "$branch"
+  doctor_site_explain_results
+  doctor_followup_show_checkout "$site"
+}
+
+doctor_followup_offer_checkout() {
+  local site=$1 destination=$2 git_url=$3 branch=$4 preview_rc=0 action_rc=0 confirm_rc
+  printf '\n'
+  plt_term_style 1 heading "Checkout is missing for $site"
+  printf '\n'
+  plt_term_style 1 muted '  Preview:'
+  printf '\n  pantheon-local checkout %s.dev --dry-run\n\n' "$site"
+  "$PROJECT_ROOT/bin/pantheon-local" checkout "$site.dev" --dry-run || preview_rc=$?
+  case "$preview_rc" in
+    "$PLT_EXIT_SUCCESS"|"$PLT_EXIT_CHANGED") ;;
+    *)
+      plt_term_style 1 failure '  Checkout preview failed. No checkout created.'
+      printf '\n'
+      return 0
+      ;;
+  esac
+  if plt_interact_confirm "Create the canonical Dev checkout for $site now?"; then
+    :
+  else
+    confirm_rc=$?
+    [ "$confirm_rc" -ne 2 ] || return 1
+    plt_term_style 1 muted '  Checkout not created. Doctor will not start DDEV or Lando.'
+    printf '\n'
+    return 0
+  fi
+  "$PROJECT_ROOT/bin/pantheon-local" checkout "$site.dev" || action_rc=$?
+  case "$action_rc" in
+    "$PLT_EXIT_SUCCESS"|"$PLT_EXIT_CHANGED")
+      doctor_followup_verify_checkout "$site" "$destination" "$git_url" "$branch"
+      ;;
+    *)
+      plt_term_style 1 failure '  Checkout creation failed; no additional actions performed.'
+      printf '\n'
+      ;;
+  esac
+}
+
+doctor_followup_site_after_route() {
+  local site=$1 observed_tags='' fresh_preferences='' resolution='' route_dir='' tag=''
+  local git_url='' remote_info='' remote_branch='' remote_sha='' destination='' overall
+  local remote_error_file parent=$CHECK_DIR site_position=0 observed_site
+  local CHECK_DIR
+  # Keep original report/record and its guided-review iteration unchanged.
+  CHECK_DIR=$(mktemp -d "$parent/site-followup.XXXXXX") || return 1
+  : > "$CHECK_DIR/order"
+  DOCTOR_SITE_FOLLOWUP_PERFORMED=true
+  printf '\n'
+  plt_term_style 1 heading "Continuing checks for $site"
+  printf '\n'
+  plt_term_style 1 muted '  Reusing observed Dev environment and Pantheon Tags.'
+  printf '\n'
+  observed_tags=$(doctor_cached_site_tags "$site") || {
+    plt_term_style 1 warning '  Cached site Tag membership unavailable; remaining steps not attempted.'
+    printf '\n'
+    return 0
+  }
+  fresh_preferences=$("$CORE" config tag prefer list 2>/dev/null) || return 1
+  resolution=$(resolve_route "$mappings" "$observed_tags" "$fresh_preferences") || {
+    plt_term_style 1 warning '  Route still ambiguous; checkout not inspected.'
+    printf '\n'
+    return 0
+  }
+  tag=$(printf '%s\n' "$resolution" | sed -n '1p')
+  route_dir=$(printf '%s\n' "$resolution" | sed -n '2p')
+  if [ -n "$route_dir" ] && ! route_directory_valid "$route_dir"; then
+    plt_term_style 1 failure '  Resolved route directory invalid; checkout not inspected.'
+    printf '\n'
+    return 0
+  fi
+  destination="$root/$site"
+  [ -z "$route_dir" ] || destination="$root/$route_dir/$site"
+  # Keep the site ordinal from the original discovered estate.
+  while IFS= read -r observed_site; do
+    [ -n "$observed_site" ] || continue
+    site_position=$((site_position + 1))
+    [ "$observed_site" != "$site" ] || break
+  done <<EOF
+$sites
+EOF
+  [ "$site_position" -gt 0 ] || site_position=1
+  doctor_site_begin "$site_position" "$site_total" "$site"
+  doctor_step_set environments complete
+  doctor_step_set organization complete
+  doctor_step_set tags complete
+  doctor_site_step_start routing
+  doctor_site_step_finish routing complete
+  check_add "followup-$site-route" PASS site-route-resolved '' plt "canonical route resolved for $site${tag:+ via $tag}" '' "site:$site"
+
+  doctor_site_step_start git-url
+  if ! git_url=$(site_git_url "$site"); then
+    doctor_site_step_finish git-url failure
+    check_add "followup-$site-git-url" FAIL dev-git-url-unavailable authority-unavailable terminus "canonical Dev Git URL is unavailable for $site" 'verify Terminus connection information for this site' "site:$site"
+    doctor_site_end
+    return 0
+  fi
+  doctor_site_step_finish git-url complete
+
+  doctor_site_step_start git-remote
+  remote_error_file="$CHECK_DIR/git-remote.stderr"
+  remote_info=$(doctor_remote_head_info "$git_url" "$remote_error_file" || true)
+  remote_branch=$(printf '%s\n' "$remote_info" | sed -n '1p')
+  remote_sha=$(printf '%s\n' "$remote_info" | sed -n '2p')
+  if [ -z "$remote_branch" ] || [ -z "$remote_sha" ]; then
+    doctor_site_step_finish git-remote failure
+    doctor_add_git_remote_failure "$site" "$remote_error_file"
+    doctor_site_end
+    return 0
+  fi
+  doctor_site_step_finish git-remote complete
+  check_add "followup-$site-git-remote" PASS dev-git-remote-readable '' git "canonical Dev Git repository is readable for $site ($remote_branch @ $(printf '%.8s' "$remote_sha"))" '' "site:$site"
+
+  doctor_site_step_start checkout
+  inspect_checkout_structure "$site" "$destination" "$git_url" "$remote_branch"
+  overall=$(doctor_checkout_progress_status "$site")
+  doctor_site_step_finish checkout "$overall"
+  doctor_site_end
+  plt_term_style 1 success '  Dev Git: reachable for this site'
+  printf '\n'
+  doctor_followup_show_checkout "$site"
+  if [ "$overall" = warning ] && [ ! -e "$destination" ]; then
+    doctor_followup_offer_checkout "$site" "$destination" "$git_url" "$remote_branch" || return $?
+  fi
+  plt_term_style 1 muted '  No provider or Docker runtime was started by Doctor.'
+  printf '\n'
+}
+
 doctor_offer_route_preference() {
   local site=$1 detail=$2 choice confirm_rc count selected preferred recommendation='' tag dir i tag_count label default_choice already_resolved=''
   local old_ifs=$IFS
@@ -866,7 +1119,8 @@ doctor_offer_route_preference() {
     printf '\n'
     plt_term_style 1 success "  Already resolved from this run's Tag observations: $site -> $already_resolved"
     printf '\n'
-    return 0
+    doctor_followup_site_after_route "$site"
+    return $?
   fi
   recommendation=$(doctor_recommended_preference_from_detail "$detail" 2>/dev/null || true)
 
@@ -958,9 +1212,8 @@ doctor_offer_route_preference() {
       printf '\n'
       ;;
   esac
-  plt_term_style 1 muted '  Remote Git reachability and local checkouts have not been rechecked.'
-  printf '\n'
   DOCTOR_PREFERENCE_CHANGED=true
+  doctor_followup_site_after_route "$site"
 }
 
 doctor_remediation_class_loaded() {
@@ -1109,9 +1362,13 @@ doctor_reassess() {
   else
     confirm_rc=$?
     [ "$confirm_rc" -ne 2 ] || return 0
-    plt_term_style 1 info 'Full scan skipped. Local changes were retained; remote diagnostics were not refreshed.'
+    if [ "$DOCTOR_SITE_FOLLOWUP_PERFORMED" = true ]; then
+      plt_term_style 1 info 'Full estate scan skipped. Selected sites received targeted follow-up; other sites were not rescanned.'
+    else
+      plt_term_style 1 info 'Full estate scan skipped. Local changes were retained; remote diagnostics were not refreshed.'
+    fi
     printf '\n'
-    plt_term_style 1 muted 'To check remote Git and local checkouts later: pantheon-local doctor'
+    plt_term_style 1 muted 'To scan every site again later: pantheon-local doctor'
     printf '\n'
     return 0
   fi
@@ -1230,9 +1487,19 @@ doctor_review_nonmanaged_findings() {
         esac
         printf '  Finding: %s\n' "$CHECK_MESSAGE"
         [ -z "$CHECK_NEXT" ] || printf '  Next:    %s\n' "$CHECK_NEXT"
-        if [ "$CHECK_REASON" = site-route-ambiguous ]; then
-          doctor_offer_route_preference "$scope_label" "$CHECK_DETAIL" || return $?
-        fi
+        case "$CHECK_REASON" in
+          site-route-ambiguous)
+            doctor_offer_route_preference "$scope_label" "$CHECK_DETAIL" || return $?
+            ;;
+          provider-auto-undetermined)
+            # This can be discovered in the initial read-only scan, without
+            # any preceding Tag-route repair. Offer the same safe provider
+            # choice as the targeted after-route site continuation.
+            case "$CHECK_SCOPE" in
+              site:*) doctor_followup_offer_provider "$scope_label" '' || return $? ;;
+            esac
+            ;;
+        esac
         ;;
       external-action)
         external_index=$((external_index + 1))
@@ -1261,7 +1528,7 @@ doctor_review_nonmanaged_findings() {
   plt_term_style 1 muted 'Guided review complete. No unconfirmed changes were made.'
   printf '\n'
   if [ "$DOCTOR_PREFERENCE_CHANGED" = true ]; then
-    plt_term_style 1 info 'Saved preferences have been checked against observed Tag membership.'
+    plt_term_style 1 info 'Saved preferences verified from observed Tags; selected sites checked for Git and checkout.'
     printf '\n'
     doctor_reassess
   fi
@@ -1520,6 +1787,7 @@ doctor_command() {
   trap 'doctor_signal_exit 143' TERM
 
   CHECK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pantheon-local-doctor.XXXXXX") || die_code "$PLT_EXIT_OPERATION_FAILED" 'could not create temporary diagnostic directory'
+  DOCTOR_ROOT_CHECK_DIR=$CHECK_DIR
   : > "$CHECK_DIR/order"
   tags_seen_file="$CHECK_DIR/tags-seen"
   tags_unique_file="$CHECK_DIR/tags-unique"

@@ -17,6 +17,7 @@ Patch release standardizing guided remediation and consent, adding Doctor extern
 - Interactive `pantheon-local doctor` now classifies actionable findings, offers explicitly confirmed PLT-managed repairs, previews/delegates to the existing owning command, and reruns diagnostics after successful repair; JSON, records, and non-TTY use remain prompt-free.
 - Unmanaged `pantheon-local status` output now points users to Doctor for a safe onboarding/remediation path without changing structured output.
 - Added opt-in `pantheon-local doctor --timing` evidence for external per-site reads, showing live whole-second elapsed time in interactive progress and deterministic completion timing on stderr without changing JSON/records, adding concurrency, or introducing timeouts.
+- Added explicit pairwise Tag-route precedence for legitimate overlapping Pantheon Tags. Doctor now guides user-choice/manual-recovery findings instead of stopping after the summary, can recommend a more-specific strict-subset Tag cohort, requires user choice plus confirmation before saving precedence, and shares the resulting route decision with checkout and estate status.
 
 ## 0.2.2 — 2026-10-02
 

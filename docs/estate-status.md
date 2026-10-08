@@ -92,13 +92,14 @@ A wrong origin, wrong canonical branch, ambiguous provider configuration, occupi
 
 ## Routing
 
-When configured Tag routes exist, each inspected site must match exactly one route for PLT to identify the canonical local destination.
+When configured Tag routes exist, each inspected site must resolve to one route for PLT to identify the canonical local destination.
 
 - exactly one match: route is resolved;
 - zero matches: routing is incomplete;
-- multiple matches: routing is ambiguous.
+- multiple matches with one unique explicit `config tag prefer` winner: route is resolved to that preferred Tag;
+- multiple matches without a unique explicit winner: routing is ambiguous.
 
-Routing ambiguity returns the shared `ambiguous-configuration` category rather than guessing a local path.
+Routing ambiguity returns the shared `ambiguous-configuration` category rather than guessing a local path. Explicit precedence changes only local route selection; it never edits Pantheon Tags.
 
 With no configured Tag routes, canonical destinations are `<root>/<site>` and Tag reads are not required unless the user explicitly selected sites by Tag.
 

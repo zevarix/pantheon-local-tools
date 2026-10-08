@@ -20,7 +20,7 @@ pantheon-local doctor --record ./doctor-result.json
 
 Default terminal mode keeps long remote/estate work visibly active without mixing progress text into structured output.
 
-On an interactive terminal, Doctor keeps each animated site update on **one bounded physical row**. By default (`doctor-layout=auto`) it retains the original labelled status display when the terminal is wide enough. For example:
+On an interactive terminal, Doctor keeps each animated site update on **one bounded physical row**. By default (`doctor-layout=auto`) it picks a layout **once for the whole discovered site list**, considering the longest site name and reserving space for timing and result labels. The layout does not switch as steps complete; only a physical terminal shrink can force a compact fallback to avoid wrapping. The original labelled status display is retained when the terminal is wide enough. For example:
 
 ```text
 Doctor: site 2/34 · example-site — ✓ environments, ✓ organization, ⠹ tags, ○ routing, ○ Dev Git URL, ○ Git remote, ○ local checkout

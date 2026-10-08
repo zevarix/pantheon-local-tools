@@ -30,6 +30,8 @@ DOCTOR_SITE_INDEX=0
 DOCTOR_SITE_TOTAL=0
 DOCTOR_TERMINAL_COLUMNS=80
 DOCTOR_LAYOUT=auto
+DOCTOR_PROGRESS_LAYOUT=compact
+DOCTOR_PROGRESS_FULL_COLUMNS=0
 DOCTOR_SITE_FINISHED=false
 DOCTOR_PREFERENCE_CHANGED=false
 DOCTOR_SITE_NAME=''
@@ -202,10 +204,50 @@ doctor_terminal_columns() {
   printf '%s' "$columns"
 }
 
+# Select one site-progress layout for the entire discovered estate, before
+# drawing the first site. Otherwise --timing grows the full row after each
+# check and can switch from detailed to compact in the middle of the scan.
+doctor_select_scan_layout() {
+  local estate_sites=$1 total=$2 site longest_name=0 prefix labels='' join=''
+  local step label worst_row=''
+  DOCTOR_PROGRESS_LAYOUT=compact
+  DOCTOR_PROGRESS_FULL_COLUMNS=0
+  DOCTOR_TERMINAL_COLUMNS=$(doctor_terminal_columns)
+  [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ] || return 0
+  [ "$DOCTOR_LAYOUT" != compact ] || return 0
+
+  while IFS= read -r site; do
+    [ -n "$site" ] || continue
+    [ "${#site}" -le "$longest_name" ] || longest_name=${#site}
+  done <<EOF
+$estate_sites
+EOF
+
+  for step in environments organization tags routing git-url git-remote checkout; do
+    label=$(doctor_step_label "$step") || return 1
+    # Reserve room for up to nine elapsed-time digits, so elapsed labels and
+    # completion badges cannot make an initially fitting full layout grow out
+    # of its terminal width as the site progresses.
+    if [ "$DOCTOR_TIMING" = true ] && doctor_step_is_timed "$step"; then
+      label="$label (999999999s)"
+    fi
+    labels="$labels${join}× $label"
+    join=', '
+  done
+  prefix="Doctor: site $total/$total · "
+  worst_row=" — $labels · × needs attention"
+  DOCTOR_PROGRESS_FULL_COLUMNS=$((
+    ${#prefix} + longest_name + ${#worst_row} + 1
+  ))
+  if [ "$DOCTOR_PROGRESS_FULL_COLUMNS" -lt "$DOCTOR_TERMINAL_COLUMNS" ]; then
+    DOCTOR_PROGRESS_LAYOUT=full
+  fi
+}
+
 doctor_render_site_line() {
   local frame=${1:-'⠋'} step status glyph style label duration
-  local detail='' sep='' symbols='' active='' failed='' warned=''
-  local summary='' note='' mode=compact prefix tail available site_width index idx formatted=''
+  local symbols='' active='' failed='' warned=''
+  local summary='' note='' mode=$DOCTOR_PROGRESS_LAYOUT prefix available site_width index idx formatted=''
   local note_width=17
   local -a glyphs=() styles=() labels=()
   for step in environments organization tags routing git-url git-remote checkout; do
@@ -228,9 +270,7 @@ doctor_render_site_line() {
     labels+=("$label")
     glyphs+=("$glyph")
     styles+=("$style")
-    detail="$detail$sep$glyph $label"
     symbols="$symbols${symbols:+ }$glyph"
-    sep=', '
   done
 
   if [ "$DOCTOR_SITE_FINISHED" = true ]; then
@@ -258,11 +298,6 @@ doctor_render_site_line() {
   fi
 
   prefix="Doctor: site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL · "
-  tail=" — $detail"
-  [ "$DOCTOR_SITE_FINISHED" != true ] || tail="$tail · $summary"
-  if [ "$DOCTOR_LAYOUT" != compact ] && [ $((${#prefix} + ${#DOCTOR_SITE_NAME} + ${#tail} + 1)) -lt "$DOCTOR_TERMINAL_COLUMNS" ]; then
-    mode=full
-  fi
 
   if [ "$mode" = compact ]; then
     # A fixed site column makes rows align even as the currently active check
@@ -451,6 +486,11 @@ doctor_spinner_start() {
 doctor_site_begin() {
   DOCTOR_SITE_FINISHED=false
   DOCTOR_TERMINAL_COLUMNS=$(doctor_terminal_columns)
+  # Keep the chosen layout unless the user physically shrinks the terminal.
+  # A forced shrink must not make the detailed line wrap.
+  if [ "$DOCTOR_PROGRESS_LAYOUT" = full ] && [ "$DOCTOR_TERMINAL_COLUMNS" -lt "$DOCTOR_PROGRESS_FULL_COLUMNS" ]; then
+    DOCTOR_PROGRESS_LAYOUT=compact
+  fi
   DOCTOR_SITE_INDEX=$1
   DOCTOR_SITE_TOTAL=$2
   DOCTOR_SITE_NAME=$3
@@ -1618,6 +1658,7 @@ EOF
       check_add pantheon-sites FAIL pantheon-site-list-unavailable authority-unavailable terminus 'Terminus could not list accessible Pantheon sites' 'verify Terminus/Pantheon access and retry doctor' global
     fi
 
+    doctor_select_scan_layout "$sites" "$site_total"
     while IFS= read -r site; do
       [ -n "$site" ] || continue
       site_index=$((site_index + 1))

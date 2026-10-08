@@ -441,6 +441,55 @@ if len(set(columns)) != 1:
     raise SystemExit('FAIL: compact site and glyph columns are not aligned: %s' % columns)
 PYWIDTH
 
+# Auto layout must remain fixed throughout a scan: live elapsed timings and
+# different site-name lengths must not switch a detailed row into compact mode.
+scenario_init stable-auto-layout
+create_remote tiny-site 'Example Group' ddev
+create_remote longer-example-site-name 'Example Group' ddev
+set_sites tiny-site longer-example-site-name
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+export MOCK_ENV_DELAY_SITE=tiny-site
+export MOCK_ENV_DELAY_SECONDS=2
+STABLE_LAYOUT_CAPTURE="$SCENARIO/stable-layout.output"
+STABLE_WIDE_CAPTURE="$SCENARIO/stable-wide.output"
+DOCTOR_TEST_TTY_COLS=180 run_doctor_pty $'\n' --timing > "$STABLE_LAYOUT_CAPTURE"
+DOCTOR_TEST_TTY_COLS=260 run_doctor_pty $'\n' --timing > "$STABLE_WIDE_CAPTURE"
+unset MOCK_ENV_DELAY_SITE MOCK_ENV_DELAY_SECONDS
+python3 - "$STABLE_LAYOUT_CAPTURE" "$STABLE_WIDE_CAPTURE" <<'PYSTABLE'
+import re
+import sys
+raw = open(sys.argv[1], 'rb').read().decode('utf-8', errors='replace')
+plain = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', raw)
+rows = [row for row in re.split(r'[\r\n]', plain) if row.startswith('Doctor: ')]
+full = [row for row in rows if row.startswith('Doctor: site ') and ' — ' in row]
+compact = [row for row in rows if row.startswith('Doctor: ') and '│' in row]
+if not full and not compact:
+    raise SystemExit('FAIL: no Doctor site progress was rendered in layout-stability fixture')
+if full and compact:
+    raise SystemExit('FAIL: auto layout switched between full and compact during the same scan')
+if not any('1/2' in row for row in full + compact):
+    raise SystemExit('FAIL: first site missing in stable layout capture')
+if not any('2/2' in row for row in full + compact):
+    raise SystemExit('FAIL: second site missing in stable layout capture')
+if not any(re.search(r'\([2-9][0-9]*s\)', row) for row in rows):
+    raise SystemExit('FAIL: did not exercise growing elapsed time text')
+too_wide = [row for row in full + compact if len(row) >= 180]
+if too_wide:
+    raise SystemExit('FAIL: progress exceeded 180-column terminal: %r' % too_wide[0])
+wide_raw = open(sys.argv[2], 'rb').read().decode('utf-8', errors='replace')
+wide_plain = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', wide_raw)
+wide_rows = [row for row in re.split(r'[\r\n]', wide_plain) if row.startswith('Doctor: ')]
+wide_full = [row for row in wide_rows if row.startswith('Doctor: site ') and ' — ' in row]
+wide_compact = [row for row in wide_rows if '│' in row]
+if not wide_full or wide_compact:
+    raise SystemExit('FAIL: wide TTY did not stay in full layout with live timing')
+if not any('1/2' in row for row in wide_full) or not any('2/2' in row for row in wide_full):
+    raise SystemExit('FAIL: wide TTY failed to cover both site names')
+if any(len(row) >= 260 for row in wide_full):
+    raise SystemExit('FAIL: full layout exceeded 260-column terminal')
+PYSTABLE
+
 # Different layout preferences alter only interactive presentation.
 scenario_init responsive-tty
 create_remote example-site 'Example Group' ddev

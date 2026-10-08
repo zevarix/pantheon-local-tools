@@ -486,7 +486,9 @@ EOF
 
 doctor_site_has_observed_tag() {
   local wanted_site=$1 wanted_tag=$2 observed_site observed_tag
-  [ -n "$DOCTOR_SITE_TAGS_FILE" ] && [ -f "$DOCTOR_SITE_TAGS_FILE" ] || return 1
+  if [ -z "$DOCTOR_SITE_TAGS_FILE" ] || [ ! -f "$DOCTOR_SITE_TAGS_FILE" ]; then
+    return 1
+  fi
   while IFS=$'\t' read -r observed_site observed_tag; do
     [ "$observed_site" = "$wanted_site" ] && [ "$observed_tag" = "$wanted_tag" ] && return 0
   done < "$DOCTOR_SITE_TAGS_FILE"
@@ -495,7 +497,10 @@ doctor_site_has_observed_tag() {
 
 doctor_tag_site_count() {
   local wanted_tag=$1 observed_site observed_tag count=0
-  [ -n "$DOCTOR_SITE_TAGS_FILE" ] && [ -f "$DOCTOR_SITE_TAGS_FILE" ] || { printf '0'; return; }
+  if [ -z "$DOCTOR_SITE_TAGS_FILE" ] || [ ! -f "$DOCTOR_SITE_TAGS_FILE" ]; then
+    printf '0'
+    return
+  fi
   while IFS=$'\t' read -r observed_site observed_tag; do
     [ "$observed_tag" = "$wanted_tag" ] && count=$((count + 1))
   done < "$DOCTOR_SITE_TAGS_FILE"
@@ -504,7 +509,9 @@ doctor_tag_site_count() {
 
 doctor_tag_is_strict_subset() {
   local candidate=$1 other=$2 observed_site observed_tag any_candidate=false other_extra=false
-  [ -n "$DOCTOR_SITE_TAGS_FILE" ] && [ -f "$DOCTOR_SITE_TAGS_FILE" ] || return 1
+  if [ -z "$DOCTOR_SITE_TAGS_FILE" ] || [ ! -f "$DOCTOR_SITE_TAGS_FILE" ]; then
+    return 1
+  fi
   while IFS=$'\t' read -r observed_site observed_tag; do
     [ "$observed_tag" = "$candidate" ] || continue
     any_candidate=true

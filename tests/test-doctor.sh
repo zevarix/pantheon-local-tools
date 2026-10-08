@@ -403,7 +403,7 @@ assert_contains "$warning_json" '"reason_code":"accessible-tag-unmapped"'
 assert_contains "$warning_json" '"remediation_class":"user-choice","remediation_action":"config-tag-route"'
 assert_not_contains "$warning_json" 'Fix the'
 
-# Interactive progress must fit narrow terminals without wrapping/reprinting site labels.
+# Narrow terminal progress must remain one physical row, including repeated frames.
 scenario_init narrow-tty
 long_site=example-site-with-a-deliberately-long-machine-name
 create_remote "$long_site" 'Example Group' ddev
@@ -419,22 +419,125 @@ unset MOCK_ENV_DELAY_SITE MOCK_ENV_DELAY_SECONDS
 python3 - "$NARROW_TTY_CAPTURE" <<'PYWIDTH'
 import re
 import sys
-
 raw = open(sys.argv[1], 'rb').read().decode('utf-8', errors='replace')
-# Strip VT sequences before checking visible redraw width; CSI erase-to-EOL is zero width.
 plain = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', raw)
-redraws = [part for part in re.split(r'[\r\n]', plain) if part.startswith('Doctor:')]
-first = [part for part in redraws if '1/2' in part and 'site' in part]
-second = [part for part in redraws if '2/2' in part and 'site' in part]
-if len(first) < 2 or not second:
-    raise SystemExit('FAIL: narrow TTY did not exercise both sites and a repeated first-site redraw')
-too_wide = [(len(part), part) for part in redraws if len(part) > 59 and ('1/2' in part or '2/2' in part)]
-if too_wide:
-    width, part = too_wide[0]
-    raise SystemExit('FAIL: doctor progress redraw overflowed 60-column TTY (%d columns): %r' % (width, part))
-if not any('⠋' in part or '⠙' in part for part in first):
+rows = [line for line in re.split(r'[\r\n]', plain) if line.startswith('Doctor: ') and '│' in line]
+one = [line for line in rows if '1/2' in line]
+two = [line for line in rows if '2/2' in line]
+if len(one) < 2 or not two:
+    raise SystemExit('FAIL: narrow TTY missed repeated first-site or second-site progress')
+overflow = [line for line in rows if len(line) >= 60]
+if overflow:
+    raise SystemExit('FAIL: 60-column terminal overflow: %r' % overflow[0])
+if not any('⠋' in line or '⠙' in line for line in one):
     raise SystemExit('FAIL: narrow TTY lost active spinner state')
+# Stable status glyph columns and site field even when site names differ.
+columns = [(line.index('│'), line.rindex('│')) for line in (one[0], one[-1], two[0], two[-1])]
+if len(set(columns)) != 1:
+    raise SystemExit('FAIL: compact site and glyph columns are not aligned: %s' % columns)
 PYWIDTH
+
+# Different layout preferences alter only interactive presentation.
+scenario_init responsive-tty
+create_remote example-site 'Example Group' ddev
+set_sites example-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+create_checkout example-site clients ddev >/dev/null
+MEDIUM_TTY_CAPTURE="$SCENARIO/medium-tty.output"
+WIDE_TTY_CAPTURE="$SCENARIO/wide-tty.output"
+FORCED_FULL_CAPTURE="$SCENARIO/forced-full.output"
+FORCED_COMPACT_CAPTURE="$SCENARIO/forced-compact.output"
+DOCTOR_TEST_TTY_COLS=115 run_doctor_pty '' > "$MEDIUM_TTY_CAPTURE"
+DOCTOR_TEST_TTY_COLS=260 run_doctor_pty '' > "$WIDE_TTY_CAPTURE"
+bash "$CLI" config set doctor-layout full
+DOCTOR_TEST_TTY_COLS=115 run_doctor_pty '' > "$FORCED_FULL_CAPTURE"
+bash "$CLI" config set doctor-layout compact
+DOCTOR_TEST_TTY_COLS=260 run_doctor_pty '' > "$FORCED_COMPACT_CAPTURE"
+
+# A route failure early in the pipeline must explain X and skipped checks.
+scenario_init progress-route-failure
+create_remote ambiguous-site $'Example Group\nAnother Group' ddev
+set_sites ambiguous-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+bash "$CLI" config tag set 'Another Group' apps
+bash "$CLI" config set doctor-layout compact
+FAILURE_TTY_CAPTURE="$SCENARIO/failure-tty.output"
+set +e
+DOCTOR_TEST_TTY_COLS=110 run_doctor_pty $'\n' > "$FAILURE_TTY_CAPTURE"
+failure_progress_rc=$?
+set -e
+assert_eq "$failure_progress_rc" '31'
+
+# An absent checkout must be marked as a warning, never a passing checkout.
+scenario_init progress-checkout-warning
+create_remote missing-checkout-site 'Example Group' ddev
+set_sites missing-checkout-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+bash "$CLI" config set doctor-layout compact
+WARNING_TTY_CAPTURE="$SCENARIO/warning-tty.output"
+DOCTOR_TEST_TTY_COLS=115 run_doctor_pty $'\n' > "$WARNING_TTY_CAPTURE"
+
+python3 - "$MEDIUM_TTY_CAPTURE" "$WIDE_TTY_CAPTURE" "$FORCED_FULL_CAPTURE" "$FORCED_COMPACT_CAPTURE" "$FAILURE_TTY_CAPTURE" "$WARNING_TTY_CAPTURE" <<'PYRESPONSIVE'
+import re
+import sys
+def read(path, width):
+    raw = open(path, 'rb').read().decode('utf-8', errors='replace')
+    plain = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', raw)
+    progress = [line for line in re.split(r'[\r\n]', plain)
+                if line.startswith('Doctor: ') and (('│' in line) or ('site ' in line and ' — ' in line))]
+    if not progress:
+        raise SystemExit('FAIL: missing site progress: %s' % path)
+    overflow = [line for line in progress if len(line) >= width]
+    if overflow:
+        raise SystemExit('FAIL: overflow for %d-column TTY: %r' % (width, overflow[0]))
+    return plain, progress
+medium, medium_rows = read(sys.argv[1], 115)
+wide, wide_rows = read(sys.argv[2], 260)
+forced_full, forced_full_rows = read(sys.argv[3], 115)
+forced_compact, forced_compact_rows = read(sys.argv[4], 260)
+failure, failure_rows = read(sys.argv[5], 110)
+warning, warning_rows = read(sys.argv[6], 115)
+if '│' not in medium_rows[-1] or '✓ checked' not in medium_rows[-1]:
+    raise SystemExit('FAIL: auto layout did not align/complete on medium TTY')
+if not any('✓ environments' in line and '✓ organization' in line for line in wide_rows):
+    raise SystemExit('FAIL: wide auto layout did not retain original step labels')
+if 'Steps: ✓ environments' not in forced_full:
+    raise SystemExit('FAIL: full layout lost named static summary on narrow TTY')
+if '│' not in forced_compact_rows[-1] or '✓ checked' not in forced_compact_rows[-1]:
+    raise SystemExit('FAIL: forced compact not honored on wide TTY')
+if '× routing' not in failure_rows[-1]:
+    raise SystemExit('FAIL: failed route ended on misleading checkout label')
+if 'Why: site ambiguous-site matches more than one configured local Tag route' not in failure:
+    raise SystemExit('FAIL: did not explain why route failed')
+if 'Not checked: Dev Git URL, Git remote, local checkout (stopped after routing failed)' not in failure:
+    raise SystemExit('FAIL: skipped checks lack causal explanation')
+if '! local checkout' not in warning_rows[-1]:
+    raise SystemExit('FAIL: absent checkout did not yield local-checkout warning')
+if 'Why: canonical Dev checkout is missing for missing-checkout-site' not in warning:
+    raise SystemExit('FAIL: checkout warning lacks reason')
+PYRESPONSIVE
+
+# Layout preference is presentation-only: structured diagnostics stay identical.
+scenario_init layout-machine-contract
+: > "$MOCK_DATA/sites"
+configure_base ddev
+json_auto=$(bash "$CLI" doctor --format json)
+bash "$CLI" config set doctor-layout compact
+json_compact=$(bash "$CLI" doctor --format json)
+bash "$CLI" config set doctor-layout full
+json_full=$(bash "$CLI" doctor --format json)
+assert_eq "$json_auto" "$json_compact"
+assert_eq "$json_auto" "$json_full"
+git config --file "$PANTHEON_LOCAL_CONFIG" --replace-all local.doctor-layout invalid
+set +e
+invalid_layout_json=$(bash "$CLI" doctor --format json)
+invalid_layout_rc=$?
+set -e
+assert_eq "$invalid_layout_rc" '31'
+assert_contains "$invalid_layout_json" '"reason_code":"doctor-layout-invalid"'
 
 # Interactive remediation is opt-in, previewed, delegated, and reassessed.
 scenario_init remediation-decline

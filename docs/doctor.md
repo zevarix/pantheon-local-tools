@@ -20,11 +20,35 @@ pantheon-local doctor --record ./doctor-result.json
 
 Default terminal mode keeps long remote/estate work visibly active without mixing progress text into structured output.
 
-On an interactive terminal, each site uses one width-bounded, in-place status line. Seven ordered glyphs summarize environments, organization, Tags, routing, Dev Git URL, Git remote, and local checkout. The active substep uses a Braille spinner and is named alongside the glyphs; the site name is abbreviated if needed to prevent terminal wrapping:
+On an interactive terminal, Doctor keeps each animated site update on **one bounded physical row**. By default (`doctor-layout=auto`) it retains the original labelled status display when the terminal is wide enough. For example:
 
 ```text
-Doctor: site 2/34 · example-site — [✓✓⠹○○○○] tags
+Doctor: site 2/34 · example-site — ✓ environments, ✓ organization, ⠹ tags, ○ routing, ○ Dev Git URL, ○ Git remote, ○ local checkout
 ```
+
+On narrower terminals, Doctor switches to **fixed, aligned columns**. Columns always represent (in order) environments, organization, Tags, routing, Dev Git URL, Git remote, and local checkout. The site-name column uses a consistent width and abbreviates long names *only in the animated display*, never in the final report:
+
+```text
+Doctor:  1/34  example-site           │ ✓ ✓ ⠹ ○ ○ ○ ○ │ tags
+Doctor:  2/34  another-site           │ ✓ ✓ ✓ × – – – │ × routing
+    × Why: site another-site matches more than one configured local Tag route
+      Next: confirm which configured Tag should take precedence
+    – Not checked: Dev Git URL, Git remote, local checkout (stopped after routing failed)
+```
+
+The symbols describe the actual diagnostic steps: `✓` passed, `!` needs attention (warning), `×` failed, `–` was **not checked**, `○` is pending, and an animated Braille glyph is the current operation. Doctor prints the concrete cause and next action from its diagnostic records directly below a completed site with `!` or `×`. It also explains skipped (`–`) steps so an unchecked step cannot be mistaken for a failed check.
+
+The `local checkout` step specifically inspects the **local canonical Pantheon Dev Git checkout**: location, repository identity, branch, PLT metadata when present, and provider configuration/availability. A checkmark here does **not** mean Lando/DDEV is running, that site data was pulled, or that code is synchronized to the latest remote commit.
+
+To choose the presentation permanently:
+
+```bash
+pantheon-local config set doctor-layout auto
+pantheon-local config set doctor-layout full
+pantheon-local config set doctor-layout compact
+```
+
+`full` favors the original labelled display; if it cannot safely fit, the animated row is compact but a fully labelled static summary follows each site. `compact` always uses aligned columns. `auto` is the default. No choice changes JSON, decisions, checks, or repairs.
 
 Completed steps are green, the active step is bright cyan, pending/skipped steps are muted, warnings are yellow, and failures are red when color is available. Color is supplemental to glyph/text state, respects `NO_COLOR`, and is disabled for `TERM=dumb`.
 
@@ -45,10 +69,10 @@ Doctor: site 2/34: example-site — tags
 
 `--timing` is an opt-in troubleshooting surface for identifying slow external reads. It measures whole-second wall time around the external per-site boundaries for environments, organization, Tags, Dev Git URL, and Git remote inspection.
 
-On an interactive terminal, the active step label includes the current elapsed time while the Braille spinner continues, for example:
+On an interactive terminal, the active step label includes the current elapsed time while the Braille spinner continues. Completed step durations remain visible on wide terminals; narrow terminals prioritize the active step:
 
 ```text
-Doctor: site 2/34 · example-site — [✓✓⠹○○○○] tags (4s)
+Doctor:  2/34  example-site           │ ✓ ✓ ⠹ ○ ○ ○ ○ │ tags (4s)
 ```
 
 When stderr is redirected/non-interactive, timing mode emits a deterministic completion line after each timed boundary, for example:

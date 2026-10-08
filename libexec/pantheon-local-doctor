@@ -28,6 +28,8 @@ DOCTOR_CURSOR_HIDDEN=false
 DOCTOR_SITE_INDEX=0
 DOCTOR_SITE_TOTAL=0
 DOCTOR_TERMINAL_COLUMNS=80
+DOCTOR_LAYOUT=auto
+DOCTOR_SITE_FINISHED=false
 DOCTOR_SITE_NAME=''
 DOCTOR_STEP_ENVIRONMENTS=waiting
 DOCTOR_STEP_ORGANIZATION=waiting
@@ -195,57 +197,96 @@ doctor_terminal_columns() {
 }
 
 doctor_render_site_line() {
-  local frame=${1:-'⠋'} step status glyph style symbols='' active_step='' last_step=''
-  local label=checking duration='' prefix suffix name mode=full available idx
-  local -a glyphs=() styles=()
-
+  local frame=${1:-'⠋'} step status glyph style label duration
+  local detail='' sep='' symbols='' active='' failed='' warned=''
+  local summary='' note='' mode=compact prefix tail available site_width index idx formatted=''
+  local note_width=17
+  local -a glyphs=() styles=() labels=()
   for step in environments organization tags routing git-url git-remote checkout; do
     status=$(doctor_step_status "$step") || return 1
+    label=$(doctor_step_label "$step") || return 1
     if [ "$status" = active ]; then
       glyph=$frame
       style=active
-      active_step=$step
+      active=$step
     else
       glyph=$(plt_term_status_glyph "$status")
       style=$(plt_term_status_style "$status")
-      [ "$status" = waiting ] || last_step=$step
+      case "$status" in
+        failure|blocked) [ -n "$failed" ] || failed=$step ;;
+        warning) [ -n "$warned" ] || warned=$step ;;
+      esac
     fi
+    duration=$(doctor_step_elapsed "$step" 2>/dev/null || true)
+    [ -z "$duration" ] || label="$label (${duration}s)"
+    labels+=("$label")
     glyphs+=("$glyph")
     styles+=("$style")
-    symbols="$symbols$glyph"
+    detail="$detail$sep$glyph $label"
+    symbols="$symbols${symbols:+ }$glyph"
+    sep=', '
   done
 
-  [ -n "$active_step" ] || active_step=$last_step
-  if [ -n "$active_step" ]; then
-    label=$(doctor_step_label "$active_step") || return 1
-    duration=$(doctor_step_elapsed "$active_step" 2>/dev/null || true)
-    [ -z "$duration" ] || label="$label (${duration}s)"
+  if [ "$DOCTOR_SITE_FINISHED" = true ]; then
+    if [ -n "$failed" ]; then
+      summary='× needs attention'
+      note="× $(doctor_step_label "$failed")"
+      style=failure
+    elif [ -n "$warned" ]; then
+      summary='! needs attention'
+      note="! $(doctor_step_label "$warned")"
+      style=warning
+    else
+      summary='✓ checked'
+      note=$summary
+      style=success
+    fi
+  elif [ -n "$active" ]; then
+    note=$(doctor_step_label "$active")
+    duration=$(doctor_step_elapsed "$active" 2>/dev/null || true)
+    [ -z "$duration" ] || note="$note (${duration}s)"
+    style=active
+  else
+    note=checking
+    style=muted
   fi
 
-  # The prior seven-label rendering could wrap. A carriage return only rewinds
-  # the last physical line, so wrapped spinner updates filled the scrollback.
-  # Keep one bounded line, with seven color-coded status glyphs and the active
-  # step label. Reserve one terminal column to avoid automatic edge wrapping.
   prefix="Doctor: site $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL · "
-  suffix=" — [$symbols] $label"
-  available=$((DOCTOR_TERMINAL_COLUMNS - ${#prefix} - ${#suffix} - 1))
-  if [ "$available" -lt 3 ]; then
-    mode=compact
-    prefix="Doctor: $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL · "
-    suffix=" [$symbols]"
-    available=$((DOCTOR_TERMINAL_COLUMNS - ${#prefix} - ${#suffix} - 1))
-  fi
-  if [ "$available" -lt 3 ]; then
-    mode=minimal
-    prefix="Doctor: $DOCTOR_SITE_INDEX/$DOCTOR_SITE_TOTAL"
+  tail=" — $detail"
+  [ "$DOCTOR_SITE_FINISHED" != true ] || tail="$tail · $summary"
+  if [ "$DOCTOR_LAYOUT" != compact ] && [ $((${#prefix} + ${#DOCTOR_SITE_NAME} + ${#tail} + 1)) -lt "$DOCTOR_TERMINAL_COLUMNS" ]; then
+    mode=full
   fi
 
-  name=$DOCTOR_SITE_NAME
-  if [ "$mode" != minimal ] && [ "${#name}" -gt "$available" ]; then
-    name="${name:0:$((available - 1))}…"
-  fi
-  if [ "$mode" = minimal ] && [ "${#prefix}" -ge "$DOCTOR_TERMINAL_COLUMNS" ]; then
-    prefix=${prefix:0:$((DOCTOR_TERMINAL_COLUMNS - 1))}
+  if [ "$mode" = compact ]; then
+    # A fixed site column makes rows align even as the currently active check
+    # changes. Never infer a maximum Pantheon name length: truncate to fit.
+    printf -v index '%*d/%d' "${#DOCTOR_SITE_TOTAL}" "$DOCTOR_SITE_INDEX" "$DOCTOR_SITE_TOTAL"
+    prefix="Doctor: $index  "
+    available=$((DOCTOR_TERMINAL_COLUMNS - ${#prefix} - 4 - ${#symbols} - 3 - note_width - 1))
+    if [ "$available" -lt 4 ]; then
+      note_width=8
+      available=$((DOCTOR_TERMINAL_COLUMNS - ${#prefix} - 4 - ${#symbols} - 3 - note_width - 1))
+    fi
+    if [ "$available" -lt 4 ]; then
+      mode=minimal
+      prefix="Doctor: $index"
+      if [ "$DOCTOR_SITE_FINISHED" = true ]; then prefix="$prefix ${summary:0:1}"; fi
+      if [ "${#prefix}" -ge "$DOCTOR_TERMINAL_COLUMNS" ]; then
+        prefix=${prefix:0:$((DOCTOR_TERMINAL_COLUMNS - 1))}
+      fi
+    else
+      site_width=$available
+      [ "$site_width" -le 22 ] || site_width=22
+      label=$DOCTOR_SITE_NAME
+      if [ "${#label}" -gt "$site_width" ]; then
+        label="${label:0:$((site_width - 1))}…"
+      fi
+      printf -v formatted '%-*s' "$site_width" "$label"
+      if [ "${#note}" -gt "$note_width" ]; then
+        note="${note:0:$((note_width - 1))}…"
+      fi
+    fi
   fi
 
   {
@@ -253,24 +294,107 @@ doctor_render_site_line() {
     plt_term_style 2 heading "$prefix"
     case "$mode" in
       full)
-        printf '%s — [' "$name"
+        printf '%s — ' "$DOCTOR_SITE_NAME"
         for idx in 0 1 2 3 4 5 6; do
-          plt_term_style 2 "${styles[$idx]}" "${glyphs[$idx]}"
+          [ "$idx" -eq 0 ] || printf ', '
+          plt_term_style 2 "${styles[$idx]}" "${glyphs[$idx]} ${labels[$idx]}"
         done
-        printf '] %s' "$label"
+        if [ "$DOCTOR_SITE_FINISHED" = true ]; then
+          printf ' · '
+          plt_term_style 2 "$style" "$summary"
+        fi
         ;;
       compact)
-        printf '%s [' "$name"
+        printf '%s  │ ' "$formatted"
         for idx in 0 1 2 3 4 5 6; do
+          [ "$idx" -eq 0 ] || printf ' '
           plt_term_style 2 "${styles[$idx]}" "${glyphs[$idx]}"
         done
-        printf ']'
+        printf ' │ '
+        plt_term_style 2 "$style" "$note"
         ;;
     esac
-    # Erase only any old trailing characters. Clearing the entire line before
-    # every frame previously caused visible flashing in real terminals.
     plt_term_clear_to_end 2
   } >&2
+}
+
+
+doctor_checkout_progress_status() {
+  local site=$1 file overall=complete seen=false
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    case "$CHECK_ID" in
+      "checkout-$site"|"checkout-$site"-*|"provider-site-$site"-*) ;;
+      *) continue ;;
+    esac
+    case "$CHECK_SCOPE" in "site:$site"|"site-$site") ;; *) continue ;; esac
+    seen=true
+    case "$CHECK_STATUS" in
+      FAIL) printf '%s' failure; return 0 ;;
+      WARN) overall=warning ;;
+    esac
+  done < "$CHECK_DIR/order"
+  if [ "$seen" = true ]; then printf '%s' "$overall"; else printf '%s' failure; fi
+}
+
+doctor_site_explain_results() {
+  [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ] || return 0
+  local file step state glyph style message duration skipped='' stopped='' detail='' separator=''
+  if [ "$DOCTOR_LAYOUT" = full ]; then
+    # A full static summary after the animated row remains legible when even
+    # the detailed animation could not fit a particular terminal's width.
+    for step in environments organization tags routing git-url git-remote checkout; do
+      state=$(doctor_step_status "$step")
+      glyph=$(plt_term_status_glyph "$state")
+      message=$(doctor_step_label "$step")
+      duration=$(doctor_step_elapsed "$step" 2>/dev/null || true)
+      [ -z "$duration" ] || message="$message (${duration}s)"
+      detail="$detail$separator$glyph $message"
+      separator=', '
+    done
+    printf '    Steps: %s\n' "$detail" >&2
+  fi
+
+  # Read structured diagnostic records, never terminal prose, for explanations.
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    case "$CHECK_SCOPE" in "site:$DOCTOR_SITE_NAME"|"site-$DOCTOR_SITE_NAME") ;; *) continue ;; esac
+    case "$CHECK_STATUS" in
+      FAIL) glyph='×'; style=failure ;;
+      WARN) glyph='!'; style=warning ;;
+      *) continue ;;
+    esac
+    {
+      printf '    '
+      plt_term_style 2 "$style" "$glyph"
+      printf ' Why: %s\n' "$CHECK_MESSAGE"
+      if [ -n "$CHECK_NEXT" ]; then
+        printf '      Next: %s\n' "$CHECK_NEXT"
+      fi
+    } >&2
+  done < "$CHECK_DIR/order"
+
+  for step in environments organization tags routing git-url git-remote checkout; do
+    state=$(doctor_step_status "$step")
+    case "$state" in
+      failure|blocked)
+        [ -n "$stopped" ] || stopped=$(doctor_step_label "$step")
+        ;;
+      skipped)
+        message=$(doctor_step_label "$step")
+        skipped="$skipped${skipped:+, }$message"
+        ;;
+    esac
+  done
+  if [ -n "$skipped" ]; then
+    if [ -n "$stopped" ]; then
+      printf '    – Not checked: %s (stopped after %s failed)\n' "$skipped" "$stopped" >&2
+    else
+      printf '    – Not checked: %s (earlier prerequisite unavailable)\n' "$skipped" >&2
+    fi
+  fi
 }
 
 doctor_cursor_hide() {
@@ -310,6 +434,7 @@ doctor_spinner_start() {
 }
 
 doctor_site_begin() {
+  DOCTOR_SITE_FINISHED=false
   DOCTOR_TERMINAL_COLUMNS=$(doctor_terminal_columns)
   DOCTOR_SITE_INDEX=$1
   DOCTOR_SITE_TOTAL=$2
@@ -383,24 +508,12 @@ doctor_site_skip_waiting() {
 doctor_site_end() {
   doctor_spinner_stop
   doctor_site_skip_waiting
+  DOCTOR_SITE_FINISHED=true
   if [ "$DOCTOR_PROGRESS_INTERACTIVE" = true ]; then
     doctor_render_site_line '⠋'
     printf '\n' >&2
+    doctor_site_explain_results
   fi
-}
-
-doctor_scope_progress_status() {
-  local wanted_scope=$1 file overall=complete
-  while IFS= read -r file; do
-    [ -n "$file" ] || continue
-    check_load "$file"
-    [ "$CHECK_SCOPE" = "$wanted_scope" ] || continue
-    case "$CHECK_STATUS" in
-      FAIL) printf '%s' failure; return 0 ;;
-      WARN) overall=warning ;;
-    esac
-  done < "$CHECK_DIR/order"
-  printf '%s' "$overall"
 }
 
 usage() {
@@ -1265,6 +1378,14 @@ doctor_command() {
   fi
 
   if [ "$git_ok" = true ]; then
+    DOCTOR_LAYOUT=$(doctor_config_value doctor-layout)
+    case "$DOCTOR_LAYOUT" in
+      auto|full|compact) ;;
+      *)
+        DOCTOR_LAYOUT=auto
+        check_add doctor-layout FAIL doctor-layout-invalid ambiguous-configuration plt-orchestration 'unsupported Doctor progress layout; expected auto, full, or compact' 'run pantheon-local config set doctor-layout auto' global
+        ;;
+    esac
     root=$(doctor_config_value root)
     if [ -z "$root" ]; then
       check_add root FAIL root-config-invalid ambiguous-configuration plt-orchestration 'configured checkout root is missing or invalid' 'run pantheon-local config init --root /absolute/path' global
@@ -1475,7 +1596,7 @@ EOF
 
       doctor_site_step_start checkout
       inspect_checkout_structure "$site" "$destination" "$git_url" "$remote_branch"
-      doctor_site_step_finish checkout "$(doctor_scope_progress_status "site:$site")"
+      doctor_site_step_finish checkout "$(doctor_checkout_progress_status "$site")"
       doctor_site_end
     done <<EOF
 $sites

@@ -36,8 +36,9 @@ Usage:
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
 
 Configuration keys:
-  root      Absolute local root for Pantheon checkouts.
-  provider  auto, ddev, or lando.
+  root          Absolute local root for Pantheon checkouts.
+  provider      auto, ddev, or lando.
+  doctor-layout auto, full, or compact (TTY progress presentation only).
 
 Run `pantheon-local config init` in a terminal for guided setup. Supply
 --root and/or --provider for a non-interactive one-command configuration.
@@ -80,6 +81,7 @@ key_to_git_key() {
   case "$1" in
     root) printf '%s\n' 'local.root' ;;
     provider) printf '%s\n' 'local.provider' ;;
+    doctor-layout) printf '%s\n' 'local.doctor-layout' ;;
     *) die "unknown configuration key: $1" ;;
   esac
 }
@@ -91,6 +93,7 @@ default_value() {
       printf '%s/%s\n' "${HOME%/}" "$DEFAULT_ROOT_SUFFIX"
       ;;
     provider) printf '%s\n' "$DEFAULT_PROVIDER" ;;
+    doctor-layout) printf '%s\n' auto ;;
     *) return 1 ;;
   esac
 }
@@ -124,6 +127,9 @@ validate_value() {
       ;;
     provider)
       case "$value" in auto|ddev|lando) ;; *) die 'provider must be one of: auto, ddev, lando' ;; esac
+      ;;
+    doctor-layout)
+      case "$value" in auto|full|compact) ;; *) die 'doctor-layout must be one of: auto, full, compact' ;; esac
       ;;
   esac
 }
@@ -172,6 +178,8 @@ config_get() {
     if [ "$key" = 'root' ]; then
       value=$(expand_home "$value")
       validate_value root "$value"
+    elif [ "$key" = 'doctor-layout' ]; then
+      validate_value doctor-layout "$value"
     fi
     printf '%s\n' "$value"
   else
@@ -349,6 +357,7 @@ tag_prefer_command() {
 config_list() {
   printf 'root=%s\n' "$(config_get root)"
   printf 'provider=%s\n' "$(config_get provider)"
+  printf 'doctor-layout=%s\n' "$(config_get doctor-layout)"
   tag_list | while IFS= read -r line; do
     [ -n "$line" ] || continue
     printf 'tag.%s\n' "$line"

@@ -22,14 +22,14 @@ Commands:
       Print the effective value for a configuration key.
 
   pantheon-local config set KEY VALUE
-      Set one configuration value. Supported keys: root, provider.
+      Set one configuration value. Supported keys: root, provider, doctor-layout.
 
   pantheon-local config unset KEY
       Remove one stored configuration value so its default applies again.
 
   pantheon-local config list
-      Print effective root/provider values, Pantheon Tag routes, route
-      precedence rules, and configured tag-profile properties.
+      Print effective root/provider/Doctor layout, Pantheon Tag routes,
+      route precedence rules, and configured tag-profile properties.
 
   pantheon-local config tag get TAG
       Print the local directory mapped to a Pantheon Tag.

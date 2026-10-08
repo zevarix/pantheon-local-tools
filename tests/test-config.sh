@@ -63,6 +63,17 @@ fi
 assert_eq "$(bash "$CLI" config path)" "$PANTHEON_LOCAL_CONFIG"
 assert_eq "$(bash "$CLI" config get provider)" 'auto'
 assert_eq "$(bash "$CLI" config get root)" "$HOME/sites/pantheon"
+assert_eq "$(bash "$CLI" config get doctor-layout)" 'auto'
+bash "$CLI" config set doctor-layout compact
+assert_eq "$(bash "$CLI" config get doctor-layout)" 'compact'
+bash "$CLI" config set doctor-layout full
+assert_eq "$(bash "$CLI" config get doctor-layout)" 'full'
+if bash "$CLI" config set doctor-layout unrecognized >/dev/null 2>&1; then
+  fail 'config accepted unsupported Doctor layout'
+fi
+assert_eq "$(bash "$CLI" config get doctor-layout)" 'full'
+bash "$CLI" config unset doctor-layout
+assert_eq "$(bash "$CLI" config get doctor-layout)" 'auto'
 
 # No-option init is intentionally interactive and must not hang in automation.
 non_tty_output="$TMP_ROOT/non-tty.out"
@@ -169,6 +180,7 @@ if bash "$CLI" config tag set Unsafe 'foo\\bar' >/dev/null 2>&1; then fail 'back
 output=$(bash "$CLI" config list)
 assert_contains "$output" "root=$HOME/Pantheon Sites"
 assert_contains "$output" 'provider=lando'
+assert_contains "$output" 'doctor-layout=auto'
 assert_contains "$output" 'tag.Client Sites.v2=clients/main'
 assert_contains "$output" 'route.preference=Other Sites>General Sites'
 if printf '%s\n' "$output" | grep -q 'site-prefix'; then fail 'removed site-prefix setting is still exposed'; fi

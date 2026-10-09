@@ -43,10 +43,12 @@ lando_url() {
   local root=$1 output service
   command -v lando >/dev/null 2>&1 || return 1
 
-  # Pantheon's nginx proxy service is appserver_nginx. The fallbacks keep this
-  # useful for older/current recipe shapes without assuming that extra services
-  # (phpMyAdmin, Redis, Solr, etc.) have any particular ordering in lando info.
-  for service in appserver_nginx appserver-nginx appserver; do
+  # Pantheon's edge service owns the public-facing proxy URL when enabled.
+  # appserver_nginx often reports only ephemeral localhost ports even when
+  # edge exposes the actual application domain. Check only known web services;
+  # never choose admin tools, caches, or unrelated services as the site URL.
+  # The remaining services cover edge-disabled and older recipe shapes.
+  for service in edge appserver_nginx appserver-nginx appserver; do
     if output=$(cd "$root" && lando info --service "$service" --format json --path urls 2>/dev/null); then
       if printf '%s\n' "$output" | extract_urls | choose_external_url; then
         return 0

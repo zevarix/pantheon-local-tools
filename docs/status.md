@@ -85,7 +85,7 @@ When the provider executable is available, status performs a best-effort, read-o
 - Lando: service URL data from `lando info`;
 - DDEV: `primary_url` from `ddev describe -j`.
 
-Status prefers an HTTPS non-loopback application URL when the provider reports multiple Lando URLs. Provider-specific extra services such as phpMyAdmin, Redis, Solr, MailHog, or custom services are not selected as the application's primary URL merely because they also expose URLs.
+Status prefers an HTTPS non-loopback application URL when the provider reports multiple Lando URLs. For Pantheon recipes, it checks the public-facing `edge` web service **before** the nginx/appserver fallbacks: `appserver_nginx` may expose only temporary localhost ports while `edge` exposes the routed application domain. The edge service is optional, so older and edge-disabled recipes retain the appserver fallbacks. Provider-specific extra services such as phpMyAdmin, Redis, Solr, MailHog, or custom services are not selected as the application's primary URL merely because they also expose URLs.
 
 Runtime discovery is optional. If the provider is unavailable, stopped in a way that prevents inspection, or does not return a usable application URL, status falls back to the URL already recorded in local checkout state. If neither source is available, it reports `(not available)`.
 

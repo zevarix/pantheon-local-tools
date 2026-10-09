@@ -100,9 +100,13 @@ does not promise a fix.
 
 After listing those findings, interactive review offers a default-safe
 numbered inspection menu when it recognizes checkout branch mismatches or
-untrusted SSH host keys. The menu shows only read-only local Git inspection
-commands and out-of-band SSH identity verification guidance. You can inspect
-each category, return to the menu, or press Enter to finish.
+untrusted SSH host keys. The branch checklist identifies the affected sites and their observed local
+and canonical branch differences from the completed scan, in a bounded,
+deterministic list (up to 20 entries; consult the Sites report for the rest).
+It does **not** refresh local Git state; inspect each checkout independently
+before deciding on any recovery action. The menu also shows read-only local
+Git inspection commands and out-of-band SSH identity verification guidance.
+You can inspect each category, return to the menu, or press Enter to finish.
 
 The menu never changes Git branches, resets a checkout, alters host-key
 trust, starts a provider, or writes Pantheon state. Other findings without

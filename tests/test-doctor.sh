@@ -1189,6 +1189,9 @@ assert_contains "$legacy_branch_review" 'Show manual/external recovery guidance 
 assert_contains "$legacy_branch_review" 'No automatic fixes or configurable choices exist for these findings.'
 assert_contains "$legacy_branch_review" 'What would you like to inspect?'
 assert_contains "$legacy_branch_review" 'Read-only branch mismatch inspection'
+assert_contains "$legacy_branch_review" 'Affected checkouts (observed during this scan):'
+assert_contains "$legacy_branch_review" 'legacy-branch-site: checkout branch is legacy-main, canonical Dev branch is master'
+assert_contains "$legacy_branch_review" 'These observations may be stale; Doctor has not refreshed local Git state.'
 assert_contains "$legacy_branch_review" 'Doctor will not switch branches, reset HEAD, or discard work.'
 assert_contains "$legacy_branch_review" 'checkout branch is legacy-main, canonical Dev branch is master'
 assert_contains "$legacy_branch_review" 'Guided review complete. No unconfirmed changes were made.'
@@ -1240,6 +1243,7 @@ assert_contains "$mixed_review" 'Show manual/external recovery guidance for 2 fi
 assert_contains "$mixed_review" 'Inspect 1 checkout branch mismatch (no branch changes)'
 assert_contains "$mixed_review" 'Review 1 SSH host-key finding (no trust changes)'
 assert_contains "$mixed_review" 'Read-only branch mismatch inspection'
+assert_contains "$mixed_review" 'legacy-site: checkout branch is old-master, canonical Dev branch is master'
 assert_contains "$mixed_review" 'Read-only SSH host-key inspection'
 assert_contains "$mixed_review" 'Never disable host-key verification or blindly import scanned keys.'
 assert_contains "$mixed_review" 'Finish review (default; no changes)'
@@ -1251,6 +1255,50 @@ assert_eq "$(git hash-object "$PANTHEON_LOCAL_CONFIG")" "$mixed_config_hash"
 [ ! -e "$HOME/.ssh/known_hosts" ] || fail 'manual/external review added SSH trust'
 [ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'manual/external review started provider'
 unset MOCK_SSH_GIT_SITE
+
+# Site-scoped branch guidance stays deterministic across multiple affected
+# checkouts and never changes their Git/PLT/SSH/provider state.
+scenario_init multiple-branch-guidance
+create_remote first-site 'Example Group' ddev
+create_remote second-site 'Example Group' ddev
+set_sites first-site second-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+FIRST_BRANCH_DEST=$(create_checkout first-site clients ddev)
+SECOND_BRANCH_DEST=$(create_checkout second-site clients ddev)
+git -C "$FIRST_BRANCH_DEST" branch -m historical-first
+git -C "$SECOND_BRANCH_DEST" branch -m historical-second
+first_branch_head=$(git -C "$FIRST_BRANCH_DEST" rev-parse HEAD)
+second_branch_head=$(git -C "$SECOND_BRANCH_DEST" rev-parse HEAD)
+first_branch_status=$(git -C "$FIRST_BRANCH_DEST" status --porcelain)
+second_branch_status=$(git -C "$SECOND_BRANCH_DEST" status --porcelain)
+multiple_config_hash=$(git hash-object "$PANTHEON_LOCAL_CONFIG")
+
+set +e
+multiple_review=$(run_doctor_pty $'y\n1\n\n')
+multiple_review_rc=$?
+set -e
+assert_eq "$multiple_review_rc" '30'
+assert_contains "$multiple_review" 'Inspect 2 checkout branch mismatches (no branch changes)'
+assert_contains "$multiple_review" 'first-site: checkout branch is historical-first, canonical Dev branch is master'
+assert_contains "$multiple_review" 'second-site: checkout branch is historical-second, canonical Dev branch is master'
+case "$multiple_review" in
+  *'first-site: checkout branch is historical-first, canonical Dev branch is master'*'second-site: checkout branch is historical-second, canonical Dev branch is master'*) ;;
+  *) fail 'branch checklist did not preserve deterministic site order' ;;
+esac
+assert_eq "$(printf '%s\n' "$multiple_review" | grep -Fc 'first-site: checkout branch is historical-first, canonical Dev branch is master')" '1'
+assert_eq "$(printf '%s\n' "$multiple_review" | grep -Fc 'second-site: checkout branch is historical-second, canonical Dev branch is master')" '1'
+assert_contains "$multiple_review" 'These observations may be stale; Doctor has not refreshed local Git state.'
+assert_contains "$multiple_review" 'Guided review complete. No unconfirmed changes were made.'
+assert_eq "$(git -C "$FIRST_BRANCH_DEST" symbolic-ref --short HEAD)" 'historical-first'
+assert_eq "$(git -C "$SECOND_BRANCH_DEST" symbolic-ref --short HEAD)" 'historical-second'
+assert_eq "$(git -C "$FIRST_BRANCH_DEST" rev-parse HEAD)" "$first_branch_head"
+assert_eq "$(git -C "$SECOND_BRANCH_DEST" rev-parse HEAD)" "$second_branch_head"
+assert_eq "$(git -C "$FIRST_BRANCH_DEST" status --porcelain)" "$first_branch_status"
+assert_eq "$(git -C "$SECOND_BRANCH_DEST" status --porcelain)" "$second_branch_status"
+assert_eq "$(git hash-object "$PANTHEON_LOCAL_CONFIG")" "$multiple_config_hash"
+[ ! -e "$HOME/.ssh/known_hosts" ] || fail 'branch review added SSH trust'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'branch review started provider'
 
 # Checkout-local metadata inconsistency is unsafe local state.
 scenario_init metadata

@@ -25,7 +25,7 @@ For every real pass:
 
 Prove that the DDEV adapter works against a real Pantheon project without replacing project-owned DDEV configuration or allowing provider data transfer to mutate checked-out Git code.
 
-The selected project must already contain valid `.ddev/config.yaml` and `.ddev/providers/pantheon.yaml`. Pantheon Local Tools deliberately does not synthesize a project's base DDEV setup.
+The selected project for this adapter/data-transfer test must already contain valid `.ddev/config.yaml` and `.ddev/providers/pantheon.yaml`. A separate, explicitly authorized `pantheon-local provider init --provider ddev` can create missing base DDEV configuration in a supported canonical Dev checkout; this test does not initialize or replace provider configuration. Existing project-owned DDEV settings remain authoritative.
 
 DDEV's current Pantheon integration uses `DDEV_PANTHEON_SITE` and `DDEV_PANTHEON_ENVIRONMENT`; the older unprefixed variables are deprecated. DDEV provider pulls transfer database/files rather than Git code. Provider authentication remains DDEV-owned.
 

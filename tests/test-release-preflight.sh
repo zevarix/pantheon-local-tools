@@ -76,49 +76,51 @@ assert_refuse() {
 }
 
 make_fixture clean-pretag
-assert_pass 'clean pretag' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
-assert_refuse 'missing mode' 'explicit --mode' --date 2026-10-09 --expect-head "$(head_sha)"
-assert_refuse 'missing date' 'explicit --date' --mode pretag --expect-head "$(head_sha)"
-assert_refuse 'missing expected SHA' '--expect-head requires' --mode pretag --date 2026-10-09
-assert_refuse 'short SHA' 'full lowercase' --mode pretag --date 2026-10-09 --expect-head "$(head_sha | cut -c1-8)"
-assert_refuse 'invalid date format' 'YYYY-MM-DD' --mode pretag --date 2026-10-9 --expect-head "$(head_sha)"
-assert_refuse 'invalid calendar month' 'invalid calendar month' --mode pretag --date 2026-13-01 --expect-head "$(head_sha)"
-assert_refuse 'invalid February date' 'invalid calendar day' --mode pretag --date 2026-02-29 --expect-head "$(head_sha)"
-assert_refuse 'stale expected date' 'CHANGELOG.md heading must exactly match' --mode pretag --date 2026-10-10 --expect-head "$(head_sha)"
-assert_refuse 'wrong expected SHA' 'HEAD differs from --expect-head' --mode pretag --date 2026-10-09 --expect-head 0000000000000000000000000000000000000000
-assert_refuse 'tag required in tagged mode' 'local annotated v0.2.4 is required' --mode tagged --date 2026-10-09 --expect-head "$(head_sha)"
+assert_pass 'clean pretag' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'missing mode' 'explicit --mode' --expect-version 0.2.4 --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'missing intended version' 'explicit --expect-version' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'missing date' 'explicit --date' --expect-version 0.2.4 --mode pretag --expect-head "$(head_sha)"
+assert_refuse 'missing expected SHA' '--expect-head requires' --expect-version 0.2.4 --mode pretag --date 2026-10-09
+assert_refuse 'short SHA' 'full lowercase' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha | cut -c1-8)"
+assert_refuse 'invalid date format' 'YYYY-MM-DD' --expect-version 0.2.4 --mode pretag --date 2026-10-9 --expect-head "$(head_sha)"
+assert_refuse 'invalid calendar month' 'invalid calendar month' --expect-version 0.2.4 --mode pretag --date 2026-13-01 --expect-head "$(head_sha)"
+assert_refuse 'invalid February date' 'invalid calendar day' --expect-version 0.2.4 --mode pretag --date 2026-02-29 --expect-head "$(head_sha)"
+assert_refuse 'stale expected date' 'CHANGELOG.md heading must exactly match' --expect-version 0.2.4 --mode pretag --date 2026-10-10 --expect-head "$(head_sha)"
+assert_refuse 'wrong expected SHA' 'HEAD differs from --expect-head' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head 0000000000000000000000000000000000000000
+assert_refuse 'wrong intended version' 'VERSION 0.2.4 differs from --expect-version 0.2.5' --expect-version 0.2.5 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'tag required in tagged mode' 'local annotated v0.2.4 is required' --expect-version 0.2.4 --mode tagged --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture leap-day
 sed 's/2026-10-09/2028-02-29/' "$FIXTURE/CHANGELOG.md" > "$FIXTURE/CHANGELOG.md.updated"
 mv "$FIXTURE/CHANGELOG.md.updated" "$FIXTURE/CHANGELOG.md"
 git -C "$FIXTURE" add CHANGELOG.md
 git -C "$FIXTURE" commit -qm 'Use leap day in isolated fixture'
-assert_pass 'valid leap-day date' --mode pretag --date 2028-02-29 --expect-head "$(head_sha)"
+assert_pass 'valid leap-day date' --expect-version 0.2.4 --mode pretag --date 2028-02-29 --expect-head "$(head_sha)"
 
 make_fixture stale-changelog
 sed 's/2026-10-09/2026-10-02/' "$FIXTURE/CHANGELOG.md" > "$FIXTURE/CHANGELOG.md.updated"
 mv "$FIXTURE/CHANGELOG.md.updated" "$FIXTURE/CHANGELOG.md"
 git -C "$FIXTURE" add CHANGELOG.md
 git -C "$FIXTURE" commit -qm 'Stale changelog heading'
-assert_refuse 'stale changelog' 'CHANGELOG.md heading must exactly match' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'stale changelog' 'CHANGELOG.md heading must exactly match' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture duplicate-changelog
 printf '\n## 0.2.4 — 2026-10-02\n' >> "$FIXTURE/CHANGELOG.md"
 git -C "$FIXTURE" add CHANGELOG.md
 git -C "$FIXTURE" commit -qm 'Duplicate changelog heading'
-assert_refuse 'duplicate release heading' 'exactly one section' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'duplicate release heading' 'exactly one section' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture mismatched-version
 printf '0.2.5\n' > "$FIXTURE/VERSION"
 git -C "$FIXTURE" add VERSION
 git -C "$FIXTURE" commit -qm 'Mismatched VERSION'
-assert_refuse 'version changelog mismatch' 'exactly one section for 0.2.5' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'version changelog mismatch' 'VERSION 0.2.5 differs from --expect-version 0.2.4' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture prerelease-version
 printf '0.2.4-dev\n' > "$FIXTURE/VERSION"
 git -C "$FIXTURE" add VERSION
 git -C "$FIXTURE" commit -qm 'Reject prerelease VERSION'
-assert_refuse 'prerelease cannot be a final release' 'stable MAJOR.MINOR.PATCH' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'prerelease cannot be a final release' 'stable MAJOR.MINOR.PATCH' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture cli-mismatch
 cat > "$FIXTURE/bin/pantheon-local" <<'MOCK'
@@ -130,7 +132,7 @@ esac
 MOCK
 git -C "$FIXTURE" add bin/pantheon-local
 git -C "$FIXTURE" commit -qm 'Simulate invalid CLI version'
-assert_refuse 'CLI version mismatch' 'CLI version output does not match VERSION' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'CLI version mismatch' 'CLI version output does not match VERSION' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture cli-flag-mismatch
 cat > "$FIXTURE/bin/pantheon-local" <<'MOCK'
@@ -142,33 +144,33 @@ esac
 MOCK
 git -C "$FIXTURE" add bin/pantheon-local
 git -C "$FIXTURE" commit -qm 'Simulate invalid CLI version flag'
-assert_refuse 'CLI --version mismatch' 'CLI --version output does not match VERSION' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'CLI --version mismatch' 'CLI --version output does not match VERSION' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture dirty-tracked
 printf '# Changed after commit\n' >> "$FIXTURE/CHANGELOG.md"
-assert_refuse 'dirty tracked checkout' 'working tree/index has changes' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'dirty tracked checkout' 'working tree/index has changes' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture dirty-untracked
 printf 'scratch\n' > "$FIXTURE/untracked-file"
-assert_refuse 'dirty untracked checkout' 'working tree/index has changes' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'dirty untracked checkout' 'working tree/index has changes' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture lightweight-tag
 git -C "$FIXTURE" tag v0.2.4
-assert_refuse 'local pretag collision' 'already exists' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
-assert_refuse 'lightweight release tag' 'must be an annotated Git tag' --mode tagged --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'local pretag collision' 'already exists' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'lightweight release tag' 'must be an annotated Git tag' --expect-version 0.2.4 --mode tagged --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture annotated-tag
 git -C "$FIXTURE" tag -a v0.2.4 -m 'PLT test annotated release'
-assert_pass 'matching annotated tag' --mode tagged --date 2026-10-09 --expect-head "$(head_sha)"
-assert_refuse 'annotated tag cannot be pretag' 'already exists' --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
+assert_pass 'matching annotated tag' --expect-version 0.2.4 --mode tagged --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'annotated tag cannot be pretag' 'already exists' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture tag-drift
 git -C "$FIXTURE" tag -a v0.2.4 -m 'PLT test annotated release'
 git -C "$FIXTURE" commit -q --allow-empty -m 'Shift HEAD after local tag'
-assert_refuse 'tag points at earlier commit' 'does not resolve to the expected HEAD' --mode tagged --date 2026-10-09 --expect-head "$(head_sha)"
+assert_refuse 'tag points at earlier commit' 'does not resolve to the expected HEAD' --expect-version 0.2.4 --mode tagged --date 2026-10-09 --expect-head "$(head_sha)"
 
 make_fixture non-git
 rm -rf "$FIXTURE/.git"
-assert_refuse 'Git checkout required' 'Git source checkout' --mode pretag --date 2026-10-09 --expect-head 0000000000000000000000000000000000000000
+assert_refuse 'Git checkout required' 'Git source checkout' --expect-version 0.2.4 --mode pretag --date 2026-10-09 --expect-head 0000000000000000000000000000000000000000
 
 printf 'release preflight tests passed\n'

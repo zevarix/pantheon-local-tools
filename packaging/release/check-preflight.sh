@@ -6,7 +6,8 @@ PROGRAM_NAME='pantheon-local-tools release preflight'
 usage() {
   cat <<'HELP'
 Usage: bash packaging/release/check-preflight.sh \
-  --mode pretag|tagged --date YYYY-MM-DD --expect-head FULL_COMMIT_SHA
+  --mode pretag|tagged --expect-version MAJOR.MINOR.PATCH --date YYYY-MM-DD \
+  --expect-head FULL_COMMIT_SHA
 
 Read-only local release-source checks:
   - require a clean Git checkout at the expected exact commit;
@@ -15,7 +16,7 @@ Read-only local release-source checks:
   - pretag: require no local vVERSION tag;
   - tagged: require an annotated local vVERSION tag resolving to HEAD.
 
-An intended date must be supplied explicitly; it is never inferred or written.
+An intended version and date must be supplied explicitly; neither is inferred or written.
 This checks LOCAL state only. It does not verify remote tags, CI, release
 assets, signing, or publication. It never creates tags or modifies files.
 HELP
@@ -26,12 +27,17 @@ fail() {
   exit 1
 }
 
-mode='' release_date='' expected_head=''
+mode='' release_date='' expected_head='' expected_version=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --mode)
       [ "$#" -ge 2 ] || fail '--mode requires pretag or tagged'
       mode=$2
+      shift 2
+      ;;
+    --expect-version)
+      [ "$#" -ge 2 ] || fail '--expect-version requires MAJOR.MINOR.PATCH'
+      expected_version=$2
       shift 2
       ;;
     --date)
@@ -58,6 +64,8 @@ case "$mode" in
   pretag|tagged) ;;
   *) fail 'explicit --mode pretag|tagged is required' ;;
 esac
+
+[[ "$expected_version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || fail 'explicit --expect-version MAJOR.MINOR.PATCH is required'
 
 [[ "$release_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || \
   fail 'explicit --date must use YYYY-MM-DD'
@@ -106,6 +114,7 @@ dirty=$(GIT_OPTIONAL_LOCKS=0 git -C "$root" status --porcelain --untracked-files
 version=$(cat "$root/VERSION")
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
   fail 'VERSION must be a stable MAJOR.MINOR.PATCH release value'
+[ "$version" = "$expected_version" ] || fail "VERSION $version differs from --expect-version $expected_version"
 expected_cli="pantheon-local $version"
 [ -r "$root/bin/pantheon-local" ] || fail 'CLI entry point is unavailable'
 cli_version=$(bash "$root/bin/pantheon-local" version) || fail 'CLI version command failed'

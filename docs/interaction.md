@@ -114,17 +114,30 @@ If the user opts in, Doctor:
 5. respects the owning command's exit/result semantics;
 6. verifies the owning command result, then offers (but never silently starts) another complete Doctor scan. The confirmation defaults to No because it may contact every accessible remote site. Repeated Tag overlaps are deduplicated using observed Tag membership, so guided review needs one preference per unique overlap and one optional rescan afterward.
 
-Doctor does not automatically choose among ambiguous routes/providers or rewrite unsafe checkout identity. After a saved Tag-route preference, Doctor
-continues the **same site's** Git and checkout/provider diagnostics using
-previously observed Tag membership. It offers a missing canonical checkout
-through the existing preview/confirmation/delegation path and then verifies
-only the newly created local checkout, without automatically rescanning the
-entire estate. No DDEV/Lando start, database pull, or project-configuration
-selection happens implicitly. If neither provider's project configuration
-exists, guided review asks **DDEV / Lando / Leave unresolved** (default);
-that choice supplies instructions without persisting a provider setting or
-synthesizing the provider-owned base configuration. Local `pantheon-local
-status` can verify the checkout once the user configures the provider.
+Doctor does not automatically choose among ambiguous routes/providers or rewrite unsafe checkout identity. After a confirmed Tag-route
+preference, Doctor continues the **same site's** Git and checkout/provider
+diagnostics using previously observed Tag membership. It offers a missing
+canonical checkout through the owning checkout command's dry-run, separate
+default-No confirmation, and local verification, without automatically
+rescanning the entire estate.
+
+When a canonical checkout has neither `.ddev/config.yaml` nor `.lando.yml`,
+guided review offers **DDEV / Lando / Leave unresolved** (the default).
+Selecting DDEV or Lando does not itself change configuration. Doctor first
+delegates to `pantheon-local provider init --provider ddev|lando --dry-run`,
+then separately confirms the create-only action with `[y/N]`. Only explicit
+consent invokes the owning initializer to create the missing base provider
+recipe and verify it locally. If Drupal type or docroot cannot be determined
+safely, the preview refuses to guess; existing provider configuration and
+overrides remain untouched. No global provider preference is persisted.
+
+Doctor never implicitly switches branches, trusts an SSH host key, starts
+DDEV/Lando, runs Composer or Drush, pulls data, or repeats the full estate
+scan. For manual/external-only findings, it explains that no automatic fixes
+are available and offers an optional read-only inspection menu for checkout
+branch differences and SSH verification guidance. **Finish** is the default;
+none of those checklists performs the displayed Git commands or changes
+SSH trust.
 
 ## Cancellation
 

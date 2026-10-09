@@ -237,6 +237,8 @@ pantheon-local multidev create SITE.SOURCE NEW_ENV
   --start
   --yes
 
+pantheon-local provider init --provider ddev|lando [--dry-run]
+
 pantheon-local setup
   --provider ddev|lando
   --dry-run
@@ -254,7 +256,7 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local checkout --help`, `pantheon-local estate status --help`, `pantheon-local doctor --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
+Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local checkout --help`, `pantheon-local estate status --help`, `pantheon-local doctor --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local provider init --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.
 
 ## Core workflows
 
@@ -291,6 +293,8 @@ Pantheon's default Multidev creation clones the source environment's database an
 See [`docs/multidev.md`](docs/multidev.md) for the full checkout, creation, naming, confirmation, failure/retry, and provider safety contract.
 
 ### Drupal checkout setup
+
+For an existing PLT-managed canonical Dev checkout with no base provider recipe, `pantheon-local provider init --provider ddev|lando --dry-run` previews a create-only initialization. Run `provider init` without `--dry-run` only after reviewing the plan; interactive Doctor can offer that initializer with an additional default-No confirmation. Neither path implicitly starts Docker, runs Composer, or imports data. See [`docs/local-provider-architecture.md`](docs/local-provider-architecture.md).
 
 `pantheon-local setup` bootstraps an existing **PLT-managed Drupal checkout** using the Pantheon environment recorded when the checkout was created. It refuses to infer that source from the Git branch or silently substitute Live.
 

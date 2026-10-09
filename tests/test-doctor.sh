@@ -1158,6 +1158,41 @@ set -e
 assert_eq "$provider_amb_rc" '31'
 assert_contains "$provider_amb_json" '"reason_code":"provider-auto-ambiguous"'
 
+# A checkout on an old local branch is a manual-recovery finding; Doctor
+# never switches branches, resets HEAD, or touches local project files.
+scenario_init checkout-branch-manual
+create_remote legacy-branch-site 'Example Group' ddev
+set_sites legacy-branch-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+LEGACY_BRANCH_DEST=$(create_checkout legacy-branch-site clients ddev)
+git -C "$LEGACY_BRANCH_DEST" branch -m legacy-main
+legacy_branch_head=$(git -C "$LEGACY_BRANCH_DEST" rev-parse HEAD)
+legacy_branch_status=$(git -C "$LEGACY_BRANCH_DEST" status --porcelain)
+legacy_config_hash=$(git hash-object "$PANTHEON_LOCAL_CONFIG")
+
+set +e
+legacy_branch_json=$(bash "$CLI" doctor --format json)
+legacy_branch_json_rc=$?
+set -e
+assert_eq "$legacy_branch_json_rc" '30'
+assert_contains "$legacy_branch_json" '"reason_code":"checkout-branch-mismatch"'
+assert_contains "$legacy_branch_json" '"remediation_class":"manual-recovery"'
+
+set +e
+legacy_branch_review=$(run_doctor_pty $'y\n')
+legacy_branch_review_rc=$?
+set -e
+assert_eq "$legacy_branch_review_rc" '30'
+assert_contains "$legacy_branch_review" 'Manual recovery 1/1'
+assert_contains "$legacy_branch_review" 'checkout branch is legacy-main, canonical Dev branch is master'
+assert_contains "$legacy_branch_review" 'Guided review complete. No unconfirmed changes were made.'
+assert_eq "$(git -C "$LEGACY_BRANCH_DEST" symbolic-ref --short HEAD)" 'legacy-main'
+assert_eq "$(git -C "$LEGACY_BRANCH_DEST" rev-parse HEAD)" "$legacy_branch_head"
+assert_eq "$(git -C "$LEGACY_BRANCH_DEST" status --porcelain)" "$legacy_branch_status"
+assert_eq "$(git hash-object "$PANTHEON_LOCAL_CONFIG")" "$legacy_config_hash"
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'Doctor tried a provider operation while reviewing a branch mismatch'
+
 # Checkout-local metadata inconsistency is unsafe local state.
 scenario_init metadata
 create_remote metadata-site 'Example Group' ddev

@@ -49,6 +49,7 @@ tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-config-export"
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-terminal" >/dev/null 2>&1 || fail 'terminal-presentation module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-interaction" >/dev/null 2>&1 || fail 'interaction module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/packaging/release/compress-source-canonical.sh" >/dev/null 2>&1 || fail 'canonical source compressor missing from source archive'
+tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/packaging/release/check-preflight.sh" >/dev/null 2>&1 || fail 'read-only release preflight missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-multidev-create" >/dev/null 2>&1 || fail 'multidev-create module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-readiness" >/dev/null 2>&1 || fail 'readiness module missing from source archive'
 tar -tzf "$SOURCE_ONE" | grep -Fx "$PREFIX/libexec/pantheon-local-setup" >/dev/null 2>&1 || fail 'setup module missing from source archive'

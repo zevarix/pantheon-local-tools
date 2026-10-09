@@ -56,7 +56,7 @@ pantheon-local checkout sync SITE.dev [OPTIONS]
 pantheon-local checkout sync (--all | --tag TAG [--tag TAG ...]) [OPTIONS]
 
 pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]
-pantheon-local doctor [--format default|json] [--record FILE]
+pantheon-local doctor [--timing] [--format default|json] [--record FILE]
 
 pantheon-local multidev SITE.ENV
   --provider ddev|lando
@@ -72,6 +72,9 @@ pantheon-local multidev create SITE.SOURCE NEW_ENV
   --yes
   --format default|json
   --record FILE
+
+pantheon-local provider init --provider ddev|lando [--dry-run]
+  [--docroot RELATIVE_PATH] [--project-type drupal7|drupal8|drupal9|drupal10|drupal11|drupal12] (DDEV only)
 
 pantheon-local setup
   --provider ddev|lando
@@ -160,9 +163,9 @@ Observed drift such as missing, behind, ahead, diverged, or dirty local checkout
 
 ## Doctor diagnostics contract
 
-`pantheon-local doctor` is a read-only first-run/troubleshooting workflow. It reports PASS/INFO/WARN/FAIL checks for version/config path, Git/root/provider prerequisites, Terminus availability/authentication, accessible sites/Tags/routing, canonical Dev Git access, and obvious checkout-local metadata/provider inconsistencies.
+`pantheon-local doctor` is a first-run/troubleshooting workflow with a **read-only diagnosis and report phase**. It reports PASS/INFO/WARN/FAIL checks for version/config path, Git/root/provider prerequisites, Terminus availability/authentication, accessible sites/Tags/routing, canonical Dev Git access, and obvious checkout-local metadata/provider inconsistencies. The optional `--timing` flag adds external-read timing to terminal diagnostics without changing structured output.
 
-Doctor continues after individual failures so a single run can report the useful diagnostic set. INFO/WARN states do not authorize repair and remain successful diagnostics; FAIL checks map to the shared nonzero categories. Doctor never repairs configuration, starts providers, creates credentials, mutates checkouts, or writes to Pantheon.
+Doctor continues after individual failures so a single run can report the useful diagnostic set. INFO/WARN states do not authorize repair and remain successful diagnostics; FAIL checks map to the shared nonzero categories. After the report, an interactive terminal may offer explicit, safe-default consent to delegate a previewed repair to its **existing owning command**. Only separately confirmed actions may create a checkout or missing base provider configuration, or persist an explicitly chosen Tag-route preference. Doctor never silently starts providers, changes local branches, accepts SSH host keys, runs Composer/Drush, pulls data, creates credentials, or writes to Pantheon.
 
 ## Structured output contract
 

@@ -1553,7 +1553,7 @@ doctor_apply_managed_remediations() {
 # Instructions-only findings never authorize repairing a checkout or trusting
 # a host key. Offer useful read-only inspection choices, defaulting to Finish.
 doctor_review_manual_inspections() {
-  local file class branch_count=0 hostkey_count=0 selected rc=0
+  local file class branch_count=0 hostkey_count=0 selected rc=0 branch_seen=0 branch_display_limit=20
   local -a options=() actions=()
 
   while IFS= read -r file; do
@@ -1598,6 +1598,25 @@ doctor_review_manual_inspections() {
         printf '\n'
         plt_term_style 1 heading 'Read-only branch mismatch inspection'
         printf '\n'
+        printf '  Affected checkouts (observed during this scan):\n'
+        branch_seen=0
+        while IFS= read -r file; do
+          [ -n "$file" ] || continue
+          check_load "$file"
+          class=$(doctor_remediation_class_loaded)
+          [ "$CHECK_REASON:$class" = checkout-branch-mismatch:manual-recovery ] || continue
+          branch_seen=$((branch_seen + 1))
+          [ "$branch_seen" -le "$branch_display_limit" ] || continue
+          case "$CHECK_SCOPE" in
+            site:*) printf '    %2d. %s: %s\n' "$branch_seen" "${CHECK_SCOPE#site:}" "$CHECK_MESSAGE" ;;
+            *) printf '    %2d. %s\n' "$branch_seen" "$CHECK_MESSAGE" ;;
+          esac
+        done < "$CHECK_DIR/order"
+        if [ "$branch_count" -gt "$branch_display_limit" ]; then
+          printf '    ... %d more branch mismatches; see the Sites report above.\n' "$((branch_count - branch_display_limit))"
+        fi
+        printf '\n'
+        printf '  These observations may be stale; Doctor has not refreshed local Git state.\n'
         printf '  Inspect each affected checkout independently before switching branches:\n'
         printf '    git status --short\n'
         printf '    git branch -vv\n'

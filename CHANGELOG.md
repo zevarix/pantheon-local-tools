@@ -6,7 +6,7 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
-## 0.2.3 — 2026-10-02
+## 0.2.3 — 2026-10-09
 
 Patch release standardizing guided remediation and consent, adding Doctor external-read timing evidence, and hardening canonical release reproducibility while preserving the established v0.2 command/configuration and structured-output contracts.
 

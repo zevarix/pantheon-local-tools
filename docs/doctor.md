@@ -160,7 +160,7 @@ For canonical checkouts it mirrors the same provider precedence used by `setup`:
 3. both or neither is an ambiguity failure;
 4. the resolved provider command must exist.
 
-Doctor does not run `ddev`, `lando`, Composer, or Drush.
+During diagnosis, Doctor does not run `ddev`, `lando`, Composer, or Drush. A separately confirmed guided provider-initialization action may later delegate to `ddev config`; it never starts the provider runtime or runs Composer/Drush.
 
 ### Terminus and Pantheon authority
 

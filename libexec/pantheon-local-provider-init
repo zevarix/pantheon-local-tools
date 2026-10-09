@@ -132,6 +132,8 @@ if [ "$provider" = ddev ]; then
 else
   printf 'Will create: .lando.yml with exactly:\n'
   printf 'name: %s\nrecipe: pantheon\nconfig:\n  framework: %s\n  id: %s\n  site: %s\n' "$site" "$framework" "$id" "$site"
+  printf '  Startup note: a later lando start may run Composer install when Pantheon build_step is enabled.\n'
+  printf '  Inspect composer.json and composer.lock changes after starting Lando.\n'
 fi
 if [ "$dry_run" = true ]; then
   plt_term_style 1 muted 'Dry-run only; no files created or containers started.'

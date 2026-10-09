@@ -73,9 +73,12 @@ if (cd "$TMP/ddev" && bash "$CLI" provider init --provider ddev) >/dev/null 2>&1
 preview=$(cd "$TMP/lando" && bash "$CLI" provider init --provider lando --dry-run)
 contains "$preview" 'framework: drupal8'
 contains "$preview" 'id: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+contains "$preview" 'a later lando start may run Composer install when Pantheon build_step is enabled.'
+contains "$preview" 'Inspect composer.json and composer.lock changes after starting Lando.'
 [ ! -e "$TMP/lando/.lando.yml" ] || fail 'Lando dry-run created file'
 output=$(cd "$TMP/lando" && bash "$CLI" provider init --provider lando)
 contains "$output" 'Created lando project configuration (not started).'
+contains "$output" 'a later lando start may run Composer install when Pantheon build_step is enabled.'
 grep -Fx 'recipe: pantheon' "$TMP/lando/.lando.yml" >/dev/null || fail 'recipe not Pantheon'
 grep -Fx '  site: example-site' "$TMP/lando/.lando.yml" >/dev/null || fail 'Pantheon identity absent'
 if (cd "$TMP/lando" && bash "$CLI" provider init --provider ddev) >/dev/null 2>&1; then fail 'provider switch allowed'; fi

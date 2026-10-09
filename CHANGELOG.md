@@ -24,6 +24,9 @@ Patch release standardizing guided remediation and consent, adding Doctor extern
 - Added create-only `pantheon-local provider init` for missing base DDEV/Lando
   project configuration. Doctor previews, asks again before creating files,
   then locally verifies the resulting provider without starting Docker.
+  Lando initialization now explains that a later, separately authorized
+  `lando start` may run Composer when Pantheon's `build_step` is enabled,
+  and that changes to Composer files require independent review.
 - Fixed Pantheon Lando application URL discovery: prefer the routed HTTPS URL
   reported by the edge web service before nginx/appserver fallbacks. The
   appserver may expose only loopback ports, even when edge serves the site.

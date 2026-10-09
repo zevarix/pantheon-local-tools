@@ -13,6 +13,7 @@
 [local]
     root = ~/sites/pantheon
     provider = auto
+    doctor-layout = auto
 
 [tag "Full Export Example"]
     directory = full-export-example

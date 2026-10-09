@@ -17,6 +17,39 @@ cat > "$MOCK_BIN/lando" <<'MOCK'
 set -euo pipefail
 [ "${1:-}" = info ] || exit 2
 [ "${MOCK_LANDO_FAIL:-false}" != true ] || exit 9
+case "${MOCK_LANDO_MODE:-}" in
+  pantheon-edge)
+    [ "${2:-}" = --service ] || exit 2
+    case "${3:-}" in
+      edge) printf '%s\n' '["http://example-edge.test/","https://example-edge.test/","http://localhost:58649"]' ;;
+      appserver_nginx|appserver-nginx|appserver) printf '%s\n' '["https://localhost:58646","http://localhost:58647"]' ;;
+      *) exit 2 ;;
+    esac
+    exit 0
+    ;;
+  edge-and-appserver)
+    [ "${2:-}" = --service ] || exit 2
+    case "${3:-}" in
+      edge) printf '%s\n' '["https://preferred-edge.example.test/"]' ;;
+      appserver_nginx) printf '%s\n' '["https://direct-appserver.example.test/"]' ;;
+      *) exit 2 ;;
+    esac
+    exit 0
+    ;;
+  edge-unavailable)
+    [ "${2:-}" = --service ] || exit 2
+    case "${3:-}" in
+      edge) exit 9 ;;
+      appserver_nginx) printf '%s\n' '["https://example-appserver.test/","http://localhost:58647"]' ;;
+      *) exit 2 ;;
+    esac
+    exit 0
+    ;;
+  loopback-only)
+    printf '%s\n' '["https://localhost:58646","http://127.0.0.1:58647"]'
+    exit 0
+    ;;
+esac
 if [ -n "${MOCK_LANDO_URLS:-}" ]; then
   printf '%s\n' "$MOCK_LANDO_URLS"
 else
@@ -112,6 +145,38 @@ assert_contains "$managed_output" 'URL source:      provider runtime'
 assert_contains "$managed_output" 'Git state:       clean'
 assert_contains "$managed_output" 'Database source: (not recorded)'
 assert_contains "$managed_output" 'Files source:    (not recorded)'
+
+# Pantheon edge owns the routed domain even when appserver_nginx exposes
+# only localhost ports. Do not hardcode .lndo.site or assume service order.
+export MOCK_LANDO_MODE=pantheon-edge
+edge_output=$(cd "$MANAGED/subdir" && bash "$CLI" status)
+assert_contains "$edge_output" 'Local URL:       https://example-edge.test'
+assert_contains "$edge_output" 'URL source:      provider runtime'
+edge_json=$(cd "$MANAGED" && bash "$CLI" status --format json)
+assert_contains "$edge_json" '"local_url":"https://example-edge.test"'
+unset MOCK_LANDO_MODE
+
+# If both edge and appserver report public URLs, the Pantheon routing edge
+# is authoritative for the application domain.
+export MOCK_LANDO_MODE=edge-and-appserver
+dual_output=$(cd "$MANAGED" && bash "$CLI" status)
+assert_contains "$dual_output" 'Local URL:       https://preferred-edge.example.test'
+unset MOCK_LANDO_MODE
+
+# The edge service is optional. Fall back to an nginx web service when
+# Pantheon edge is disabled/unavailable; never invent a public hostname.
+export MOCK_LANDO_MODE=edge-unavailable
+edge_disabled=$(cd "$MANAGED" && bash "$CLI" status)
+assert_contains "$edge_disabled" 'Local URL:       https://example-appserver.test'
+unset MOCK_LANDO_MODE
+
+# Only loopback ports cannot replace a previously recorded public URL.
+export MOCK_LANDO_MODE=loopback-only
+loopback_fallback=$(cd "$MANAGED" && bash "$CLI" status)
+assert_contains "$loopback_fallback" 'Local URL:       http://stale-recorded.example.test'
+assert_contains "$loopback_fallback" 'URL source:      recorded fallback'
+unset MOCK_LANDO_MODE
+
 [ "$(git -C "$MANAGED" hash-object .lando.yml)" = "$LANDO_CONFIG_BEFORE" ] || fail 'status changed Lando project configuration'
 assert_contains "$(cat "$MANAGED/.lando.yml")" 'type: phpmyadmin'
 assert_contains "$(cat "$MANAGED/.lando.yml")" 'type: redis'

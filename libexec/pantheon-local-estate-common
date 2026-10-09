@@ -102,8 +102,8 @@ site_git_url() {
 }
 
 remote_head_info() {
-  local git_url=$1 output branch sha
-  if ! output=$(git ls-remote --symref "$git_url" HEAD 2>/dev/null); then return 1; fi
+  local git_url=$1 error_path=${2:-/dev/null} output branch sha
+  if ! output=$(git ls-remote --symref "$git_url" HEAD 2>"$error_path"); then return 1; fi
   branch=$(printf '%s\n' "$output" | sed -n 's/^ref: refs\/heads\/\([^[:space:]]*\)[[:space:]]HEAD$/\1/p' | head -n 1)
   sha=$(printf '%s\n' "$output" | awk '$2 == "HEAD" && $1 != "ref:" {print $1; exit}')
   [ -n "$branch" ] && [ -n "$sha" ] || return 1

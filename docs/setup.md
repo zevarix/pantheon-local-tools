@@ -4,6 +4,21 @@
 
 The command is intentionally checkout-local. Run it from the checkout root or any subdirectory after `pantheon-local multidev SITE.ENV` has created the checkout and recorded its Pantheon identity.
 
+For a canonical Dev checkout missing base provider config, first run
+`pantheon-local provider init --provider ddev|lando --dry-run`, review the
+result, then explicitly invoke the real `provider init` command to create
+project config. This does not start Docker or invoke any setup phase.
+The existing `setup` command still performs its separate preflight.
+
+**Note for Pantheon/Lando:** After initializing the Landofile, a separately
+authorized `lando start` can run `composer install` automatically when
+`build_step: true` is set in Pantheon configuration. That startup may create a
+previously absent `composer.lock` or prompt for a Composer plugin permission,
+modifying `composer.json`. Review `git status`, the Composer manifest diff, and
+the generated lockfile before deciding what to commit. These changes belong to
+Lando/Composer startup, not to `pantheon-local provider init`, and PLT does not
+automatically stage, commit, or remove them.
+
 ## Command
 
 ```bash

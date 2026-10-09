@@ -14,10 +14,26 @@ Patch release standardizing guided remediation and consent, adding Doctor extern
 
 - Canonicalized final tagged-release source compression through a pinned immutable Ubuntu `linux/amd64` gzip environment so published source archive checksums no longer depend on the maintainer host's gzip implementation; untagged CI/dev builds remain portable and explicitly distinguish host versus canonical compression.
 - Added a shared human-interaction contract with safe-default `[y/N]` confirmation and bounded numbered choices, reused by guided configuration, configuration export, Multidev creation, and Doctor remediation.
-- Interactive `pantheon-local doctor` now classifies actionable findings, offers explicitly confirmed PLT-managed repairs, previews/delegates to the existing owning command, and reruns diagnostics after successful repair; JSON, records, and non-TTY use remain prompt-free.
+- Interactive `pantheon-local doctor` now classifies actionable findings, offers explicitly confirmed PLT-managed repairs, previews/delegates to the existing owning command, and offers a full estate rescan only by explicit `[y/N]` confirmation after a successful repair. Saved Tag-route preferences are validated against observed membership without recontacting the estate; repeated matches reuse the same precedence rule and offer one optional rescan after review. JSON, records, and non-TTY use remain prompt-free.
 - Unmanaged `pantheon-local status` output now points users to Doctor for a safe onboarding/remediation path without changing structured output.
 - Added opt-in `pantheon-local doctor --timing` evidence for external per-site reads, showing live whole-second elapsed time in interactive progress and deterministic completion timing on stderr without changing JSON/records, adding concurrency, or introducing timeouts.
 - Added explicit pairwise Tag-route precedence for legitimate overlapping Pantheon Tags. Doctor now guides user-choice/manual-recovery findings instead of stopping after the summary, can recommend a more-specific strict-subset Tag cohort, requires user choice plus confirmation before saving precedence, and shares the resulting route decision with checkout and estate status.
+- Fixed interactive Doctor line wrapping with auto/full/compact layout options; guided Tag preference reviews use the shared semantic terminal style, explain failed/skipped checks, and preserve current timing after opted-in reassessment.
+- Made Doctor Git remote probing non-interactive for standard SSH, with connect/idle limits and distinct, actionable host-key/authentication/network failures. No SSH host keys are accepted automatically.
+- Guided Doctor Tag-route remediation continues directly into the same site's Dev Git/checkout/provider checks, offers consent-gated checkout creation when missing, and verifies the created checkout locally without a whole-estate scan or implicit Docker startup.
+- Added create-only `pantheon-local provider init` for missing base DDEV/Lando
+  project configuration. Doctor previews, asks again before creating files,
+  then locally verifies the resulting provider without starting Docker.
+  Lando initialization now explains that a later, separately authorized
+  `lando start` may run Composer when Pantheon's `build_step` is enabled,
+  and that changes to Composer files require independent review.
+- Clarified manual/external-only Doctor findings and added a numbered,
+  default-safe read-only inspection menu for Git branch differences and
+  untrusted SSH host keys; never silently switch branches or accept keys.
+- Fixed Pantheon Lando application URL discovery: prefer the routed HTTPS URL
+  reported by the edge web service before nginx/appserver fallbacks. The
+  appserver may expose only loopback ports, even when edge serves the site.
+  Other provider URLs, recorded fallbacks, and JSON contracts remain unchanged.
 
 ## 0.2.2 — 2026-10-02
 

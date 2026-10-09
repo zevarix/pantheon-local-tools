@@ -112,9 +112,19 @@ If the user opts in, Doctor:
 3. asks again at the mutation boundary;
 4. delegates to the owning command rather than reimplementing it;
 5. respects the owning command's exit/result semantics;
-6. reruns Doctor read-only after a successful repair.
+6. verifies the owning command result, then offers (but never silently starts) another complete Doctor scan. The confirmation defaults to No because it may contact every accessible remote site. Repeated Tag overlaps are deduplicated using observed Tag membership, so guided review needs one preference per unique overlap and one optional rescan afterward.
 
-Doctor does not automatically choose among ambiguous routes/providers or rewrite unsafe checkout identity.
+Doctor does not automatically choose among ambiguous routes/providers or rewrite unsafe checkout identity. After a saved Tag-route preference, Doctor
+continues the **same site's** Git and checkout/provider diagnostics using
+previously observed Tag membership. It offers a missing canonical checkout
+through the existing preview/confirmation/delegation path and then verifies
+only the newly created local checkout, without automatically rescanning the
+entire estate. No DDEV/Lando start, database pull, or project-configuration
+selection happens implicitly. If neither provider's project configuration
+exists, guided review asks **DDEV / Lando / Leave unresolved** (default);
+that choice supplies instructions without persisting a provider setting or
+synthesizing the provider-owned base configuration. Local `pantheon-local
+status` can verify the checkout once the user configures the provider.
 
 ## Cancellation
 

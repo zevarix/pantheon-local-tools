@@ -20,11 +20,35 @@ pantheon-local doctor --record ./doctor-result.json
 
 Default terminal mode keeps long remote/estate work visibly active without mixing progress text into structured output.
 
-On an interactive terminal, each site uses one in-place status line. The active substep uses a Braille spinner while completed, failed, and not-yet-started substeps retain visible semantic markers:
+On an interactive terminal, Doctor keeps each animated site update on **one bounded physical row**. By default (`doctor-layout=auto`) it picks a layout **once for the whole discovered site list**, considering the longest site name and reserving space for timing and result labels. The layout does not switch as steps complete; only a physical terminal shrink can force a compact fallback to avoid wrapping. The original labelled status display is retained when the terminal is wide enough. For example:
 
 ```text
 Doctor: site 2/34 · example-site — ✓ environments, ✓ organization, ⠹ tags, ○ routing, ○ Dev Git URL, ○ Git remote, ○ local checkout
 ```
+
+On narrower terminals, Doctor switches to **fixed, aligned columns**. Columns always represent (in order) environments, organization, Tags, routing, Dev Git URL, Git remote, and local checkout. The site-name column uses a consistent width and abbreviates long names *only in the animated display*, never in the final report:
+
+```text
+Doctor:  1/34  example-site           │ ✓ ✓ ⠹ ○ ○ ○ ○ │ tags
+Doctor:  2/34  another-site           │ ✓ ✓ ✓ × – – – │ × routing
+    × Why: site another-site matches more than one configured local Tag route
+      Next: confirm which configured Tag should take precedence
+    – Not checked: Dev Git URL, Git remote, local checkout (stopped after routing failed)
+```
+
+The symbols describe the actual diagnostic steps: `✓` passed, `!` needs attention (warning), `×` failed, `–` was **not checked**, `○` is pending, and an animated Braille glyph is the current operation. Doctor prints the concrete cause and next action from its diagnostic records directly below a completed site with `!` or `×`. It also explains skipped (`–`) steps so an unchecked step cannot be mistaken for a failed check.
+
+The `local checkout` step specifically inspects the **local canonical Pantheon Dev Git checkout**: location, repository identity, branch, PLT metadata when present, and provider configuration/availability. A checkmark here does **not** mean Lando/DDEV is running, that site data was pulled, or that code is synchronized to the latest remote commit.
+
+To choose the presentation permanently:
+
+```bash
+pantheon-local config set doctor-layout auto
+pantheon-local config set doctor-layout full
+pantheon-local config set doctor-layout compact
+```
+
+`full` favors the original labelled display; if it cannot safely fit, the animated row is compact but a fully labelled static summary follows each site. `compact` always uses aligned columns. `auto` is the default. No choice changes JSON, decisions, checks, or repairs.
 
 Completed steps are green, the active step is bright cyan, pending/skipped steps are muted, warnings are yellow, and failures are red when color is available. Color is supplemental to glyph/text state, respects `NO_COLOR`, and is disabled for `TERM=dumb`.
 
@@ -45,10 +69,10 @@ Doctor: site 2/34: example-site — tags
 
 `--timing` is an opt-in troubleshooting surface for identifying slow external reads. It measures whole-second wall time around the external per-site boundaries for environments, organization, Tags, Dev Git URL, and Git remote inspection.
 
-On an interactive terminal, the active step label includes the current elapsed time while the Braille spinner continues, for example:
+On an interactive terminal, the active step label includes the current elapsed time while the Braille spinner continues. Completed step durations remain visible on wide terminals; narrow terminals prioritize the active step:
 
 ```text
-Doctor: site 2/34 · example-site — ✓ environments (6s), ✓ organization (2s), ⠹ tags (4s), ○ routing, ○ Dev Git URL, ○ Git remote, ○ local checkout
+Doctor:  2/34  example-site           │ ✓ ✓ ⠹ ○ ○ ○ ○ │ tags (4s)
 ```
 
 When stderr is redirected/non-interactive, timing mode emits a deterministic completion line after each timed boundary, for example:
@@ -59,13 +83,35 @@ Doctor: site 2/34: example-site — environments complete in 6s
 
 Timing evidence is diagnostic chatter only. It never changes the final semantic result, JSON stdout, or durable `--record` JSON. `--timing --format json` therefore keeps stdout as one valid JSON document while timing evidence remains on stderr.
 
-`--timing` does not add a timeout, retry policy, or concurrency. Unavailable/failed authority keeps the existing fail-closed reason/category semantics.
+`--timing` itself adds no retry policy or concurrency. Standard Doctor SSH Git remote checks use non-interactive key verification and SSH connect/idle limits rather than hanging indefinitely at a password or unknown-host prompt. A custom `GIT_SSH_COMMAND` is respected and may implement its own transport limits. A host-key mismatch is never automatically trusted; Doctor reports a specific next action without editing `known_hosts`. An SSH connect/idle limit is not a guaranteed total wall-clock deadline for every possible Git transport.
 
 Interactive terminals also keep the final aggregation phase visibly active with the same Braille activity indicator while doctor summarizes checks and builds the final result. Finalization reads each stored check once per pass with Bash built-ins rather than launching a separate text-processing subprocess for every field.
 
 ## Interactive report
 
 On an interactive stdout terminal, the final diagnostic report is grouped into Global, Sites, and Tags sections and uses the same semantic glyph/color vocabulary. Redirected/non-interactive stdout keeps the deterministic plain table form without ANSI sequences. WARN/FAIL details and their smallest known next actions remain visible in both forms.
+
+### Manual or externally owned findings
+
+Doctor distinguishes a PLT-managed fix from a finding that cannot be safely
+repaired automatically. If the scan has only manual/external findings, it
+says so **before** prompting to display recovery guidance. The invitation
+does not promise a fix.
+
+After listing those findings, interactive review offers a default-safe
+numbered inspection menu when it recognizes checkout branch mismatches or
+untrusted SSH host keys. The menu shows only read-only local Git inspection
+commands and out-of-band SSH identity verification guidance. You can inspect
+each category, return to the menu, or press Enter to finish.
+
+The menu never changes Git branches, resets a checkout, alters host-key
+trust, starts a provider, or writes Pantheon state. Other findings without
+a safe inspection checklist remain instruction-only rather than inventing
+an automatic repair.
+
+### Repeat scans and local cache
+
+After a saved routing preference or an explicitly confirmed PLT-managed repair, Doctor summarizes what it verified. It **does not** automatically repeat the full estate-wide scan. When multiple sites share the same overlapping Tag pair, one saved precedence rule is reused across the observed sites rather than asking for the same choice again; the review offers just **one** optional full rescan after all local preference changes. A separate `[y/N]` confirmation defaults to No; answer Yes only when a fresh set of network checks is wanted. Cached observed Tag membership can verify a local preference within the current process, but skipped Git or checkout checks remain unverified until a fresh scan.
 
 ## Cancellation
 
@@ -196,7 +242,55 @@ When PLT-managed findings exist, Doctor summarizes them and asks whether to fix 
 3. asks again before mutation;
 4. delegates to the owning command rather than reimplementing it;
 5. verifies through that command's normal result/exit contract;
-6. reruns Doctor read-only after successful repair.
+6. verifies the result and offers a full Doctor scan, explicitly confirmed with `[y/N]` defaulting to No. After a local Tag-route preference, Doctor first resolves the route from the Tag membership already observed in the current run; this cached verification does not claim fresh remote Git or checkout health.
+
+### Finish the same site after resolving a Tag route
+
+Initial Doctor diagnostics stop for a site when the local Tag route is
+ambiguous, leaving Git and checkout steps *not checked*. During interactive
+guided review, a confirmed Tag precedence rule lets Doctor **resume the same
+site**, using the Dev and Tag evidence already collected. It then checks only
+that site's Dev Git URL, bounded Git authority, canonical checkout and local
+DDEV/Lando provider configuration. It does not repeat discovery or inspect
+the other site's remote endpoints.
+
+A missing checkout results in a scoped checkout preview, using the existing
+`pantheon-local checkout SITE.dev --dry-run` owner command, followed by
+a separate safe-default `[y/N]` confirmation. A declined checkout is
+untouched; an accepted checkout is delegated to the existing command, then
+verified locally for origin, branch, PLT identity and provider configuration.
+No full estate scan is needed to reveal the next dependency.
+
+Provider detection is read-only. Doctor reports whether DDEV or Lando
+configuration exists, or why neither/both can be selected. **If the canonical
+checkout exists but has neither `.ddev/config.yaml` nor `.lando.yml`, guided
+review explicitly offers DDEV, Lando, or Leave unresolved (the default).**
+This applies both to findings discovered during the **original estate scan**
+and to site-specific continuation after a corrected Tag route, without
+requiring another full estate scan. After choosing DDEV or Lando, Doctor delegates to the owning initializer:
+first `pantheon-local provider init --provider ddev|lando --dry-run`,
+then an additional safe-default `[y/N]` confirmation, then the corresponding
+real initialization command only if confirmed. DDEV configuration is generated
+through `ddev config`; Lando receives a Pantheon recipe with its ID/framework
+verified through read-only Terminus. Its configuration is checked again locally.
+
+If the document root or Drupal major cannot be established reliably, the
+preview refuses to guess; use explicit `--docroot`/`--project-type` flags
+after reviewing the project. Existing provider configuration or overrides are
+never overwritten. No global PLT provider preference is changed.
+
+Doctor never automatically starts Docker or provider runtimes, installs
+Composer packages, runs Drush, or imports a database. Config generation alone
+does not mean Drupal is running or its database synchronized.
+Conflicting recorded metadata or two competing provider configurations remain
+unsafe and require separate review; Doctor does not silently overwrite them.
+Unresolved external authority and unsafe local checkout state fail closed.
+
+The original terminal report and optional structured JSON/record remain the
+**pre-remediation snapshot**. Live site-continuation findings are explicitly
+labeled, kept separate from the original check set, and do not change its
+machine-readable schema. The optional complete estate rescan remains a
+separately confirmed operation, default No.
 
 The initial supported PLT-managed remediation is a missing canonical Dev checkout, delegated to `pantheon-local checkout SITE.dev`. Ambiguous Tag/provider decisions and unsafe checkout identity are never auto-selected or rewritten.
 

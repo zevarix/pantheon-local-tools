@@ -30,9 +30,29 @@ The established local settings remain:
 [local]
     root = ~/sites/pantheon
     provider = auto
+    doctor-layout = auto
 ```
 
 Manage them with `config init`, `config get`, `config set`, `config unset`, and `config list` as documented by `pantheon-local help`.
+
+
+### Doctor progress presentation
+
+The optional `doctor-layout` is a **local presentation-only** setting:
+
+- `auto` (default): choose the original fully labelled animated progress when its maximum expected width fits all discovered sites, otherwise use aligned compact columns from the start. The layout is stable throughout the scan unless the terminal is resized smaller.
+- `full`: prefer fully labelled live progress; if the terminal is too narrow, show bounded compact animation and a full static step summary afterward.
+- `compact`: always use fixed-width site/status columns with a concise active-step label.
+
+~~~bash
+pantheon-local config set doctor-layout auto
+pantheon-local config set doctor-layout full
+pantheon-local config set doctor-layout compact
+pantheon-local config get doctor-layout
+pantheon-local config unset doctor-layout
+~~~
+
+None of these modes changes diagnostic results, routing decisions, permission or repair boundaries, JSON, or operation records. Wide site names are safely truncated only in animated terminal presentation; the final report retains the full site identity.
 
 ## Pantheon Tag routing
 

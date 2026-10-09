@@ -98,6 +98,7 @@ FORMULA_CLI="$PREFIX/bin/pantheon-local"
 [ -r "$PREFIX/libexec/libexec/pantheon-local-terminal" ] || fail 'Homebrew terminal-presentation module is missing'
 [ -r "$PREFIX/libexec/libexec/pantheon-local-interaction" ] || fail 'Homebrew interaction module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-provider-url" ] || fail 'Homebrew provider URL module is missing'
+[ -x "$PREFIX/libexec/libexec/pantheon-local-provider-init" ] || fail 'Homebrew provider-init module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-pull" ] || fail 'Homebrew pull module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-readiness" ] || fail 'Homebrew readiness module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-setup" ] || fail 'Homebrew setup module is missing'
@@ -114,6 +115,7 @@ assert_eq "$("$FORMULA_CLI" version)" "$expected"
 "$FORMULA_CLI" doctor --help | grep -F 'pantheon-local doctor [--timing] [--format default|json] [--record FILE]' >/dev/null 2>&1 || fail 'Homebrew doctor help is unavailable'
 "$FORMULA_CLI" multidev create --help | grep -F 'EXPLICIT REMOTE PANTHEON WRITE' >/dev/null 2>&1 || fail 'Homebrew multidev create help is unavailable'
 "$FORMULA_CLI" setup --help | grep -F 'pantheon-local setup' >/dev/null 2>&1 || fail 'Homebrew setup help is unavailable'
+"$FORMULA_CLI" provider init --help | grep -F 'pantheon-local provider init --provider ddev|lando' >/dev/null 2>&1 || fail 'Homebrew provider-init help is unavailable'
 "$FORMULA_CLI" readiness --help | grep -F 'pantheon-local readiness' >/dev/null 2>&1 || fail 'Homebrew readiness help is unavailable'
 
 TEST_HOME="$TMP_ROOT/home"

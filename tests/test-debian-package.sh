@@ -47,6 +47,7 @@ dpkg-deb -x "$PACKAGE" "$EXTRACT"
 [ -r "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-terminal" ] || fail 'packaged terminal-presentation module is missing or unreadable'
 [ -r "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-interaction" ] || fail 'packaged interaction module is missing or unreadable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-provider-url" ] || fail 'packaged URL module is missing or not executable'
+[ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-provider-init" ] || fail 'packaged provider-init module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-pull" ] || fail 'packaged pull module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-readiness" ] || fail 'packaged readiness module is missing or not executable'
 [ -x "$EXTRACT/usr/lib/pantheon-local-tools/libexec/pantheon-local-setup" ] || fail 'packaged setup module is missing or not executable'
@@ -77,6 +78,7 @@ assert_eq "$("$EXTRACT/usr/bin/pantheon-local" config tag profile get 'Package E
 "$EXTRACT/usr/bin/pantheon-local" doctor --help | grep -F 'pantheon-local doctor [--timing] [--format default|json] [--record FILE]' >/dev/null 2>&1 || fail 'packaged doctor help is unavailable'
 "$EXTRACT/usr/bin/pantheon-local" multidev create --help | grep -F 'EXPLICIT REMOTE PANTHEON WRITE' >/dev/null 2>&1 || fail 'packaged multidev create help is unavailable'
 "$EXTRACT/usr/bin/pantheon-local" setup --help | grep -F 'pantheon-local setup' >/dev/null 2>&1 || fail 'packaged setup help is unavailable'
+"$EXTRACT/usr/bin/pantheon-local" provider init --help | grep -F 'pantheon-local provider init --provider ddev|lando' >/dev/null 2>&1 || fail 'packaged provider-init help is unavailable'
 "$EXTRACT/usr/bin/pantheon-local" readiness --help | grep -F 'pantheon-local readiness' >/dev/null 2>&1 || fail 'packaged readiness help is unavailable'
 
 # Packaging must not ship user state, provider project configuration, or credentials.

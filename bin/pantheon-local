@@ -22,14 +22,14 @@ Commands:
       Print the effective value for a configuration key.
 
   pantheon-local config set KEY VALUE
-      Set one configuration value. Supported keys: root, provider.
+      Set one configuration value. Supported keys: root, provider, doctor-layout.
 
   pantheon-local config unset KEY
       Remove one stored configuration value so its default applies again.
 
   pantheon-local config list
-      Print effective root/provider values, Pantheon Tag routes, route
-      precedence rules, and configured tag-profile properties.
+      Print effective root/provider/Doctor layout, Pantheon Tag routes,
+      route precedence rules, and configured tag-profile properties.
 
   pantheon-local config tag get TAG
       Print the local directory mapped to a Pantheon Tag.
@@ -99,6 +99,10 @@ Commands:
       the existing local Multidev checkout path. --dry-run performs read-only
       planning and can emit/record the stable JSON plan; real creation confirms
       unless --yes is supplied.
+
+  pantheon-local provider init --provider ddev|lando [--dry-run]
+      Initialize missing base DDEV/Lando configuration for a canonical Dev
+      checkout after explicit review. Never starts providers or pulls data.
 
   pantheon-local setup [--provider ddev|lando] [--dry-run]
       Bootstrap an existing PLT-managed Drupal checkout using its recorded
@@ -220,6 +224,7 @@ PULL="$LIBEXEC_DIR/pantheon-local-pull"
 READINESS="$LIBEXEC_DIR/pantheon-local-readiness"
 SETUP="$LIBEXEC_DIR/pantheon-local-setup"
 STATUS="$LIBEXEC_DIR/pantheon-local-status"
+PROVIDER_INIT="$LIBEXEC_DIR/pantheon-local-provider-init"
 
 command=${1:-}
 case "$command" in
@@ -240,6 +245,12 @@ case "$command" in
     [ -x "$READINESS" ] || die "readiness module is missing or not executable: $READINESS"
     shift
     exec "$READINESS" "$@"
+    ;;
+  provider)
+    [ "${2:-}" = init ] || die 'usage: pantheon-local provider init --provider ddev|lando [--dry-run]'
+    [ -x "$PROVIDER_INIT" ] || die "provider-init module is missing or not executable: $PROVIDER_INIT"
+    shift 2
+    exec "$PROVIDER_INIT" "$@"
     ;;
   setup)
     [ -x "$SETUP" ] || die "setup module is missing or not executable: $SETUP"

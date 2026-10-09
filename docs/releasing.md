@@ -16,6 +16,33 @@ Before tagging a release:
 
 Do not tag first and hope to repair the release afterward. Prepare the release version through an ordinary reviewed PR.
 
+## Local release-candidate preflight (read-only)
+
+Before creating the release tag, run the repository-owned preflight from a
+**clean, reviewed Git checkout**. Supply the **full exact commit SHA** obtained
+from the accepted GitHub revision and the explicitly intended publication
+date. The check does not infer the date or change the changelog.
+
+~~~bash
+EXPECTED_COMMIT='FULL_REVIEWED_COMMIT_SHA'
+RELEASE_DATE='YYYY-MM-DD'
+
+bash packaging/release/check-preflight.sh \
+  --mode pretag --date "$RELEASE_DATE" --expect-head "$EXPECTED_COMMIT"
+~~~
+
+This local check requires stable VERSION, matching CLI version and --version,
+exactly one dated changelog section, a clean checkout, the reviewed HEAD, and
+the **absence of the local release tag**.
+
+After **separately authorized** annotated-tag creation, run the same check
+with --mode tagged. That mode requires a **local annotated** vVERSION
+tag peeling to the exact expected HEAD. Neither mode fetches remote tags,
+checks hosted CI, creates an artifact, or performs publication. A passing
+local check never substitutes for fresh GitHub tag/CI/Release readback,
+canonical asset checksums, Homebrew/APT verification, or the owner release
+approval gate.
+
 ## 1. Prepare the release commit
 
 Set the repository-root `VERSION` to the exact version being released. For example:

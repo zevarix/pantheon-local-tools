@@ -1180,11 +1180,16 @@ assert_contains "$legacy_branch_json" '"reason_code":"checkout-branch-mismatch"'
 assert_contains "$legacy_branch_json" '"remediation_class":"manual-recovery"'
 
 set +e
-legacy_branch_review=$(run_doctor_pty $'y\n')
+legacy_branch_review=$(run_doctor_pty $'y\n1\n\n')
 legacy_branch_review_rc=$?
 set -e
 assert_eq "$legacy_branch_review_rc" '30'
 assert_contains "$legacy_branch_review" 'Manual recovery 1/1'
+assert_contains "$legacy_branch_review" 'Show manual/external recovery guidance for 1 finding now? [y/N]'
+assert_contains "$legacy_branch_review" 'No automatic fixes or configurable choices exist for these findings.'
+assert_contains "$legacy_branch_review" 'What would you like to inspect?'
+assert_contains "$legacy_branch_review" 'Read-only branch mismatch inspection'
+assert_contains "$legacy_branch_review" 'Doctor will not switch branches, reset HEAD, or discard work.'
 assert_contains "$legacy_branch_review" 'checkout branch is legacy-main, canonical Dev branch is master'
 assert_contains "$legacy_branch_review" 'Guided review complete. No unconfirmed changes were made.'
 assert_eq "$(git -C "$LEGACY_BRANCH_DEST" symbolic-ref --short HEAD)" 'legacy-main'
@@ -1192,6 +1197,60 @@ assert_eq "$(git -C "$LEGACY_BRANCH_DEST" rev-parse HEAD)" "$legacy_branch_head"
 assert_eq "$(git -C "$LEGACY_BRANCH_DEST" status --porcelain)" "$legacy_branch_status"
 assert_eq "$(git hash-object "$PANTHEON_LOCAL_CONFIG")" "$legacy_config_hash"
 [ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'Doctor tried a provider operation while reviewing a branch mismatch'
+
+# The default Finish option must leave the old checkout branch untouched.
+set +e
+legacy_finish=$(run_doctor_pty $'y\n\n')
+legacy_finish_rc=$?
+set -e
+assert_eq "$legacy_finish_rc" '30'
+assert_contains "$legacy_finish" 'Finish review (default; no changes)'
+assert_contains "$legacy_finish" 'Guided review complete. No unconfirmed changes were made.'
+assert_not_contains "$legacy_finish" 'Read-only branch mismatch inspection'
+assert_eq "$(git -C "$LEGACY_BRANCH_DEST" symbolic-ref --short HEAD)" 'legacy-main'
+assert_eq "$(git -C "$LEGACY_BRANCH_DEST" rev-parse HEAD)" "$legacy_branch_head"
+
+# An estate with both manual and external findings offers a small, default-safe
+# category menu instead of 11 identical yes/no prompts or any automatic fix.
+scenario_init branch-and-ssh-guidance
+create_remote legacy-site 'Example Group' ddev
+create_remote ssh-key-site 'Example Group' ddev
+set_sites legacy-site ssh-key-site
+configure_base ddev
+bash "$CLI" config tag set 'Example Group' clients
+MIXED_BRANCH_DEST=$(create_checkout legacy-site clients ddev)
+git -C "$MIXED_BRANCH_DEST" branch -m old-master
+mixed_branch_head=$(git -C "$MIXED_BRANCH_DEST" rev-parse HEAD)
+mixed_branch_status=$(git -C "$MIXED_BRANCH_DEST" status --porcelain)
+mixed_config_hash=$(git hash-object "$PANTHEON_LOCAL_CONFIG")
+export MOCK_SSH_GIT_SITE=ssh-key-site
+cat > "$MOCK_BIN/ssh" <<'SSH_MIXED_MOCK'
+#!/usr/bin/env bash
+printf '%s\\n' 'Host key verification failed.' >&2
+exit 255
+SSH_MIXED_MOCK
+chmod +x "$MOCK_BIN/ssh"
+
+set +e
+mixed_review=$(run_doctor_pty $'y\n1\n2\n\n')
+mixed_review_rc=$?
+set -e
+assert_eq "$mixed_review_rc" '32'
+assert_contains "$mixed_review" 'Show manual/external recovery guidance for 2 findings now? [y/N]'
+assert_contains "$mixed_review" 'Inspect 1 checkout branch mismatch (no branch changes)'
+assert_contains "$mixed_review" 'Review 1 SSH host-key finding (no trust changes)'
+assert_contains "$mixed_review" 'Read-only branch mismatch inspection'
+assert_contains "$mixed_review" 'Read-only SSH host-key inspection'
+assert_contains "$mixed_review" 'Never disable host-key verification or blindly import scanned keys.'
+assert_contains "$mixed_review" 'Finish review (default; no changes)'
+assert_contains "$mixed_review" 'Guided review complete. No unconfirmed changes were made.'
+assert_eq "$(git -C "$MIXED_BRANCH_DEST" symbolic-ref --short HEAD)" 'old-master'
+assert_eq "$(git -C "$MIXED_BRANCH_DEST" rev-parse HEAD)" "$mixed_branch_head"
+assert_eq "$(git -C "$MIXED_BRANCH_DEST" status --porcelain)" "$mixed_branch_status"
+assert_eq "$(git hash-object "$PANTHEON_LOCAL_CONFIG")" "$mixed_config_hash"
+[ ! -e "$HOME/.ssh/known_hosts" ] || fail 'manual/external review added SSH trust'
+[ ! -s "$MOCK_PROVIDER_LOG" ] || fail 'manual/external review started provider'
+unset MOCK_SSH_GIT_SITE
 
 # Checkout-local metadata inconsistency is unsafe local state.
 scenario_init metadata

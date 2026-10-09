@@ -91,6 +91,24 @@ Interactive terminals also keep the final aggregation phase visibly active with 
 
 On an interactive stdout terminal, the final diagnostic report is grouped into Global, Sites, and Tags sections and uses the same semantic glyph/color vocabulary. Redirected/non-interactive stdout keeps the deterministic plain table form without ANSI sequences. WARN/FAIL details and their smallest known next actions remain visible in both forms.
 
+### Manual or externally owned findings
+
+Doctor distinguishes a PLT-managed fix from a finding that cannot be safely
+repaired automatically. If the scan has only manual/external findings, it
+says so **before** prompting to display recovery guidance. The invitation
+does not promise a fix.
+
+After listing those findings, interactive review offers a default-safe
+numbered inspection menu when it recognizes checkout branch mismatches or
+untrusted SSH host keys. The menu shows only read-only local Git inspection
+commands and out-of-band SSH identity verification guidance. You can inspect
+each category, return to the menu, or press Enter to finish.
+
+The menu never changes Git branches, resets a checkout, alters host-key
+trust, starts a provider, or writes Pantheon state. Other findings without
+a safe inspection checklist remain instruction-only rather than inventing
+an automatic repair.
+
 ### Repeat scans and local cache
 
 After a saved routing preference or an explicitly confirmed PLT-managed repair, Doctor summarizes what it verified. It **does not** automatically repeat the full estate-wide scan. When multiple sites share the same overlapping Tag pair, one saved precedence rule is reused across the observed sites rather than asking for the same choice again; the review offers just **one** optional full rescan after all local preference changes. A separate `[y/N]` confirmation defaults to No; answer Yes only when a fresh set of network checks is wanted. Cached observed Tag membership can verify a local preference within the current process, but skipped Git or checkout checks remain unverified until a fresh scan.

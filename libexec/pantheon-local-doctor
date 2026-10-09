@@ -1416,6 +1416,12 @@ doctor_print_remediation_summary() {
   doctor_print_remediation_row FAIL "$external" 'item requiring external action' 'items requiring external action'
   doctor_print_remediation_row FAIL "$manual" 'item requiring manual recovery' 'items requiring manual recovery'
 
+  if [ "$managed" -eq 0 ] && [ "$choice" -eq 0 ]; then
+    printf '\n'
+    plt_term_style 1 muted 'No automatic fixes or configurable choices exist for these findings.'
+    printf '\n'
+  fi
+
   if [ "$managed" -gt 0 ]; then
     printf '\n'
     plt_term_style 1 heading 'PLT can fix now:'
@@ -1544,6 +1550,80 @@ doctor_apply_managed_remediations() {
   return 0
 }
 
+# Instructions-only findings never authorize repairing a checkout or trusting
+# a host key. Offer useful read-only inspection choices, defaulting to Finish.
+doctor_review_manual_inspections() {
+  local file class branch_count=0 hostkey_count=0 selected rc=0
+  local -a options=() actions=()
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    check_load "$file"
+    class=$(doctor_remediation_class_loaded)
+    case "$CHECK_REASON:$class" in
+      checkout-branch-mismatch:manual-recovery) branch_count=$((branch_count + 1)) ;;
+      git-ssh-host-key-untrusted:external-action) hostkey_count=$((hostkey_count + 1)) ;;
+    esac
+  done < "$CHECK_DIR/order"
+
+  if [ "$branch_count" -eq 0 ] && [ "$hostkey_count" -eq 0 ]; then
+    return 0
+  fi
+
+  printf '\n'
+  plt_term_style 1 info 'No automatic repairs for these findings. Select a read-only inspection checklist, or finish.'
+  printf '\n'
+  if [ "$branch_count" -gt 0 ]; then
+    options+=("Inspect $(doctor_remediation_count_text "$branch_count" "checkout branch mismatch" "checkout branch mismatches") (no branch changes)")
+    actions+=(branches)
+  fi
+  if [ "$hostkey_count" -gt 0 ]; then
+    options+=("Review $(doctor_remediation_count_text "$hostkey_count" "SSH host-key finding" "SSH host-key findings") (no trust changes)")
+    actions+=(ssh)
+  fi
+  options+=('Finish review (default; no changes)')
+  actions+=(finish)
+
+  while :; do
+    rc=0
+    plt_interact_choose 'What would you like to inspect?' "${#options[@]}" "${options[@]}" || rc=$?
+    case "$rc" in
+      0) ;;
+      1|2) return 0 ;;
+      *) return "$rc" ;;
+    esac
+    selected=${actions[$((PLT_INTERACT_CHOICE - 1))]}
+    case "$selected" in
+      branches)
+        printf '\n'
+        plt_term_style 1 heading 'Read-only branch mismatch inspection'
+        printf '\n'
+        printf '  Inspect each affected checkout independently before switching branches:\n'
+        printf '    git status --short\n'
+        printf '    git branch -vv\n'
+        printf '    git branch -r\n'
+        printf '    git log --oneline --left-right HEAD...origin/BRANCH\n'
+        printf '  Compare local edits and commit ancestry before any separately approved change.\n'
+        printf '  Doctor will not switch branches, reset HEAD, or discard work.\n'
+        ;;
+      ssh)
+        printf '\n'
+        plt_term_style 1 heading 'Read-only SSH host-key inspection'
+        printf '\n'
+        printf '  Identify the Git server and examine already-recorded host keys:\n'
+        printf '    ssh-keygen -F HOSTNAME\n'
+        printf '  A known-host entry is not proof that the host is authentic.\n'
+        printf '  Independently verify its fingerprint using official provider guidance\n'
+        printf '  or an administrator-controlled channel before trusting it.\n'
+        printf '  Never disable host-key verification or blindly import scanned keys.\n'
+        printf '  Doctor will not edit known_hosts or accept SSH keys.\n'
+        ;;
+      finish) return 0 ;;
+    esac
+    printf '\n'
+  done
+}
+
 doctor_review_nonmanaged_findings() {
   local choice=$1 external=$2 manual=$3 file class choice_index=0 external_index=0 manual_index=0 scope_label=''
 
@@ -1605,6 +1685,10 @@ doctor_review_nonmanaged_findings() {
     esac
   done 3< "$CHECK_DIR/order"
 
+  if [ "$choice" -eq 0 ]; then
+    doctor_review_manual_inspections || return $?
+  fi
+
   printf '\n'
   plt_term_style 1 muted 'Guided review complete. No unconfirmed changes were made.'
   printf '\n'
@@ -1644,7 +1728,13 @@ EOF
   review_total=$((choice + external + manual))
   [ "$review_total" -gt 0 ] || return 0
 
-  if plt_interact_confirm "Review the $(doctor_remediation_count_text "$review_total" 'item that needs your attention' 'items that need your attention') now?"; then
+  local review_prompt
+  if [ "$managed" -eq 0 ] && [ "$choice" -eq 0 ]; then
+    review_prompt="Show manual/external recovery guidance for $(doctor_remediation_count_text "$review_total" finding findings) now?"
+  else
+    review_prompt="Review the $(doctor_remediation_count_text "$review_total" 'item that needs your attention' 'items that need your attention') now?"
+  fi
+  if plt_interact_confirm "$review_prompt"; then
     doctor_review_nonmanaged_findings "$choice" "$external" "$manual"
     return 0
   else

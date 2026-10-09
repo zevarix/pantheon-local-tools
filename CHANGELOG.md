@@ -27,6 +27,9 @@ Patch release standardizing guided remediation and consent, adding Doctor extern
   Lando initialization now explains that a later, separately authorized
   `lando start` may run Composer when Pantheon's `build_step` is enabled,
   and that changes to Composer files require independent review.
+- Clarified manual/external-only Doctor findings and added a numbered,
+  default-safe read-only inspection menu for Git branch differences and
+  untrusted SSH host keys; never silently switch branches or accept keys.
 - Fixed Pantheon Lando application URL discovery: prefer the routed HTTPS URL
   reported by the edge web service before nginx/appserver fallbacks. The
   appserver may expose only loopback ports, even when edge serves the site.

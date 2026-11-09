@@ -11,6 +11,9 @@ export PANTHEON_LOCAL_CONFIG="$TMP_ROOT/config/pantheon-local-tools/config"
 MOCK_BIN="$TMP_ROOT/bin"
 LOCAL_ROOT="$TMP_ROOT/sites"
 SOURCE_LANDO="$TMP_ROOT/source-lando"
+SOURCE_LANDO_CANONICAL="$TMP_ROOT/source-lando-canonical"
+SOURCE_LANDO_CONFIG_URI="$TMP_ROOT/source-lando-config-uri"
+SOURCE_LANDO_CUSTOM_CONFIG="$TMP_ROOT/source-lando-custom-config"
 SOURCE_DDEV="$TMP_ROOT/source-ddev"
 mkdir -p "$HOME" "$MOCK_BIN"
 
@@ -89,14 +92,14 @@ export MOCK_START_LOG="$TMP_ROOT/start.log"
 export MOCK_INFO_LOG="$TMP_ROOT/info.log"
 
 create_repo() {
-  local path=$1 provider=$2
+  local path=$1 provider=$2 drush_uri=${3:-https://provider-owned.example-project.test} config_uri=${4:-}
   mkdir -p "$path"
   git -C "$path" init -q
   git -C "$path" config user.name 'Test User'
   git -C "$path" config user.email 'test@example.com'
   case "$provider" in
     lando)
-      cat > "$path/.lando.yml" <<'YAML'
+      cat > "$path/.lando.yml" <<YAML
 name: example-site
 recipe: pantheon
 services:
@@ -113,8 +116,11 @@ tooling:
     cmd: php -v
   drush:
     env:
-      DRUSH_OPTIONS_URI: "https://provider-owned.example-project.test"
+      DRUSH_OPTIONS_URI: "$drush_uri"
 YAML
+      if [ -n "$config_uri" ]; then
+        printf '\nconfig:\n  drush_uri: "%s"\n' "$config_uri" >> "$path/.lando.yml"
+      fi
       ;;
     ddev)
       mkdir -p "$path/.ddev"
@@ -140,6 +146,9 @@ YAML
 }
 
 create_repo "$SOURCE_LANDO" lando
+create_repo "$SOURCE_LANDO_CANONICAL" lando 'http://example-site.lndo.site'
+create_repo "$SOURCE_LANDO_CONFIG_URI" lando 'http://example-site.lndo.site' 'https://example-site.lndo.site'
+create_repo "$SOURCE_LANDO_CUSTOM_CONFIG" lando 'http://example-site.lndo.site' 'https://custom.example.test'
 create_repo "$SOURCE_DDEV" ddev
 
 export MOCK_GIT_URL="$SOURCE_LANDO"
@@ -239,6 +248,47 @@ START_DEST="$LOCAL_ROOT/multidev/example-site-feature3"
 assert_file_contains "$MOCK_START_LOG" "$START_DEST"
 assert_contains "$start_output" 'Runtime URL:  https://example-runtime.test'
 assert_eq "$(git config --file "$START_DEST/.git/pantheon-local-tools/state" --get local.url)" 'https://example-runtime.test'
+
+# Canonical hardcoded Drush URI is rewritten even when runtime URL discovery fails.
+# Its HTTP scheme is preserved rather than guessed from Lando's HTTPS display URL.
+export MOCK_GIT_URL="$SOURCE_LANDO_CANONICAL"
+export MOCK_LANDO_INFO_FAIL=true
+bash "$CLI" multidev example-site.feature1 --group drush-uri >/dev/null
+unset MOCK_LANDO_INFO_FAIL
+CANONICAL_DEST="$LOCAL_ROOT/multidev/drush-uri/example-site-feature1"
+assert_file_contains "$CANONICAL_DEST/.lando.local.yml" 'name: example-site-feature1'
+assert_file_contains "$CANONICAL_DEST/.lando.local.yml" 'DRUSH_OPTIONS_URI: "http://example-site-feature1.lndo.site"'
+assert_file_not_contains "$CANONICAL_DEST/.lando.local.yml" 'config:'
+assert_file_contains "$CANONICAL_DEST/.lando.yml" 'DRUSH_OPTIONS_URI: "http://example-site.lndo.site"'
+assert_eq "$(git -C "$CANONICAL_DEST" status --porcelain)" ''
+
+# With --start, the override is present before provider startup; no rebuild
+# or extra state-changing operation is performed by the checkout workflow.
+start_count=$(wc -l < "$MOCK_START_LOG" | tr -d ' ')
+bash "$CLI" multidev example-site.feature3 --group drush-uri --start >/dev/null
+CANONICAL_START_DEST="$LOCAL_ROOT/multidev/drush-uri/example-site-feature3"
+assert_file_contains "$CANONICAL_START_DEST/.lando.local.yml" 'DRUSH_OPTIONS_URI: "http://example-site-feature3.lndo.site"'
+assert_file_contains "$MOCK_START_LOG" "$CANONICAL_START_DEST"
+assert_eq "$(wc -l < "$MOCK_START_LOG" | tr -d ' ')" "$((start_count + 1))"
+
+# Lando's config.drush_uri may override the environment setting; when both
+# point at the canonical app, rewrite both, preserving their original schemes.
+export MOCK_GIT_URL="$SOURCE_LANDO_CONFIG_URI"
+bash "$CLI" multidev example-site.feature2 --group drush-uri >/dev/null
+CONFIG_DEST="$LOCAL_ROOT/multidev/drush-uri/example-site-feature2"
+assert_file_contains "$CONFIG_DEST/.lando.local.yml" 'drush_uri: "https://example-site-feature2.lndo.site"'
+assert_file_contains "$CONFIG_DEST/.lando.local.yml" 'DRUSH_OPTIONS_URI: "http://example-site-feature2.lndo.site"'
+assert_file_contains "$CONFIG_DEST/.lando.yml" 'drush_uri: "https://example-site.lndo.site"'
+
+# A custom config.drush_uri wins over a canonical environment variable; do
+# not generate a partial override that would silently replace that choice.
+export MOCK_GIT_URL="$SOURCE_LANDO_CUSTOM_CONFIG"
+bash "$CLI" multidev example-site.feature1 --group custom-uri >/dev/null
+CUSTOM_CONFIG_DEST="$LOCAL_ROOT/multidev/custom-uri/example-site-feature1"
+assert_file_contains "$CUSTOM_CONFIG_DEST/.lando.local.yml" 'name: example-site-feature1'
+assert_file_not_contains "$CUSTOM_CONFIG_DEST/.lando.local.yml" 'DRUSH_OPTIONS_URI'
+assert_file_not_contains "$CUSTOM_CONFIG_DEST/.lando.local.yml" 'drush_uri'
+assert_file_contains "$CUSTOM_CONFIG_DEST/.lando.yml" 'drush_uri: "https://custom.example.test"'
 
 # Failed clones must not leave the final checkout path behind.
 export MOCK_GIT_URL="$TMP_ROOT/does-not-exist"

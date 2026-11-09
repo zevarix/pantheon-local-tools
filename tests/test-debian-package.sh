@@ -56,10 +56,14 @@ dpkg-deb -x "$PACKAGE" "$EXTRACT"
 [ -f "$EXTRACT/usr/lib/pantheon-local-tools/VERSION" ] || fail 'packaged VERSION is missing'
 [ -L "$EXTRACT/usr/bin/pantheon-local" ] || fail 'packaged command link is missing'
 assert_eq "$(readlink "$EXTRACT/usr/bin/pantheon-local")" '../lib/pantheon-local-tools/bin/pantheon-local'
+[ -L "$EXTRACT/usr/bin/plt" ] || fail 'packaged short alias link is missing'
+assert_eq "$(readlink "$EXTRACT/usr/bin/plt")" '../lib/pantheon-local-tools/bin/pantheon-local'
 
 expected="pantheon-local $VERSION"
 assert_eq "$("$EXTRACT/usr/bin/pantheon-local" --version)" "$expected"
 assert_eq "$("$EXTRACT/usr/bin/pantheon-local" version)" "$expected"
+assert_eq "$("$EXTRACT/usr/bin/plt" --version)" "$expected"
+assert_eq "$("$EXTRACT/usr/bin/plt" version)" "$expected"
 
 export HOME="$TMP_ROOT/home"
 unset XDG_CONFIG_HOME PANTHEON_LOCAL_CONFIG

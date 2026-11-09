@@ -90,7 +90,7 @@ DDEV's provider integration pulls data, not Git code.
 
 Lando projects use `.lando.yml`. Checkout-specific settings can be placed in `.lando.local.yml`, which Lando loads after the shared Landofile.
 
-The multidev workflow requires an existing `.lando.yml` and creates only the minimum local override needed for an isolated checkout. It must not replace the project's recipe, services, proxy definitions, or tooling.
+The multidev workflow requires an existing `.lando.yml` and creates a checkout-local override for the isolated name. When the base file explicitly points Drush at its canonical `<base-name>.lndo.site` URI, the override also remaps that URI to the checkout name. Conflicting, noncanonical, or custom Drush URIs stay project-owned; the tool does not rewrite the recipe, services, proxy definitions, or tracked tooling.
 
 For read-only status, Lando's own `lando info` service URL data is authoritative when available. Pantheon Local Tools prefers the primary web service and does not select an unrelated phpMyAdmin, Redis, Solr, MailHog, or other extra-service URL merely because it appears in Lando metadata. Custom Lando domains remain provider-owned; `lndo.site` is not treated as a universal runtime truth.
 

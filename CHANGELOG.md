@@ -6,9 +6,20 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
-- Added `plt` as a short equivalent CLI name in portable, Homebrew, and Debian installations.
-- Fixed Lando Multidev checkout overrides when a base Landofile hardcodes its own canonical Drush URI; checkout-local URI settings now target the isolated app without overwriting custom domains or tracked configuration (issue #148).
-- Added opt-in `multidev --setup` to compose existing provider startup, Composer install, database-only import, and Drupal update/cache steps on a new local Multidev checkout (#147); an explicit `--database-source` may select a different local database source without changing remote environments or files. Existing clone-only and `--start` behavior remains the default.
+## 0.2.4 — 2026-11-09
+
+Patch release candidate incorporating field-tested Multidev bootstrap and Lando Drush URI improvements, a short CLI alias, and two previously integrated maintenance refinements. The 0.2.x defaults, provider boundaries, and structured-output contracts remain unchanged.
+
+### Added
+
+- Added `plt` as an equivalent command name through the portable installer, Homebrew, and Debian packages. Both names share the same configuration and CLI behavior.
+- Added opt-in `multidev --setup` to bootstrap a newly cloned local checkout using the existing provider start, Composer install, database-only pull, `drush updb`, and cache rebuild steps (#147). `--database-source ENV` selects a different local database source explicitly; the cloned Multidev remains the default and its Git branch, files, and Pantheon data are not changed.
+- Added read-only release-candidate preflight that verifies the intended version, changelog date, exact source commit, clean Git state, and local annotated-tag conditions without publishing or modifying release state (#143).
+
+### Fixed
+
+- Fixed Lando Multidev Drush login links when a project Landofile explicitly targets its canonical `*.lndo.site` name. The checkout-local override remaps only that recognizable URI while preserving custom domain choices and tracked provider configuration (#148).
+- Improved Doctor's read-only manual branch-difference guidance, retaining external recovery and SSH trust decisions under developer control (#142).
 
 ## 0.2.3 — 2026-10-09
 

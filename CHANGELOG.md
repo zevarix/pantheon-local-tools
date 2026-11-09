@@ -6,6 +6,8 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+- Added opt-in `multidev --setup` to compose existing provider startup, Composer install, database-only import, and Drupal update/cache steps on a new local Multidev checkout (#147); an explicit `--database-source` may select a different local database source without changing remote environments or files. Existing clone-only and `--start` behavior remains the default.
+
 ## 0.2.3 — 2026-10-09
 
 Patch release standardizing guided remediation and consent, adding Doctor external-read timing evidence, and hardening canonical release reproducibility while preserving the established v0.2 command/configuration and structured-output contracts.

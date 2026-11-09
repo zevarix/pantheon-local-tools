@@ -14,7 +14,7 @@ TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
 usage() {
   cat <<'USAGE'
 Usage:
-  pantheon-local setup [--provider ddev|lando] [--dry-run]
+  pantheon-local setup [--provider ddev|lando] [--database-source ENV] [--dry-run]
 
 Prepare an existing Pantheon Local Tools-managed Drupal checkout for local
 work using its recorded Pantheon environment. The setup pipeline is:
@@ -33,6 +33,8 @@ Provider behavior:
 Safety and mutation boundaries:
   * The Pantheon environment comes from checkout-local PLT state, never from
     the Git branch name and never from an inferred Live environment.
+  * --database-source ENV explicitly selects a different local database source;
+    otherwise the recorded checkout environment is used.
   * Composer runs inside the selected provider. It may access the network and
     execute project Composer scripts.
   * The database pull replaces local database data and reuses pantheon-local
@@ -54,6 +56,7 @@ Examples:
   pantheon-local setup --dry-run
   pantheon-local setup
   pantheon-local setup --provider lando
+  pantheon-local setup --database-source live
 USAGE
 }
 
@@ -186,15 +189,15 @@ run_provider_step() {
 }
 
 run_pull_step() {
-  local root=$1 state=$2 env=$3 provider=$4
+  local root=$1 state=$2 env=$3 provider=$4 database_source=$5
   record_bootstrap "$state" in-progress database-pull "$env" "$provider"
-  if ! (cd "$root" && "$PULL" "$env" --database-only --provider "$provider"); then
+  if ! (cd "$root" && "$PULL" "$database_source" --database-only --provider "$provider"); then
     fail_step "$state" "$env" "$provider" database-pull 'database pull'
   fi
 }
 
 print_plan() {
-  local root=$1 site=$2 env=$3 provider=$4
+  local root=$1 site=$2 env=$3 provider=$4 database_source=$5
   plt_term_style 1 heading 'Pantheon Local Tools setup dry-run'
   printf '\n\n'
   plt_term_style 1 muted 'Directory:   '
@@ -208,12 +211,12 @@ print_plan() {
   plt_term_style 1 muted 'Provider:    '
   printf '%s\n' "$provider"
   plt_term_style 1 muted 'Database:    '
-  printf 'replace local database from %s\n\n' "$env"
+  printf 'replace local database from %s\n\n' "$database_source"
   plt_term_style 1 heading 'Planned steps:'
   printf '\n'
   printf '  1. %s start\n' "$provider"
   printf '  2. %s composer install\n' "$provider"
-  printf '  3. pantheon-local pull %s --database-only --provider %s\n' "$env" "$provider"
+  printf '  3. pantheon-local pull %s --database-only --provider %s\n' "$database_source" "$provider"
   printf '  4. %s drush updb -y\n' "$provider"
   printf '  5. %s drush cr\n\n' "$provider"
   plt_term_style 1 muted 'Dry-run only: no provider, Composer, Drush, pull, or state mutation was run.'
@@ -221,13 +224,20 @@ print_plan() {
 }
 
 setup_command() {
-  local provider_override='' dry_run=false root git_dir state env site provider git_state
+  local provider_override='' database_source='' database_source_supplied=false dry_run=false root git_dir state env site provider git_state
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --provider)
         [ "$#" -ge 2 ] || die '--provider requires ddev or lando'
         provider_override=$2
+        shift 2
+        ;;
+      --database-source)
+        [ "$#" -ge 2 ] || die '--database-source requires a Pantheon environment'
+        [ "$database_source_supplied" = false ] || die '--database-source may only be supplied once'
+        database_source=$2
+        database_source_supplied=true
         shift 2
         ;;
       --dry-run)
@@ -239,7 +249,7 @@ setup_command() {
         return
         ;;
       --*) die "unknown setup option: $1" ;;
-      *) die 'usage: pantheon-local setup [--provider ddev|lando] [--dry-run]' ;;
+      *) die 'usage: pantheon-local setup [--provider ddev|lando] [--database-source ENV] [--dry-run]' ;;
     esac
   done
 
@@ -254,6 +264,12 @@ setup_command() {
   [ -n "$env" ] || \
     die 'setup requires checkout-local pantheon.environment state; refusing to infer it from the Git branch'
   validate_environment "$env"
+  if [ "$database_source_supplied" = true ]; then
+    [ -n "$database_source" ] || die '--database-source cannot be empty'
+  else
+    database_source=$env
+  fi
+  validate_environment "$database_source"
   site=$(state_get "$state" pantheon.site || true)
   provider=$(resolve_provider "$root" "$state" "$provider_override")
 
@@ -266,7 +282,7 @@ setup_command() {
   fi
 
   if [ "$dry_run" = true ]; then
-    print_plan "$root" "$site" "$env" "$provider"
+    print_plan "$root" "$site" "$env" "$provider" "$database_source"
     return
   fi
 
@@ -280,7 +296,9 @@ setup_command() {
   plt_term_style 1 muted 'Environment: '
   printf '%s\n' "$env"
   plt_term_style 1 muted 'Provider:    '
-  printf '%s\n\n' "$provider"
+  printf '%s\n' "$provider"
+  plt_term_style 1 muted 'Database:    '
+  printf 'import from %s\n\n' "$database_source"
 
   plt_term_style 1 active "Step 1/5: starting $provider"
   printf '\n'
@@ -292,9 +310,9 @@ setup_command() {
   run_provider_step "$root" "$state" "$env" "$provider" composer-install 'Composer install' composer install
 
   printf '\n'
-  plt_term_style 1 active "Step 3/5: refreshing local database from $env"
+  plt_term_style 1 active "Step 3/5: refreshing local database from $database_source"
   printf '\n'
-  run_pull_step "$root" "$state" "$env" "$provider"
+  run_pull_step "$root" "$state" "$env" "$provider" "$database_source"
 
   printf '\n'
   plt_term_style 1 active 'Step 4/5: running Drupal database updates'
@@ -322,7 +340,7 @@ setup_command() {
   plt_term_style 1 muted 'Provider:    '
   printf '%s\n' "$provider"
   plt_term_style 1 muted 'Database:    '
-  printf 'refreshed from %s\n' "$env"
+  printf 'refreshed from %s\n' "$database_source"
   plt_term_style 1 muted 'Git state:   '
   if [ "$git_state" = clean ]; then
     plt_term_style 1 success "$git_state"

@@ -22,7 +22,7 @@ automatically stage, commit, or remove them.
 ## Command
 
 ```bash
-pantheon-local setup [--provider ddev|lando] [--dry-run]
+pantheon-local setup [--provider ddev|lando] [--database-source ENV] [--dry-run]
 ```
 
 Examples:
@@ -31,7 +31,10 @@ Examples:
 pantheon-local setup --dry-run
 pantheon-local setup
 pantheon-local setup --provider lando
+pantheon-local setup --database-source live
 ```
+
+`--database-source ENV` explicitly selects the **local database import** source. By default, setup still uses the checkout's recorded Pantheon environment. An override never changes the recorded checkout identity, Git code, files, or the remote environment. It is also used by the opt-in `pantheon-local multidev SITE.ENV --setup --database-source ENV` convenience path for **fresh** local checkouts. When running `setup` directly on an **existing** checkout, the local database may already contain useful data and will be replaced by the pull.
 
 `--provider` overrides provider selection for this run only. It does not rewrite provider project configuration or global PLT configuration.
 
@@ -42,7 +45,7 @@ A mutating setup run executes exactly these phases in order:
 ```text
 provider start
 → provider-owned Composer install
-→ guarded database-only pull from the checkout's recorded Pantheon environment
+→ guarded database-only pull from the recorded or explicitly selected source environment
 → provider-owned drush updb -y
 → provider-owned drush cr
 ```
@@ -52,7 +55,7 @@ For Lando this maps to:
 ```text
 lando start
 lando composer install
-pantheon-local pull RECORDED_ENV --database-only --provider lando
+pantheon-local pull DATABASE_SOURCE --database-only --provider lando
 lando drush updb -y
 lando drush cr
 ```
@@ -62,16 +65,16 @@ For DDEV this maps to:
 ```text
 ddev start
 ddev composer install
-pantheon-local pull RECORDED_ENV --database-only --provider ddev
+pantheon-local pull DATABASE_SOURCE --database-only --provider ddev
 ddev drush updb -y
 ddev drush cr
 ```
 
-The delegated pull remains the existing PLT pull implementation, so provider-owned Pantheon authentication, database provenance, and the Git `HEAD`/tracked-content integrity check stay centralized rather than being reimplemented in setup.
+The delegated pull remains the existing PLT pull implementation, so provider-owned Pantheon authentication, database provenance, and the Git `HEAD`/tracked-content integrity check stay centralized rather than being reimplemented in setup. `DATABASE_SOURCE` is the recorded Multidev by default, or the explicitly supplied `--database-source`. Successful imports are recorded in `data.database-source`; `bootstrap.environment` continues to identify the checkout.
 
 ## Pantheon environment authority
 
-Setup requires `.git/pantheon-local-tools/state` and reads `pantheon.environment` from that checkout-local state.
+Setup requires `.git/pantheon-local-tools/state` and reads `pantheon.environment` from that checkout-local state. A supplied `--database-source` affects the import only, not that state key.
 
 It does **not**:
 

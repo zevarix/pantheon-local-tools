@@ -88,9 +88,12 @@ Commands:
       stderr-only external-read duration evidence. Interactive use may offer
       explicitly confirmed PLT-managed repairs after the report.
 
-  pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
+  pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--setup] [--database-source ENV]
       Clone an already-existing Pantheon Multidev into an isolated local
-      checkout. Missing remote environments are never created implicitly.
+      checkout. --setup opts into provider start, Composer, initial local
+      database import, Drush updates, and cache rebuild. --database-source
+      overrides the import source only with --setup; default is SITE.ENV.
+      Missing remote environments are never created implicitly.
 
   pantheon-local multidev create SITE.SOURCE NEW_ENV
     [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]
@@ -104,10 +107,11 @@ Commands:
       Initialize missing base DDEV/Lando configuration for a canonical Dev
       checkout after explicit review. Never starts providers or pulls data.
 
-  pantheon-local setup [--provider ddev|lando] [--dry-run]
+  pantheon-local setup [--provider ddev|lando] [--database-source ENV] [--dry-run]
       Bootstrap an existing PLT-managed Drupal checkout using its recorded
       Pantheon environment: start provider, Composer install, guarded local
-      database pull, drush updb, then drush cr. --dry-run prints the plan only.
+      database pull, drush updb, then drush cr. --database-source explicitly
+      selects a different local database source. --dry-run prints the plan only.
 
   pantheon-local readiness [--provider ddev|lando]
       Inspect the matched tag profile's Drupal configuration boundary without
@@ -151,6 +155,7 @@ Examples:
   pantheon-local estate status --all
   pantheon-local doctor
   pantheon-local multidev example.feature --dry-run
+  pantheon-local multidev example.feature --setup --database-source live
   pantheon-local multidev create example.live feature1 --dry-run
   pantheon-local setup --dry-run
   pantheon-local setup

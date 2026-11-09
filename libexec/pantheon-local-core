@@ -7,6 +7,7 @@ DEFAULT_ROOT_SUFFIX="sites/pantheon"
 MULTIDEV_TEMP=''
 SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 PROVIDER_URL="$SCRIPT_DIR/pantheon-local-provider-url"
+SETUP="$SCRIPT_DIR/pantheon-local-setup"
 TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
 INTERACTION_LIB="$SCRIPT_DIR/pantheon-local-interaction"
 
@@ -33,7 +34,7 @@ Usage:
   pantheon-local config tag prefer set PREFERRED OTHER
   pantheon-local config tag prefer unset PREFERRED OTHER
   pantheon-local config tag prefer list
-  pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]
+  pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--setup] [--database-source ENV]
 
 Configuration keys:
   root          Absolute local root for Pantheon checkouts.
@@ -822,7 +823,8 @@ print_multidev_plan() {
 }
 
 multidev_command() {
-  local target='' provider_override='' group='' dry_run=false start=false
+  local target='' provider_override='' group='' dry_run=false start=false setup=false
+  local database_source='' database_source_supplied=false
   local parsed site env route tag route_dir root base_dir destination local_name
   local provider git_url parent tmp url
 
@@ -846,6 +848,17 @@ multidev_command() {
         start=true
         shift
         ;;
+      --setup)
+        setup=true
+        shift
+        ;;
+      --database-source)
+        [ "$#" -ge 2 ] || die '--database-source requires a Pantheon environment'
+        [ "$database_source_supplied" = false ] || die '--database-source may only be supplied once'
+        database_source=$2
+        database_source_supplied=true
+        shift 2
+        ;;
       -h|--help|help)
         usage
         return
@@ -859,16 +872,26 @@ multidev_command() {
     esac
   done
 
-  [ -n "$target" ] || die 'usage: pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]'
+  [ -n "$target" ] || die 'usage: pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--setup] [--database-source ENV]'
   [ -z "$group" ] || validate_group "$group"
   [ "$dry_run" = false ] || [ "$start" = false ] || die '--start cannot be combined with --dry-run'
+  [ "$database_source_supplied" = false ] || [ "$setup" = true ] || die '--database-source requires --setup'
+  if [ "$database_source_supplied" = true ]; then
+    [ -n "$database_source" ] || die '--database-source cannot be empty'
+    printf '%s\n' "$database_source" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]*$' || \
+      die '--database-source contains unsupported environment characters'
+  fi
 
   require_command git
   parsed=$(parse_target "$target")
   site=$(printf '%s\n' "$parsed" | sed -n '1p')
   env=$(printf '%s\n' "$parsed" | sed -n '2p')
   local_name=$(sanitize_local_name "$site-$env")
+  [ "$database_source_supplied" = true ] || database_source=$env
   provider=$(configured_provider "$provider_override")
+  if [ "$setup" = true ] && [ "$dry_run" = false ]; then
+    [ -x "$SETUP" ] || die "setup module is missing or not executable: $SETUP"
+  fi
 
   terminus_preflight
   route=$(resolve_tag_route "$site")
@@ -890,6 +913,19 @@ multidev_command() {
   if [ "$dry_run" = true ]; then
     url='(provider runtime; available after checkout)'
     print_multidev_plan 'Pantheon multidev dry-run' "$target" "$tag" "$provider" "$env" "$destination" "$local_name" "$url"
+    if [ "$setup" = true ]; then
+      printf '\n'
+      plt_term_style 1 heading 'Opt-in Drupal setup plan'
+      printf '\n'
+      if [ "$provider" = auto ]; then
+        printf '  Provider:  auto (detected from the checkout after clone)\n'
+      else
+        printf '  Provider:  %s\n' "$provider"
+      fi
+      printf '  Database: initial local import from %s\n' "$database_source"
+      printf '  Steps:    start provider -> Composer install -> database-only pull -> drush updb -y -> drush cr\n'
+      printf '  No remote Pantheon data or code is changed.\n'
+    fi
     return
   fi
 
@@ -928,7 +964,24 @@ multidev_command() {
 
   print_multidev_plan 'Created Pantheon multidev checkout' "$target" "$tag" "$provider" "$env" "$destination" "$local_name" "$url"
 
-  if [ "$start" = true ]; then
+  if [ "$setup" = true ]; then
+    printf '\n'
+    plt_term_style 1 heading 'Starting opted-in Drupal setup'
+    printf '\n'
+    printf 'Checkout: %s\n' "$destination"
+    printf 'Database: initial local import from %s\n' "$database_source"
+    # Setup owns the single provider start, Composer, database-only pull,
+    # Drush updates, provenance, and failure-step reporting. Do not retry.
+    if ! (cd "$destination" && "$SETUP" --provider "$provider" --database-source "$database_source"); then
+      die "Drupal setup failed; checkout retained at $destination. Inspect pantheon-local status there before retrying setup."
+    fi
+    if url=$(discover_checkout_url "$provider" "$destination"); then
+      record_checkout_url "$destination" "$url"
+      plt_term_style 1 muted 'Runtime URL:  '
+      plt_term_style 1 active "$url"
+      printf '\n'
+    fi
+  elif [ "$start" = true ]; then
     require_command "$provider"
     printf '\n'
     plt_term_style 1 active "Starting $provider..."

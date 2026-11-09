@@ -219,7 +219,7 @@ It does not rewrite base provider configuration, service definitions, proxy defi
 
 The project must contain `.lando.yml`.
 
-Pantheon Local Tools writes `.lando.local.yml` containing only the isolated local app name and adds it to `.git/info/exclude`. The shared `.gitignore` is not modified.
+Pantheon Local Tools writes `.lando.local.yml` with the isolated app name and adds it to `.git/info/exclude`. If the base `.lando.yml` explicitly sets the Drush URI to `http(s)://<base-name>.lndo.site`, PLT also remaps that canonical URI to the new app name, retaining its HTTP/HTTPS scheme. It updates `tooling.drush.env.DRUSH_OPTIONS_URI` and/or `config.drush_uri` when those values are unambiguous. Custom/unknown URIs are preserved; the tracked `.lando.yml` and shared `.gitignore` are not modified. This is intentionally a narrow, safe correction rather than a general YAML rewrite.
 
 `--start` runs `lando start`. PLT does not automatically run `lando rebuild`.
 

@@ -52,7 +52,7 @@ libexec/
   VERSION
 ```
 
-Homebrew then links only `libexec/bin/pantheon-local` into the formula `bin` directory. This preserves the same relative `bin` → `libexec` → `VERSION` resolution contract used by the clone installer and Debian package.
+Homebrew then links `libexec/bin/pantheon-local` into the formula `bin` directory under both `pantheon-local` and `plt`. This preserves the same relative `bin` → `libexec` → `VERSION` resolution contract used by the clone installer and Debian package.
 
 No provider configuration, user configuration, checkout state, or Pantheon credentials are generated during installation.
 

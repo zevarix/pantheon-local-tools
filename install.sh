@@ -13,24 +13,30 @@ die() {
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 SOURCE="$SCRIPT_DIR/bin/pantheon-local"
 BIN_DIR=${PANTHEON_LOCAL_BIN_DIR:-"$HOME/.local/bin"}
-DESTINATION="$BIN_DIR/pantheon-local"
 
 [ -f "$SOURCE" ] || die "command not found in repository: $SOURCE"
 mkdir -p "$BIN_DIR"
 
-if [ -L "$DESTINATION" ]; then
-  CURRENT_TARGET=$(readlink "$DESTINATION" || true)
-  [ "$CURRENT_TARGET" = "$SOURCE" ] || die "refusing to replace existing symlink: $DESTINATION"
-elif [ -e "$DESTINATION" ]; then
-  die "refusing to replace existing path: $DESTINATION"
-else
-  ln -s "$SOURCE" "$DESTINATION"
-fi
+# Check both names before creating either, so a collision cannot leave
+# a partial installation. Existing matching symlinks are idempotent.
+for command_name in pantheon-local plt; do
+  destination="$BIN_DIR/$command_name"
+  if [ -L "$destination" ]; then
+    current_target=$(readlink "$destination" || true)
+    [ "$current_target" = "$SOURCE" ] || die "refusing to replace existing symlink: $destination"
+  elif [ -e "$destination" ]; then
+    die "refusing to replace existing path: $destination"
+  fi
+done
 
-printf 'Installed pantheon-local -> %s\n' "$SOURCE"
-printf 'Command path: %s\n' "$DESTINATION"
+for command_name in pantheon-local plt; do
+  destination="$BIN_DIR/$command_name"
+  [ -L "$destination" ] || ln -s "$SOURCE" "$destination"
+  printf 'Installed %s -> %s\n' "$command_name" "$SOURCE"
+  printf 'Command path: %s\n' "$destination"
+done
 
 case ":${PATH:-}:" in
   *":$BIN_DIR:"*) ;;
-  *) printf 'Add %s to PATH to run pantheon-local from any directory.\n' "$BIN_DIR" ;;
+  *) printf 'Add %s to PATH to run pantheon-local or plt from any directory.\n' "$BIN_DIR" ;;
 esac

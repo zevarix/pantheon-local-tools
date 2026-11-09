@@ -749,11 +749,121 @@ add_local_exclude() {
   grep -Fx "$path" "$exclude" >/dev/null 2>&1 || printf '%s\n' "$path" >> "$exclude"
 }
 
+# Inspect only the small subset of top-level Lando YAML relevant to an
+# explicitly configured Drush URI. Do not try to interpret arbitrary YAML.
+# Unknown or customized forms are left under project ownership.
+lando_base_uri_settings() {
+  local checkout=$1
+  awk '
+    function trim(text) {
+      sub(/^[[:space:]]+/, "", text)
+      sub(/[[:space:]]+$/, "", text)
+      return text
+    }
+    {
+      sub(/\r$/, "")
+      if ($0 ~ /^[[:space:]]*($|#)/ || $0 ~ /\t/) next
+
+      leading = $0
+      sub(/[^ ].*$/, "", leading)
+      indent = length(leading)
+      line = substr($0, indent + 1)
+      for (level in keys) if (level >= indent) delete keys[level]
+      if (line ~ /^-/) next
+
+      colon = index(line, ":")
+      if (!colon) next
+      key = trim(substr(line, 1, colon - 1))
+      if (key !~ /^[A-Za-z_][A-Za-z0-9_-]*$/) next
+
+      prefix = ""
+      for (level = 0; level < indent; level++) {
+        if (level in keys) {
+          prefix = (prefix == "" ? keys[level] : prefix "." keys[level])
+        }
+      }
+      path = (prefix == "" ? key : prefix "." key)
+      keys[indent] = key
+      if (path == "name" || path == "config.drush_uri" ||
+          path == "tooling.drush.env.DRUSH_OPTIONS_URI") {
+        printf "%s\t%s\n", path, trim(substr(line, colon + 1))
+      }
+    }
+  ' "$checkout/.lando.yml"
+}
+
+lando_unquote_scalar() {
+  local value=$1
+  case "$value" in
+    \"*\") value=${value#\"}; value=${value%\"} ;;
+    \'*\') value=${value#\'}; value=${value%\'} ;;
+  esac
+  printf '%s\n' "$value"
+}
+
+lando_is_canonical_uri() {
+  local uri=$1 base_name=$2
+  case "$uri" in
+    "http://$base_name.lndo.site"|"https://$base_name.lndo.site"|"http://$base_name.lndo.site/"|"https://$base_name.lndo.site/") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# A URI explicitly targeting the base Lando name can be remapped without
+# guessing the runtime URL. Preserve the original scheme (often HTTP).
+# Do not replace custom domains or conflicting config.drush_uri overrides.
+lando_local_uri_overrides() {
+  local checkout=$1 local_name=$2 key value base_name='' env_uri='' config_uri=''
+  local name_count=0 env_count=0 config_count=0
+  local new_env_uri new_config_uri
+
+  while IFS=$'\t' read -r key value; do
+    case "$key" in
+      name) name_count=$((name_count + 1)); base_name=$(lando_unquote_scalar "$value") ;;
+      config.drush_uri)
+        config_count=$((config_count + 1))
+        config_uri=$(lando_unquote_scalar "$value")
+        ;;
+      tooling.drush.env.DRUSH_OPTIONS_URI)
+        env_count=$((env_count + 1))
+        env_uri=$(lando_unquote_scalar "$value")
+        ;;
+    esac
+  done <<EOF
+$(lando_base_uri_settings "$checkout")
+EOF
+
+  [ "$name_count" -eq 1 ] || return 0
+  [ "$env_count" -le 1 ] && [ "$config_count" -le 1 ] || return 0
+  case "$base_name" in
+    ''|*[!a-zA-Z0-9-]*) return 0 ;;
+  esac
+
+  # If either explicitly configured URI is custom or ambiguous, preserve
+  # the original Landofile; do not silently override one with the other.
+  if [ "$env_count" -eq 1 ]; then
+    lando_is_canonical_uri "$env_uri" "$base_name" || return 0
+    new_env_uri="${env_uri%%://*}://$local_name.lndo.site"
+  fi
+  if [ "$config_count" -eq 1 ]; then
+    lando_is_canonical_uri "$config_uri" "$base_name" || return 0
+    new_config_uri="${config_uri%%://*}://$local_name.lndo.site"
+  fi
+
+  if [ "$config_count" -eq 1 ]; then
+    printf '\nconfig:\n  drush_uri: "%s"\n' "$new_config_uri"
+  fi
+  if [ "$env_count" -eq 1 ]; then
+    printf '\ntooling:\n  drush:\n    env:\n      DRUSH_OPTIONS_URI: "%s"\n' "$new_env_uri"
+  fi
+}
+
 write_lando_override() {
   local checkout=$1 local_name=$2 file
   file="$checkout/.lando.local.yml"
   [ ! -e "$file" ] || die 'refusing to overwrite existing .lando.local.yml'
   printf 'name: %s\n' "$local_name" > "$file"
+  lando_local_uri_overrides "$checkout" "$local_name" >> "$file"
   add_local_exclude "$checkout" '.lando.local.yml'
 }
 

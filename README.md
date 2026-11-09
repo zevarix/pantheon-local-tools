@@ -145,6 +145,16 @@ When the plan is correct, create the isolated local checkout:
 pantheon-local multidev SITE.ENV --provider ddev --start
 ```
 
+To initialize a **fresh isolated checkout** in the same invocation, opt into the existing Drupal setup pipeline. The initial local database import defaults to the named Multidev, or a different source can be explicitly selected without pulling code or files:
+
+```bash
+pantheon-local multidev SITE.ENV --provider lando --setup --dry-run
+pantheon-local multidev SITE.ENV --provider lando --setup
+pantheon-local multidev SITE.ENV --provider lando --setup --database-source live
+```
+
+Setup starts the provider, runs provider-owned Composer, imports the local database, runs Drush updates, and rebuilds caches. An existing checkout is never overwritten; failures retain the new checkout for diagnosis. See [Multidev workflows](docs/multidev.md).
+
 To create a **new remote Pantheon Multidev** from an existing source environment, use the separate explicit remote-write command and inspect its plan first:
 
 ```bash

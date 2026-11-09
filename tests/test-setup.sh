@@ -96,7 +96,7 @@ reset_log() {
   : > "$MOCK_LOG"
 }
 
-assert_contains "$(bash "$CLI" --help)" 'pantheon-local setup [--provider ddev|lando] [--dry-run]'
+assert_contains "$(bash "$CLI" --help)" 'pantheon-local setup [--provider ddev|lando] [--database-source ENV] [--dry-run]'
 setup_help=$(bash "$CLI" setup --help)
 assert_contains "$setup_help" 'provider-owned composer install'
 assert_contains "$setup_help" 'replaces local database data'
@@ -113,6 +113,9 @@ dry_output=$(cd "$DRY" && bash "$CLI" setup --dry-run)
 assert_contains "$dry_output" 'Pantheon:    example-site.phase1'
 assert_contains "$dry_output" 'pantheon-local pull phase1 --database-only --provider lando'
 assert_contains "$dry_output" 'Dry-run only:'
+database_dry_output=$(cd "$DRY" && bash "$CLI" setup --dry-run --database-source live)
+assert_contains "$database_dry_output" 'pantheon-local pull live --database-only --provider lando'
+assert_contains "$database_dry_output" 'replace local database from live'
 [ ! -e "$MOCK_LOG" ] || fail 'dry-run executed a provider command'
 assert_config_missing "$DRY_STATE" bootstrap.status
 assert_config_missing "$DRY_STATE" workflow.setup.status
@@ -148,6 +151,33 @@ assert_config "$LANDO_STATE" workflow.setup.safe-next-action none
 status_output=$(cd "$LANDO" && bash "$CLI" status)
 assert_contains "$status_output" 'Bootstrap status:  complete'
 assert_contains "$status_output" 'Bootstrap step:    complete'
+
+# Explicit database source changes only the local import. The checkout
+# environment and bootstrap identity remain the original Pantheon Multidev.
+LANDO_LIVE="$TMP_ROOT/lando-live"
+create_repo "$LANDO_LIVE" lando phase2
+LANDO_LIVE_STATE=$(state_path "$LANDO_LIVE")
+reset_log
+live_output=$(cd "$LANDO_LIVE" && bash "$CLI" setup --database-source live)
+assert_line "$MOCK_LOG" 3 'lando|pull|--code=none|--database=live|--files=none'
+assert_contains "$live_output" 'Database:    refreshed from live'
+assert_config "$LANDO_LIVE_STATE" pantheon.environment phase2
+assert_config "$LANDO_LIVE_STATE" bootstrap.environment phase2
+assert_config "$LANDO_LIVE_STATE" data.database-source live
+assert_config_missing "$LANDO_LIVE_STATE" data.files-source
+
+# Invalid/duplicate source selections are refused before any provider step.
+reset_log
+if (cd "$DRY" && bash "$CLI" setup --database-source '' >/dev/null 2>&1); then
+  fail 'setup accepted empty database source'
+fi
+if (cd "$DRY" && bash "$CLI" setup --database-source ../../live >/dev/null 2>&1); then
+  fail 'setup accepted an unsafe database source'
+fi
+if (cd "$DRY" && bash "$CLI" setup --database-source live --database-source test >/dev/null 2>&1); then
+  fail 'setup accepted duplicate database sources'
+fi
+[ ! -s "$MOCK_LOG" ] || fail 'invalid source invoked provider'
 
 # DDEV uses DDEV-owned Composer/Drush and the existing Pantheon database-only pull contract.
 DDEV="$TMP_ROOT/ddev"

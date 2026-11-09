@@ -7,7 +7,7 @@ pantheon-local multidev SITE.ENV
 pantheon-local multidev create SITE.SOURCE NEW_ENV
 ```
 
-The first command is clone-only and never creates a missing Pantheon environment. The second command is an explicit remote-write operation that creates a new Pantheon Multidev and then hands off to the existing clone-only path.
+The first command is clone-only by default and never creates a missing Pantheon environment; its explicit `--setup` flag can also bootstrap the **new local checkout**. The second command is an explicit remote-write operation that creates a new Pantheon Multidev and then hands off to the existing clone-only path.
 
 ## Existing Multidev checkout
 
@@ -20,7 +20,30 @@ Supported options remain:
 --group NAME
 --dry-run
 --start
+--setup
+--database-source ENV (requires --setup)
 ```
+
+### Opt-in first-time Drupal setup
+
+`--setup` explicitly composes the existing five-step [Drupal setup](setup.md) pipeline **after** a successful isolated Multidev checkout:
+
+```text
+provider start → provider-owned Composer install → database-only pull
+→ drush updb -y → drush cr
+```
+
+The initial local database import uses the **newly cloned Multidev** unless `--database-source ENV` selects a different Pantheon environment. An explicit source changes only the local database; Git code and remote Pantheon files/data stay untouched. There is no additional database confirmation because the `--setup` invocation itself opts into initializing the new local environment.
+
+```bash
+pantheon-local multidev example-site.feature1 --provider lando --setup
+pantheon-local multidev example-site.feature1 --provider lando --setup --database-source live
+pantheon-local multidev example-site.feature1 --provider lando --setup --database-source live --dry-run
+```
+
+The combined dry-run previews both the checkout and setup intent without cloning, starting a provider, running Composer/Drush, or pulling data. If `--start` and `--setup` are both passed, **setup owns the one provider start**; it is not repeated. `--start` alone keeps its existing start-only behavior. No container rebuild is performed implicitly.
+
+If bootstrap fails, PLT stops at that step and **retains the created checkout** and its recorded setup failure for diagnosis; it neither retries nor recreates the checkout. Resolve the failure there, then use `pantheon-local setup` (with the same explicit `--database-source`, if one was chosen) from that checkout. The normal occupied-destination guard blocks another Multidev clone. Setup/Composer may change tracked project files, which PLT leaves for review.
 
 A missing `SITE.ENV` never implies permission to create it. Use the distinct `multidev create` command when a remote environment should be created deliberately.
 
@@ -221,7 +244,7 @@ After checkout creation it makes a best-effort, read-only provider inspection:
 
 If the provider can report a URL, it is recorded as local metadata under `.git/pantheon-local-tools/state`. If the provider cannot report one, checkout creation still succeeds and no URL is invented.
 
-A successful explicit `--start` performs URL discovery again after the provider starts and refreshes the recorded URL when available.
+A successful explicit `--start` or opt-in `--setup` performs URL discovery again after the provider starts and refreshes the recorded URL when available.
 
 ## Existing-checkout dry-run
 
@@ -233,7 +256,7 @@ If provider selection is `auto`, dry-run cannot inspect the future checkout. Con
 
 ## Safety / non-goals
 
-The clone-only `pantheon-local multidev SITE.ENV` command does not:
+Without `--setup`, the clone-only `pantheon-local multidev SITE.ENV` command does not:
 
 - create or delete Pantheon Multidev environments;
 - change Pantheon connection modes;

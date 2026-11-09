@@ -38,11 +38,11 @@ for expected in \
   'pantheon-local checkout sync SITE.dev [OPTIONS]' \
   'pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]' \
   'pantheon-local doctor [--timing] [--format default|json] [--record FILE]' \
-  'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]' \
+  'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--setup] [--database-source ENV]' \
   'pantheon-local multidev create SITE.SOURCE NEW_ENV' \
   '[--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]' \
   '[--format default|json] [--record FILE]' \
-  'pantheon-local setup [--provider ddev|lando] [--dry-run]' \
+  'pantheon-local setup [--provider ddev|lando] [--database-source ENV] [--dry-run]' \
   'pantheon-local readiness [--provider ddev|lando]' \
   'pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]' \
   'pantheon-local status [--format default|json] [--record FILE]' \
@@ -124,7 +124,7 @@ assert_contains "$doctor_help" '--format default'
 assert_contains "$doctor_help" '--record FILE'
 
 multidev_help=$(bash "$CLI" multidev --help)
-assert_contains "$multidev_help" 'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start]'
+assert_contains "$multidev_help" 'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--setup] [--database-source ENV]'
 
 multidev_create_help=$(bash "$CLI" multidev create --help)
 assert_contains "$multidev_create_help" 'THIS COMMAND PERFORMS AN EXPLICIT REMOTE PANTHEON WRITE'
@@ -143,8 +143,9 @@ assert_contains "$multidev_create_help" 'Multidev is deliberately preserved.'
 assert_contains "$multidev_create_help" 'never deletes a Pantheon environment'
 
 setup_help=$(bash "$CLI" setup --help)
-assert_contains "$setup_help" 'pantheon-local setup [--provider ddev|lando] [--dry-run]'
+assert_contains "$setup_help" 'pantheon-local setup [--provider ddev|lando] [--database-source ENV] [--dry-run]'
 assert_contains "$setup_help" 'provider-owned composer install'
+assert_contains "$setup_help" '--database-source ENV'
 assert_contains "$setup_help" 'replaces local database data'
 assert_contains "$setup_help" 'checkout-local PLT state'
 assert_contains "$setup_help" 'Setup stops on the first failed step'

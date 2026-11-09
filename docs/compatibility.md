@@ -65,6 +65,8 @@ pantheon-local multidev SITE.ENV
   --group NAME
   --dry-run
   --start
+  --setup
+  --database-source ENV
 
 pantheon-local multidev create SITE.SOURCE NEW_ENV
   --provider ddev|lando
@@ -80,6 +82,7 @@ pantheon-local provider init --provider ddev|lando [--dry-run]
 
 pantheon-local setup
   --provider ddev|lando
+  --database-source ENV
   --dry-run
 
 pantheon-local readiness
@@ -97,7 +100,7 @@ pantheon-local --version
 
 Running `pantheon-local` with no arguments shows the same top-level command reference as `pantheon-local help` / `pantheon-local --help`. Focused help routes such as `pantheon-local config help`, `pantheon-local config init --help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local checkout --help`, `pantheon-local estate status --help`, `pantheon-local doctor --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help` are also supported discovery surfaces.
 
-New commands and additive options may be introduced in a compatible `0.2.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only. Adding `pantheon-local config export` does not make setup, readiness, status, Tag matching, or provider start export configuration implicitly. Adding `pantheon-local multidev create` does not make the existing `pantheon-local multidev SITE.ENV` command create a missing remote environment implicitly.
+New commands and additive options may be introduced in a compatible `0.2.x` release when they do not change existing command meaning. In particular, adding `pantheon-local setup` does not change `pantheon-local multidev --start`: `--start` continues to mean provider start only. Adding `pantheon-local config export` does not make setup, readiness, status, Tag matching, or provider start export configuration implicitly. Adding `pantheon-local multidev create` does not make the existing `pantheon-local multidev SITE.ENV` command create a missing remote environment implicitly. `multidev --setup` explicitly composes the existing local five-step setup on a newly created checkout; omitting it preserves clone-only behavior. `--database-source` is explicit and never silently defaults to Live. `setup --database-source ENV` is additive and retains the existing recorded-environment default.
 
 ## Configuration contract
 

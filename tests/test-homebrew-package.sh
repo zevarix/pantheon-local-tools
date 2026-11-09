@@ -84,7 +84,9 @@ HOMEBREW_NO_AUTO_UPDATE=1 \
 
 PREFIX=$(brew --prefix "$FORMULA_NAME")
 FORMULA_CLI="$PREFIX/bin/pantheon-local"
+FORMULA_ALIAS="$PREFIX/bin/plt"
 [ -x "$FORMULA_CLI" ] || fail 'Homebrew public command is missing'
+[ -x "$FORMULA_ALIAS" ] || fail 'Homebrew short alias is missing'
 [ -x "$PREFIX/libexec/bin/pantheon-local" ] || fail 'Homebrew command payload is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-core" ] || fail 'Homebrew core module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-config-profile" ] || fail 'Homebrew tag-profile module is missing'
@@ -109,6 +111,8 @@ FORMULA_CLI="$PREFIX/bin/pantheon-local"
 expected="pantheon-local $VERSION"
 assert_eq "$("$FORMULA_CLI" --version)" "$expected"
 assert_eq "$("$FORMULA_CLI" version)" "$expected"
+assert_eq "$("$FORMULA_ALIAS" --version)" "$expected"
+assert_eq "$("$FORMULA_ALIAS" version)" "$expected"
 "$FORMULA_CLI" config export --help | grep -F 'MUTATES PROJECT CONFIGURATION FILES' >/dev/null 2>&1 || fail 'Homebrew config export help is unavailable'
 "$FORMULA_CLI" checkout --help | grep -F 'canonical Pantheon Dev Git checkouts' >/dev/null 2>&1 || fail 'Homebrew checkout help is unavailable'
 "$FORMULA_CLI" estate status --help | grep -F 'cross-system overview' >/dev/null 2>&1 || fail 'Homebrew estate status help is unavailable'

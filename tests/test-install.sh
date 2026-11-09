@@ -17,13 +17,17 @@ BIN_DIR="$TMP_ROOT/bin"
 install_output=$(PANTHEON_LOCAL_BIN_DIR="$BIN_DIR" bash "$REPO_ROOT/install.sh")
 
 [ -L "$BIN_DIR/pantheon-local" ] || fail 'installer did not create the command symlink'
+[ -L "$BIN_DIR/plt" ] || fail 'installer did not create the short alias symlink'
 assert_eq "$(readlink "$BIN_DIR/pantheon-local")" "$REPO_ROOT/bin/pantheon-local"
+assert_eq "$(readlink "$BIN_DIR/plt")" "$REPO_ROOT/bin/pantheon-local"
 assert_contains "$install_output" "Installed pantheon-local -> $REPO_ROOT/bin/pantheon-local"
 assert_contains "$install_output" "Command path: $BIN_DIR/pantheon-local"
 
 expected_version="pantheon-local $(cat "$REPO_ROOT/VERSION")"
 assert_eq "$("$BIN_DIR/pantheon-local" --version)" "$expected_version"
 assert_eq "$("$BIN_DIR/pantheon-local" version)" "$expected_version"
+assert_eq "$("$BIN_DIR/plt" --version)" "$expected_version"
+assert_eq "$("$BIN_DIR/plt" version)" "$expected_version"
 
 expected_config="$HOME/.config/pantheon-local-tools/config"
 assert_eq "$("$BIN_DIR/pantheon-local" config path)" "$expected_config"
@@ -34,6 +38,7 @@ assert_eq "$("$BIN_DIR/pantheon-local" config get provider)" 'lando'
 # Reinstalling the same checkout is idempotent.
 PANTHEON_LOCAL_BIN_DIR="$BIN_DIR" bash "$REPO_ROOT/install.sh" >/dev/null
 assert_eq "$(readlink "$BIN_DIR/pantheon-local")" "$REPO_ROOT/bin/pantheon-local"
+assert_eq "$(readlink "$BIN_DIR/plt")" "$REPO_ROOT/bin/pantheon-local"
 
 # The installer must not mutate shell startup files.
 for rc in .bashrc .bash_profile .profile .zshrc .zprofile; do
@@ -57,5 +62,24 @@ if PANTHEON_LOCAL_BIN_DIR="$SYMLINK_COLLISION" bash "$REPO_ROOT/install.sh" >/de
   fail 'installer replaced an unrelated symlink'
 fi
 assert_eq "$(readlink "$SYMLINK_COLLISION/pantheon-local")" "$TMP_ROOT/not-this-repository"
+
+# Preflight checks both names before creating either one.
+ALIAS_COLLISION="$TMP_ROOT/alias-collision-bin"
+mkdir -p "$ALIAS_COLLISION"
+printf 'different plt command\n' > "$ALIAS_COLLISION/plt"
+if PANTHEON_LOCAL_BIN_DIR="$ALIAS_COLLISION" bash "$REPO_ROOT/install.sh" >/dev/null 2>&1; then
+  fail 'installer overwrote an unrelated plt command'
+fi
+assert_eq "$(cat "$ALIAS_COLLISION/plt")" 'different plt command'
+[ ! -e "$ALIAS_COLLISION/pantheon-local" ] || fail 'alias collision left a partial install'
+
+ALIAS_LINK_COLLISION="$TMP_ROOT/alias-link-collision-bin"
+mkdir -p "$ALIAS_LINK_COLLISION"
+ln -s "$TMP_ROOT/not-this-repository" "$ALIAS_LINK_COLLISION/plt"
+if PANTHEON_LOCAL_BIN_DIR="$ALIAS_LINK_COLLISION" bash "$REPO_ROOT/install.sh" >/dev/null 2>&1; then
+  fail 'installer overwrote an unrelated plt symlink'
+fi
+[ ! -e "$ALIAS_LINK_COLLISION/pantheon-local" ] || fail 'alias symlink collision left a partial install'
+assert_eq "$(readlink "$ALIAS_LINK_COLLISION/plt")" "$TMP_ROOT/not-this-repository"
 
 printf 'install tests passed\n'

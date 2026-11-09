@@ -51,13 +51,14 @@ cd pantheon-local-tools
 ./install.sh
 ```
 
-The portable installer links `pantheon-local` into `~/.local/bin` by default and does not edit shell startup files. Set `PANTHEON_LOCAL_BIN_DIR` to choose another destination.
+The portable installer links both `pantheon-local` and the shorter `plt` into `~/.local/bin` by default, without editing shell startup files. Set `PANTHEON_LOCAL_BIN_DIR` to choose another destination. Both names execute the same CLI and share configuration.
 
 Verify the installation and discover the command surface with:
 
 ```bash
 pantheon-local --version
-pantheon-local help
+plt --version
+plt help
 ```
 
 ### Configure and try a Multidev checkout

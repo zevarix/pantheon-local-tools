@@ -62,6 +62,7 @@ install -m 0644 "$REPO_ROOT/LICENSE" "$DOC_ROOT/copyright"
 install -m 0644 "$REPO_ROOT/README.md" "$DOC_ROOT/README.md"
 
 ln -s '../lib/pantheon-local-tools/bin/pantheon-local' "$STAGE/usr/bin/pantheon-local"
+ln -s '../lib/pantheon-local-tools/bin/pantheon-local' "$STAGE/usr/bin/plt"
 
 cat > "$CONTROL_ROOT/control" <<EOF
 Package: pantheon-local-tools

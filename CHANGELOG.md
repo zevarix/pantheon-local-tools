@@ -6,6 +6,9 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+- Added `plt` as a short equivalent CLI name in portable, Homebrew, and Debian installations.
+- Fixed Lando Multidev checkout overrides when a base Landofile hardcodes its own canonical Drush URI; checkout-local URI settings now target the isolated app without overwriting custom domains or tracked configuration (issue #148).
+
 ## 0.2.3 — 2026-10-09
 
 Patch release standardizing guided remediation and consent, adding Doctor external-read timing evidence, and hardening canonical release reproducibility while preserving the established v0.2 command/configuration and structured-output contracts.

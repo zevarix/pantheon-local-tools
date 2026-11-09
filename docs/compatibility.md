@@ -25,6 +25,8 @@ Development snapshots may use a SemVer prerelease value such as `0.2.0-dev`. A t
 
 ## Public command surface
 
+`plt` is an additive shortcut for `pantheon-local`: all arguments, output, and stored configuration are identical. The portable, Homebrew, and Debian packages install both names.
+
 The following commands/options are public for `0.2.x`:
 
 ```text

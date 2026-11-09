@@ -42,10 +42,12 @@ class PantheonLocalTools < Formula
   def install
     libexec.install "bin", "libexec", "VERSION", "LICENSE", "README.md"
     bin.install_symlink libexec/"bin/pantheon-local"
+    bin.install_symlink libexec/"bin/pantheon-local" => "plt"
   end
 
   test do
     assert_match "pantheon-local #{version}", shell_output("#{bin}/pantheon-local --version")
+    assert_match "pantheon-local #{version}", shell_output("#{bin}/plt --version")
 
     ENV["PANTHEON_LOCAL_CONFIG"] = testpath/"config"
     system bin/"pantheon-local", "config", "set", "provider", "lando"

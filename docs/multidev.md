@@ -47,6 +47,33 @@ If bootstrap fails, PLT stops at that step and **retains the created checkout** 
 
 A missing `SITE.ENV` never implies permission to create it. Use the distinct `multidev create` command when a remote environment should be created deliberately.
 
+### Enter the new checkout automatically (optional)
+
+The standalone CLI prints the absolute `Directory` but cannot change the
+directory of its parent shell. Source the optional integration once per Bash
+or zsh terminal session to have `plt multidev ...` and
+`pantheon-local multidev ...` enter the new checkout after **successful**
+clone, optional setup/start, or remote-create handoff:
+
+```bash
+# Homebrew
+source "$(brew --prefix pantheon-local-tools)/libexec/shell/pantheon-local.sh"
+
+# Then run the usual command; success navigates your current shell.
+plt multidev example-site.feature1 --provider lando --setup
+```
+
+For Debian/WSL, source `/usr/lib/pantheon-local-tools/shell/pantheon-local.sh`.
+For a portable source checkout, source its `shell/pantheon-local.sh` file.
+When testing a different source-only candidate, first set
+`PANTHEON_LOCAL_SHELL_BIN` to the candidate CLI's **absolute path**.
+No shell startup files are edited, no extra remote actions are performed, and
+scripts that invoke the executable directly preserve existing behavior.
+Failed operations, cancelled runs, and `--dry-run` never navigate.
+The shell function reads an exact NUL-delimited path emitted only after a
+successful local handoff; it does not scrape terminal prose or use `eval`.
+Without this integration, manually `cd` into the printed `Directory`.
+
 ## Explicit remote Multidev creation
 
 Use:

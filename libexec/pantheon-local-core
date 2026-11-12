@@ -1107,6 +1107,20 @@ multidev_command() {
       printf '\n'
     fi
   fi
+
+  # A sourced, optional shell wrapper can enter this exact destination from
+  # the caller's shell. Report it only after every requested action succeeded.
+  # NUL termination permits paths containing whitespace or newlines; normal
+  # terminal output and structured command contracts remain unchanged.
+  if [ -n "${PANTHEON_LOCAL_CHDIR_FILE:-}" ]; then
+    if [ -f "$PANTHEON_LOCAL_CHDIR_FILE" ] && [ ! -L "$PANTHEON_LOCAL_CHDIR_FILE" ]; then
+      if ! printf '%s\0' "$destination" > "$PANTHEON_LOCAL_CHDIR_FILE"; then
+        printf '%s: checkout succeeded, but shell navigation result could not be written\n' "$PROGRAM_NAME" >&2
+      fi
+    else
+      printf '%s: checkout succeeded, but shell navigation result file was not usable\n' "$PROGRAM_NAME" >&2
+    fi
+  fi
 }
 
 main() {

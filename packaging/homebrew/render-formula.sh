@@ -40,7 +40,7 @@ class PantheonLocalTools < Formula
   license "MIT"
 
   def install
-    libexec.install "bin", "libexec", "VERSION", "LICENSE", "README.md"
+    libexec.install "bin", "libexec", "shell", "VERSION", "LICENSE", "README.md"
     bin.install_symlink libexec/"bin/pantheon-local"
     bin.install_symlink libexec/"bin/pantheon-local" => "plt"
   end

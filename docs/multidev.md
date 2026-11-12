@@ -47,32 +47,36 @@ If bootstrap fails, PLT stops at that step and **retains the created checkout** 
 
 A missing `SITE.ENV` never implies permission to create it. Use the distinct `multidev create` command when a remote environment should be created deliberately.
 
-### Enter the new checkout automatically (optional)
+### Automatically enter the new checkout
 
-The standalone CLI prints the absolute `Directory` but cannot change the
-directory of its parent shell. Source the optional integration once per Bash
-or zsh terminal session to have `plt multidev ...` and
-`pantheon-local multidev ...` enter the new checkout after **successful**
-clone, optional setup/start, or remote-create handoff:
+After PLT is initialized in your interactive Bash/zsh shell, successful
+`plt multidev ...` and `pantheon-local multidev ...` (including
+`--setup` and `multidev create`) change the **calling shell's working
+directory** to the newly created checkout automatically. No manual `cd` step.
 
-```bash
-# Homebrew
-source "$(brew --prefix pantheon-local-tools)/libexec/shell/pantheon-local.sh"
+This uses PLT's installed Bash/zsh function; a standalone executable cannot
+change the directory of its parent terminal. PLT **registers the function for
+future shells automatically** during portable installation, guided
+`config init`, or after a first successful interactive Multidev operation.
+Reopen the terminal once after initial registration; ongoing use requires
+no extra setup. Homebrew/APT package-manager installations do not touch user
+startup files themselves. If the current session predates initial registration,
+the first Multidev operation will still run and report the destination, and
+subsequent newly opened terminals will navigate automatically.
 
-# Then run the usual command; success navigates your current shell.
-plt multidev example-site.feature1 --provider lando --setup
-```
+PLT appends a small, clearly marked block to `~/.zshrc` (honoring
+`ZDOTDIR`) or the appropriate Bash interactive/login startup files.
+It preserves existing configuration, avoids duplicate insertion, refuses
+symlinked or malformed startup files, and can reverse its own addition via
+`pantheon-local shell remove`. A shell startup block uses
+`pantheon-local shell path` to resolve the currently installed version.
 
-For Debian/WSL, source `/usr/lib/pantheon-local-tools/shell/pantheon-local.sh`.
-For a portable source checkout, source its `shell/pantheon-local.sh` file.
-When testing a different source-only candidate, first set
-`PANTHEON_LOCAL_SHELL_BIN` to the candidate CLI's **absolute path**.
-No shell startup files are edited, no extra remote actions are performed, and
-scripts that invoke the executable directly preserve existing behavior.
-Failed operations, cancelled runs, and `--dry-run` never navigate.
-The shell function reads an exact NUL-delimited path emitted only after a
-successful local handoff; it does not scrape terminal prose or use `eval`.
-Without this integration, manually `cd` into the printed `Directory`.
+For diagnostics, `pantheon-local shell path` prints the installed hook and
+`pantheon-local shell install` re-applies it safely. The underlying
+`pantheon-local` executable remains fully compatible with automation:
+noninteractive commands, failures, dry runs, JSON output, and operation records
+do not navigate. The local success path passes an exact NUL-delimited
+destination to the shell function, without `eval` or parsing terminal prose.
 
 ## Explicit remote Multidev creation
 

@@ -6,6 +6,11 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+### Changed
+
+- Automatically register the Multidev directory-navigation shell function during portable installation, guided interactive setup, or the first successful interactive Multidev operation (#152). Bash/zsh startup files receive a bounded, idempotent, removable block; current-terminal behavior remains unchanged until the next interactive shell starts. Homebrew/APT package-manager operations and noninteractive/dry-run commands do not modify startup files. No change to the versioned v0.2.4 release.
+
+
 ## 0.2.4 — 2026-11-12
 
 Patch release candidate incorporating field-tested Multidev bootstrap and Lando Drush URI improvements, a short CLI alias, and two previously integrated maintenance refinements. The 0.2.x defaults, provider boundaries, and structured-output contracts remain unchanged.

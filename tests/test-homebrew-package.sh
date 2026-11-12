@@ -90,6 +90,7 @@ FORMULA_ALIAS="$PREFIX/bin/plt"
 [ -x "$PREFIX/libexec/bin/pantheon-local" ] || fail 'Homebrew command payload is missing'
 [ -r "$PREFIX/libexec/shell/pantheon-local.sh" ] || fail 'Homebrew shell navigation integration is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-core" ] || fail 'Homebrew core module is missing'
+[ -x "$PREFIX/libexec/libexec/pantheon-local-shell-setup" ] || fail 'Homebrew shell setup module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-config-profile" ] || fail 'Homebrew tag-profile module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-config-export" ] || fail 'Homebrew config-export module is missing'
 [ -x "$PREFIX/libexec/libexec/pantheon-local-checkout" ] || fail 'Homebrew checkout module is missing'

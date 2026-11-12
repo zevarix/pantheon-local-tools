@@ -41,6 +41,7 @@ install -d "$APP_ROOT/bin" "$APP_ROOT/libexec" "$APP_ROOT/shell" "$STAGE/usr/bin
 install -m 0755 "$REPO_ROOT/bin/pantheon-local" "$APP_ROOT/bin/pantheon-local"
 install -m 0644 "$REPO_ROOT/shell/pantheon-local.sh" "$APP_ROOT/shell/pantheon-local.sh"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-core" "$APP_ROOT/libexec/pantheon-local-core"
+install -m 0755 "$REPO_ROOT/libexec/pantheon-local-shell-setup" "$APP_ROOT/libexec/pantheon-local-shell-setup"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-config-profile" "$APP_ROOT/libexec/pantheon-local-config-profile"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-config-export" "$APP_ROOT/libexec/pantheon-local-config-export"
 install -m 0755 "$REPO_ROOT/libexec/pantheon-local-checkout" "$APP_ROOT/libexec/pantheon-local-checkout"

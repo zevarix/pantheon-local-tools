@@ -10,6 +10,7 @@ PROVIDER_URL="$SCRIPT_DIR/pantheon-local-provider-url"
 SETUP="$SCRIPT_DIR/pantheon-local-setup"
 TERMINAL_LIB="$SCRIPT_DIR/pantheon-local-terminal"
 INTERACTION_LIB="$SCRIPT_DIR/pantheon-local-interaction"
+SHELL_SETUP="$SCRIPT_DIR/pantheon-local-shell-setup"
 
 [ -r "$TERMINAL_LIB" ] || { printf '%s: terminal presentation module is missing: %s\n' "$PROGRAM_NAME" "$TERMINAL_LIB" >&2; exit 1; }
 [ -r "$INTERACTION_LIB" ] || { printf '%s: interaction module is missing: %s\n' "$PROGRAM_NAME" "$INTERACTION_LIB" >&2; exit 1; }
@@ -386,6 +387,17 @@ config_init_result() {
   printf 'provider=%s\n' "$(config_get provider)"
 }
 
+enable_shell_navigation_for_future_terminals() {
+  # A CLI subprocess cannot change its parent shell. Install the startup
+  # function for subsequent interactive terminals, never during dry runs,
+  # noninteractive automation, or failed checkout/setup actions.
+  [ -t 0 ] && [ -t 1 ] || return 0
+  [ -x "$SHELL_SETUP" ] || return 0
+  if ! "$SHELL_SETUP" install; then
+    printf 'Automatic shell navigation could not be configured. Run pantheon-local shell install to inspect the issue.\n' >&2
+  fi
+}
+
 config_init_interactive() {
   local root provider answer choice default_choice confirm_rc
 
@@ -443,6 +455,7 @@ config_init_interactive() {
   config_set root "$root"
   config_set provider "$provider"
   config_init_result
+  enable_shell_navigation_for_future_terminals
 }
 
 config_init_command() {
@@ -1121,6 +1134,8 @@ multidev_command() {
       printf '%s: checkout succeeded, but shell navigation result file was not usable\n' "$PROGRAM_NAME" >&2
     fi
   fi
+  enable_shell_navigation_for_future_terminals
+
 }
 
 main() {

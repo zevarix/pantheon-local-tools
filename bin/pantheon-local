@@ -11,6 +11,9 @@ Usage:
   pantheon-local COMMAND [OPTIONS]
 
 Commands:
+  pantheon-local shell path|install|remove [--shell zsh|bash]
+      Manage automatic terminal navigation for newly created Multidev checkouts.
+
   pantheon-local config init [--root PATH] [--provider auto|ddev|lando]
       Guided first-run setup. With flags, configure root and/or provider
       non-interactively.
@@ -230,9 +233,15 @@ READINESS="$LIBEXEC_DIR/pantheon-local-readiness"
 SETUP="$LIBEXEC_DIR/pantheon-local-setup"
 STATUS="$LIBEXEC_DIR/pantheon-local-status"
 PROVIDER_INIT="$LIBEXEC_DIR/pantheon-local-provider-init"
+SHELL_SETUP="$LIBEXEC_DIR/pantheon-local-shell-setup"
 
 command=${1:-}
 case "$command" in
+  shell)
+    [ -x "$SHELL_SETUP" ] || die "shell setup module is missing or not executable: $SHELL_SETUP"
+    shift
+    exec "$SHELL_SETUP" "$@"
+    ;;
   version)
     [ "$#" -eq 1 ] || die 'usage: pantheon-local version'
     print_version "$VERSION_FILE"

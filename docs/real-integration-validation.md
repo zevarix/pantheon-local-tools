@@ -244,7 +244,9 @@ The validation checkout should live in the Linux filesystem, such as below `$HOM
 
 ## 2. Fresh clone and portable installer
 
-Use a new disposable directory under the WSL home directory:
+Use a new disposable directory under the WSL home directory. The portable
+installer now automatically registers shell navigation on startup, so keep
+source-only acceptance isolated from the developer's real shell configuration:
 
 ```bash
 VALIDATION_ROOT=$(mktemp -d "$HOME/pantheon-local-tools-validation.XXXXXX")
@@ -254,17 +256,21 @@ git clone https://github.com/zevarix/pantheon-local-tools.git
 cd pantheon-local-tools
 
 git --no-pager status --short --branch
-./install.sh
+mkdir -p "$VALIDATION_ROOT/shell-home"
+HOME="$VALIDATION_ROOT/shell-home"   PANTHEON_LOCAL_BIN_DIR="$VALIDATION_ROOT/bin"   ./install.sh
 ```
 
-If `$HOME/.local/bin` is not already in `PATH`, invoke the installed command by its explicit path for this validation rather than modifying shell startup files merely to make the test pass:
+The installed CLI is in the isolated `bin` directory; the managed Bash/zsh
+startup hook is in the isolated `shell-home`. No real `~/.bashrc`, `~/.zshrc`,
+or login profile is changed by this source-only acceptance.
 
 ```bash
-"$HOME/.local/bin/pantheon-local" --version
-"$HOME/.local/bin/pantheon-local" version
+"$VALIDATION_ROOT/bin/pantheon-local" --version
+"$VALIDATION_ROOT/bin/pantheon-local" version
 ```
 
-Verify both report the repository `VERSION`.
+Verify both report the repository `VERSION`, and check the isolated shell
+startup file contains one managed block.
 
 ## 3. WSL configuration/path contract
 
@@ -345,7 +351,7 @@ cd pantheon-local-tools
 git --no-pager status --short --branch
 
 export PANTHEON_LOCAL_BIN_DIR="$VALIDATION_ROOT/bin"
-./install.sh
+HOME="$VALIDATION_ROOT/shell-home" ./install.sh
 
 "$VALIDATION_ROOT/bin/pantheon-local" --version
 "$VALIDATION_ROOT/bin/pantheon-local" version
@@ -370,7 +376,7 @@ for test in tests/test-*.sh; do
 done
 ```
 
-Verify the installer did not mutate shell startup files and the source checkout remains clean:
+Verify only the disposable shell-home startup files changed and the source checkout remains clean:
 
 ```bash
 git --no-pager status --short --branch

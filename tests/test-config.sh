@@ -8,6 +8,7 @@ trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 export HOME="$TMP_ROOT/home"
 export PANTHEON_LOCAL_CONFIG="$TMP_ROOT/config/pantheon-local-tools/config"
 mkdir -p "$HOME"
+export SHELL=/bin/zsh
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 assert_eq() { [ "$1" = "$2" ] || fail "expected [$2], got [$1]"; }
@@ -111,12 +112,15 @@ rm -f "$PANTHEON_LOCAL_CONFIG"
 output=$(run_guided_init $'\n\n\n')
 assert_contains "$output" 'Save configuration? [y/N]'
 assert_contains "$output" 'Configuration not changed.'
+[ ! -e "$HOME/.zshrc" ] || fail 'cancelled guided init wrote shell startup config'
 [ ! -e "$PANTHEON_LOCAL_CONFIG" ] || fail 'guided config init wrote configuration without explicit consent'
 
 rm -f "$PANTHEON_LOCAL_CONFIG"
 output=$(run_guided_init $'\n\ny\n')
 assert_contains "$output" 'Auto - use the project DDEV or Lando configuration (recommended)'
 assert_contains "$output" 'Configuration saved.'
+[ -f "$HOME/.zshrc" ] || fail 'guided init did not initialize automatic navigation'
+[ "$(grep -Fc '# >>> Pantheon Local Tools shell navigation >>>' "$HOME/.zshrc")" -eq 1 ] || fail 'guided init duplicated navigation hook'
 assert_eq "$(bash "$CLI" config get root)" "$HOME/sites/pantheon"
 assert_eq "$(bash "$CLI" config get provider)" 'auto'
 

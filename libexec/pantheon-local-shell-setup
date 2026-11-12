@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Installs the parent-shell navigation function at interactive shell startup.
+# The CLI and package managers must not modify rc files during version/help,
+# automated commands, or package post-install hooks.
+PROGRAM_NAME='pantheon-local shell'
+START='# >>> Pantheon Local Tools shell navigation >>>'
+END='# <<< Pantheon Local Tools shell navigation <<<'
+SCRIPT_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+HOOK="$SCRIPT_DIR/../shell/pantheon-local.sh"
+
+usage() {
+  cat <<'HELP'
+Usage:
+  pantheon-local shell path
+  pantheon-local shell install [--shell zsh|bash] [--bin-dir DIR]
+  pantheon-local shell remove [--shell zsh|bash]
+
+Shell integration automatically enters newly created Multidev checkouts.
+The installer or guided first run registers the function for future terminals.
+HELP
+}
+
+die() { printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2; exit 1; }
+
+shell_rc_paths() {
+  case "$shell_kind" in
+    zsh)
+      local zdir=${ZDOTDIR:-$HOME}
+      [ -d "$zdir" ] || die "zsh config directory does not exist: $zdir"
+      printf '%s\n' "$zdir/.zshrc"
+      ;;
+    bash)
+      printf '%s\n' "$HOME/.bashrc"
+      # Bash login shells read the first existing profile in this order.
+      # Never create .bash_profile: doing so could shadow an existing .profile.
+      if [ -e "$HOME/.bash_profile" ] || [ -L "$HOME/.bash_profile" ]; then
+        printf '%s\n' "$HOME/.bash_profile"
+      elif [ -e "$HOME/.bash_login" ] || [ -L "$HOME/.bash_login" ]; then
+        printf '%s\n' "$HOME/.bash_login"
+      else
+        printf '%s\n' "$HOME/.profile"
+      fi
+      ;;
+  esac
+}
+
+# Single-quote a runtime path for POSIX-compatible Bash/zsh startup syntax.
+shell_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+managed_block() {
+  printf '%s\n' "$START"
+  if [ -n "$bin_dir" ]; then
+    printf '__plt_bin_dir=%s\n' "$(shell_quote "$bin_dir")"
+    # shellcheck disable=SC2016 # Emit literal shell code for runtime evaluation.
+    printf '%s\n' 'case ":$PATH:" in *":$__plt_bin_dir:"*) ;; *) PATH="$__plt_bin_dir:$PATH"; export PATH ;; esac'
+    printf '%s\n' 'unset __plt_bin_dir'
+  fi
+  cat <<'BLOCK'
+# Bash invoked as POSIX sh can still expose BASH_VERSION. Detect the
+# actual interactive shell name so .profile is safe under /bin/sh.
+case "${0##*/}" in
+  bash|-bash|zsh|-zsh)
+    if command -v pantheon-local >/dev/null 2>&1; then
+      __plt_nav_hook=$(command pantheon-local shell path 2>/dev/null)
+      if [ -r "$__plt_nav_hook" ]; then . "$__plt_nav_hook"; fi
+      unset __plt_nav_hook
+    fi
+    ;;
+esac
+BLOCK
+  printf '%s\n' "$END"
+}
+
+inspect_rc() {
+  local rc=$1
+  [ ! -L "$rc" ] || die "refusing symlink shell startup file: $rc"
+  [ ! -e "$rc" ] || [ -f "$rc" ] || die "shell startup path is not a regular file: $rc"
+  [ ! -e "$rc" ] || [ -w "$rc" ] || die "shell startup file is not writable: $rc"
+  local starts=0 ends=0
+  if [ -f "$rc" ]; then
+    starts=$(grep -Fxc "$START" "$rc" || true)
+    ends=$(grep -Fxc "$END" "$rc" || true)
+  fi
+  case "$starts:$ends" in
+    0:0|1:1) ;;
+    *) die "shell startup file contains an incomplete/duplicate PLT block: $rc" ;;
+  esac
+}
+
+install_shell() {
+  local rc starts
+  local paths=()
+  while IFS= read -r rc; do paths+=("$rc"); done < <(shell_rc_paths)
+  [ "${#paths[@]}" -gt 0 ] || die 'no shell startup file selected'
+  for rc in "${paths[@]}"; do inspect_rc "$rc"; done
+
+  for rc in "${paths[@]}"; do
+    starts=0
+    [ ! -f "$rc" ] || starts=$(grep -Fxc "$START" "$rc" || true)
+    [ "$starts" = 0 ] || continue
+    # Preserve existing content and mode; append only the managed section.
+    if [ ! -e "$rc" ]; then (umask 077; : > "$rc"); fi
+    { printf '\n'; managed_block; } >> "$rc"
+    printf 'Automatic Multidev navigation configured: %s\n' "$rc"
+  done
+}
+
+remove_shell() {
+  local rc starts tmp
+  local paths=()
+  while IFS= read -r rc; do paths+=("$rc"); done < <(shell_rc_paths)
+  for rc in "${paths[@]}"; do inspect_rc "$rc"; done
+  for rc in "${paths[@]}"; do
+    [ -f "$rc" ] || continue
+    starts=$(grep -Fxc "$START" "$rc" || true)
+    [ "$starts" = 1 ] || continue
+    tmp=$(mktemp "${rc}.plt.XXXXXXXX") || die "cannot create temporary file beside $rc"
+    if ! cp -p "$rc" "$tmp"; then rm -f "$tmp"; die "cannot copy $rc"; fi
+    # Only the explicitly marked section is removed.
+    if ! awk -v start="$START" -v end="$END" '
+      $0 == start { skip=1; next }
+      $0 == end { skip=0; next }
+      !skip { print }
+    ' "$rc" > "$tmp"; then
+      rm -f "$tmp"
+      die "cannot rewrite $rc"
+    fi
+    mv "$tmp" "$rc"
+    printf 'Removed PLT shell navigation from %s\n' "$rc"
+  done
+}
+
+[ -n "${HOME:-}" ] || die 'HOME is required'
+command=${1:-}
+shift || true
+case "$command" in
+  path)
+    [ "$#" -eq 0 ] || die 'shell path accepts no options'
+    [ -r "$HOOK" ] || die 'shell integration is unavailable'
+    (cd -- "$(dirname -- "$HOOK")" && printf '%s/%s\n' "$PWD" "$(basename -- "$HOOK")")
+    ;;
+  install|remove)
+    shell_kind=''
+    bin_dir=''
+    case "${SHELL##*/}" in zsh|bash) shell_kind=${SHELL##*/} ;; esac
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --shell) [ "$#" -ge 2 ] || die '--shell requires zsh or bash'; shell_kind=$2; shift 2 ;;
+        --bin-dir)
+          [ "$command" = install ] || die '--bin-dir is only valid with install'
+          [ "$#" -ge 2 ] || die '--bin-dir needs a directory'
+          [ -d "$2" ] || die "binary directory does not exist: $2"
+          bin_dir=$(cd -- "$2" && pwd -P)
+          shift 2
+          ;;
+        *) die "unexpected shell option: $1" ;;
+      esac
+    done
+    case "$shell_kind" in
+      zsh|bash) ;;
+      *) die 'supported interactive shell not detected; use --shell zsh|bash' ;;
+    esac
+    if [ "$command" = install ]; then install_shell; else remove_shell; fi
+    ;;
+  -h|--help|help|'') usage ;;
+  *) die "unknown shell command: $command" ;;
+esac

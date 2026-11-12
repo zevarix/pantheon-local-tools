@@ -12,6 +12,7 @@ die() {
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 SOURCE="$SCRIPT_DIR/bin/pantheon-local"
+SHELL_SETUP="$SCRIPT_DIR/libexec/pantheon-local-shell-setup"
 BIN_DIR=${PANTHEON_LOCAL_BIN_DIR:-"$HOME/.local/bin"}
 
 [ -f "$SOURCE" ] || die "command not found in repository: $SOURCE"
@@ -38,5 +39,14 @@ done
 
 case ":${PATH:-}:" in
   *":$BIN_DIR:"*) ;;
-  *) printf 'Add %s to PATH to run pantheon-local or plt from any directory.\n' "$BIN_DIR" ;;
+  *) printf 'Adding %s to the shell startup PATH for future terminals.\n' "$BIN_DIR" ;;
 esac
+
+# Install the shell function at startup so subsequent interactive terminals
+# automatically enter newly created Multidev checkouts. Respect existing
+# config files and do not make a shell-setup error undo a successful install.
+if [ -x "$SHELL_SETUP" ]; then
+  if ! "$SHELL_SETUP" install --bin-dir "$BIN_DIR"; then
+    printf 'Shell navigation setup was not completed; run pantheon-local shell install to inspect the issue.\n' >&2
+  fi
+fi

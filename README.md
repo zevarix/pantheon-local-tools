@@ -51,7 +51,7 @@ cd pantheon-local-tools
 ./install.sh
 ```
 
-The portable installer links both `pantheon-local` and the shorter `plt` into `~/.local/bin` by default, without editing shell startup files. Set `PANTHEON_LOCAL_BIN_DIR` to choose another destination. Both names execute the same CLI and share configuration.
+The portable installer links both `pantheon-local` and the shorter `plt` into `~/.local/bin` by default. It also appends a small, marked shell-navigation hook (and portable bin path) to the current Bash or zsh startup files so new terminals work automatically. Existing startup content is preserved, and repeated installs do not duplicate the hook. Set `PANTHEON_LOCAL_BIN_DIR` to choose another destination. Both names execute the same CLI and share configuration.
 
 Verify the installation and discover the command surface with:
 
@@ -61,35 +61,32 @@ plt --version
 plt help
 ```
 
-### Optional shell navigation into new Multidev checkouts
+### Automatic terminal navigation after Multidev checkout
 
-A standalone executable cannot change the working directory of its parent
-terminal. To automatically enter new checkouts after a successful
-`plt multidev SITE.ENV` (including `--setup`) or
-`plt multidev create ...`, **source** the optional shell integration in your
-current Bash or zsh session.
+In an initialized **interactive Bash or zsh terminal**, successful
+`plt multidev SITE.ENV`, `plt multidev SITE.ENV --setup`, and
+`plt multidev create SITE.SOURCE ENV` leave you **inside the newly created
+local checkout**. No follow-up `cd` or manual `source` command is needed.
+Dry runs, failures, cancellation, and noninteractive use never navigate.
 
-Homebrew (macOS):
+PLT registers the shell function automatically during portable installation,
+guided `pantheon-local config init`, or the first successful interactive
+Multidev operation. On Homebrew and APT installations, the package manager
+itself does not edit your personal startup files. The first interactive
+setup/Multidev command adds a small, identifiable hook to the appropriate
+`~/.zshrc` or Bash startup file. **Open a new terminal once after initial
+registration**—a child executable cannot change an already-running parent's
+shell functions or directory. Thereafter it works automatically in each new
+terminal, including after package upgrades.
 
-```bash
-source "$(brew --prefix pantheon-local-tools)/libexec/shell/pantheon-local.sh"
-```
+The startup hook resolves the installed PLT at runtime, so it follows
+Homebrew/APT upgrades without hard-coded versioned paths. No `eval`, no
+untrusted output parsing, and no automatic shell startup changes during
+`--version`, dry runs, or noninteractive commands.
 
-Debian, Ubuntu, or WSL:
-
-```bash
-source /usr/lib/pantheon-local-tools/shell/pantheon-local.sh
-```
-
-Portable source checkout: `source /absolute/path/to/pantheon-local-tools/shell/pantheon-local.sh`.
-
-This defines `plt` and `pantheon-local` shell functions in **that shell
-only**. Successful Multidev operations navigate using a NUL-delimited
-checkout path provided directly by PLT, without parsing human-readable output
-or evaluating generated shell code. Dry runs, failures, and unrelated commands
-leave the current directory alone. The standalone commands work normally
-without the integration; no shell profile files are modified. See
-[Multidev workflows](docs/multidev.md).
+You can inspect or manage the startup hook with
+`pantheon-local shell path`, `pantheon-local shell install`, and
+`pantheon-local shell remove`. See [Multidev workflows](docs/multidev.md).
 
 ### Configure and try a Multidev checkout
 

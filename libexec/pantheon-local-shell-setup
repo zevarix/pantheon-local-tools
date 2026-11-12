@@ -60,7 +60,7 @@ managed_block() {
     printf '%s\n' 'unset __plt_bin_dir'
   fi
   cat <<'BLOCK'
-if command -v pantheon-local >/dev/null 2>&1; then
+if [ -n "${BASH_VERSION:-}${ZSH_VERSION:-}" ] && command -v pantheon-local >/dev/null 2>&1; then
   __plt_nav_hook=$(command pantheon-local shell path 2>/dev/null)
   if [ -r "$__plt_nav_hook" ]; then . "$__plt_nav_hook"; fi
   unset __plt_nav_hook

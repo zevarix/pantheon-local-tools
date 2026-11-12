@@ -90,6 +90,12 @@ SHELL=/bin/bash "$CLI" shell install --shell bash >/dev/null
 [ ! -e "$HOME/.bash_profile" ] || fail 'bash_profile shadowed existing profile'
 assert_file_has "$HOME/.profile" 'export PLT_BASH_SENTINEL=kept'
 assert_file_has "$HOME/.bashrc" '# >>> Pantheon Local Tools shell navigation >>>'
+# Bash's .profile can also be read by POSIX sh; do not install Bash-only
+# functions into that unsupported interpreter.
+if [ -x /bin/sh ]; then
+  sh_result=$(/bin/sh -c '. "$HOME/.profile"; command -V plt' 2>&1)
+  case "$sh_result" in *'function'*) fail 'POSIX sh loaded Bash-only navigation function' ;; esac
+fi
 if [ -x /bin/bash ]; then
   /bin/bash --noprofile --rcfile "$HOME/.bashrc" -ic '
     type -t plt | grep -Fx function >/dev/null || exit 1

@@ -93,8 +93,16 @@ assert_file_has "$HOME/.bashrc" '# >>> Pantheon Local Tools shell navigation >>>
 # Bash's .profile can also be read by POSIX sh; do not install Bash-only
 # functions into that unsupported interpreter.
 if [ -x /bin/sh ]; then
-  sh_result=$(/bin/sh -c '. "$HOME/.profile"; command -V plt' 2>&1)
-  case "$sh_result" in *'function'*) fail 'POSIX sh loaded Bash-only navigation function' ;; esac
+  sh_result=$(/bin/sh -c '. "$HOME/.profile"; printf "PROFILE_SOURCED\n"; command -V plt || :' 2>&1)
+  case "$sh_result" in
+    *'not a valid identifier'*|*'function'*)
+      fail 'POSIX sh attempted to load Bash-only navigation function'
+      ;;
+  esac
+  case "$sh_result" in
+    *PROFILE_SOURCED*) ;;
+    *) fail 'POSIX sh did not finish sourcing .profile' ;;
+  esac
 fi
 if [ -x /bin/bash ]; then
   /bin/bash --noprofile --rcfile "$HOME/.bashrc" -ic '

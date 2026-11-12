@@ -34,6 +34,11 @@ chmod +x "$PANTHEON_LOCAL_SHELL_BIN"
 
 # shellcheck disable=SC2016 # Intentional shell script passed to Bash and zsh.
 for user_shell in /bin/bash /bin/zsh; do
+  # Ubuntu CI does not ship zsh; the macOS CI job exercises both shells.
+  if [ ! -x "$user_shell" ]; then
+    printf 'optional shell not installed: %s (skipped)\n' "$user_shell"
+    continue
+  fi
   "$user_shell" -c '
     set -eu
     . "$NAV_TEST_LIB"

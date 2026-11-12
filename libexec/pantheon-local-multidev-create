@@ -433,6 +433,11 @@ multidev_create_command() {
   printf '\n'
   plt_term_style 1 success "Remote creation and local Multidev handoff completed for $target."
   printf '\n'
+  if [ -t 0 ] && [ -t 1 ] && [ -x "$SCRIPT_DIR/pantheon-local-shell-setup" ]; then
+    if ! "$SCRIPT_DIR/pantheon-local-shell-setup" install; then
+      printf '%s: automatic shell navigation could not be configured. Run pantheon-local shell install to inspect the issue.\n' "$PROGRAM_NAME" >&2
+    fi
+  fi
 }
 
 multidev_create_command "$@"

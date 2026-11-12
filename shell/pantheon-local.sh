@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# Optional interactive Bash/zsh integration for Pantheon Local Tools.
-# Source this file; do not execute it. Nothing is added to shell startup files.
+# Interactive Bash/zsh integration for Pantheon Local Tools.
+# Registered automatically at shell startup by the PLT installer/first run.
 #
 # Both 'plt' and 'pantheon-local' will enter the newly created local directory
 # after successful 'multidev' checkout or 'multidev create' operations.

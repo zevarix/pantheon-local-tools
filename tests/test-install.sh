@@ -10,6 +10,7 @@ assert_eq() { [ "$1" = "$2" ] || fail "expected [$2], got [$1]"; }
 assert_contains() { case "$1" in *"$2"*) ;; *) fail "expected output to contain [$2], got [$1]" ;; esac; }
 
 export HOME="$TMP_ROOT/home"
+export SHELL=/bin/zsh
 unset XDG_CONFIG_HOME PANTHEON_LOCAL_CONFIG
 mkdir -p "$HOME"
 
@@ -40,9 +41,11 @@ PANTHEON_LOCAL_BIN_DIR="$BIN_DIR" bash "$REPO_ROOT/install.sh" >/dev/null
 assert_eq "$(readlink "$BIN_DIR/pantheon-local")" "$REPO_ROOT/bin/pantheon-local"
 assert_eq "$(readlink "$BIN_DIR/plt")" "$REPO_ROOT/bin/pantheon-local"
 
-# The installer must not mutate shell startup files.
-for rc in .bashrc .bash_profile .profile .zshrc .zprofile; do
-  [ ! -e "$HOME/$rc" ] || fail "installer unexpectedly created or changed $HOME/$rc"
+# The portable installer initializes the user shell automatically, once.
+[ -f "$HOME/.zshrc" ] || fail 'installer did not configure automatic navigation'
+[ "$(grep -Fc '# >>> Pantheon Local Tools shell navigation >>>' "$HOME/.zshrc")" -eq 1 ] || fail 'installer duplicated shell hook'
+for rc in .bashrc .bash_profile .profile .zprofile; do
+  [ ! -e "$HOME/$rc" ] || fail "installer unexpectedly changed unrelated $rc"
 done
 
 # An unrelated existing regular file is never overwritten.

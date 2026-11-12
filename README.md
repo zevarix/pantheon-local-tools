@@ -61,6 +61,36 @@ plt --version
 plt help
 ```
 
+### Optional shell navigation into new Multidev checkouts
+
+A standalone executable cannot change the working directory of its parent
+terminal. To automatically enter new checkouts after a successful
+`plt multidev SITE.ENV` (including `--setup`) or
+`plt multidev create ...`, **source** the optional shell integration in your
+current Bash or zsh session.
+
+Homebrew (macOS):
+
+```bash
+source "$(brew --prefix pantheon-local-tools)/libexec/shell/pantheon-local.sh"
+```
+
+Debian, Ubuntu, or WSL:
+
+```bash
+source /usr/lib/pantheon-local-tools/shell/pantheon-local.sh
+```
+
+Portable source checkout: `source /absolute/path/to/pantheon-local-tools/shell/pantheon-local.sh`.
+
+This defines `plt` and `pantheon-local` shell functions in **that shell
+only**. Successful Multidev operations navigate using a NUL-delimited
+checkout path provided directly by PLT, without parsing human-readable output
+or evaluating generated shell code. Dry runs, failures, and unrelated commands
+leave the current directory alone. The standalone commands work normally
+without the integration; no shell profile files are modified. See
+[Multidev workflows](docs/multidev.md).
+
 ### Configure and try a Multidev checkout
 
 For guided first-run setup, run:

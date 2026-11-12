@@ -93,10 +93,12 @@ bash "$CLI" config set root "$ROOT"
 bash "$CLI" config set provider lando
 
 # Planning never creates a checkout, starts a provider, or imports data.
-dry=$(bash "$CLI" multidev example-site.feature1 --dry-run --setup)
+: > "$TMP/nav-destination"
+dry=$(PANTHEON_LOCAL_CHDIR_FILE="$TMP/nav-destination" bash "$CLI" multidev example-site.feature1 --dry-run --setup)
 contains "$dry" 'Opt-in Drupal setup plan'
 contains "$dry" 'initial local import from feature1'
 [ ! -e "$ROOT/multidev/example-site-feature1" ] || fail 'dry-run cloned a checkout'
+[ ! -s "$TMP/nav-destination" ] || fail 'dry-run emitted a shell navigation destination'
 [ ! -s "$MOCK_LOG" ] || fail 'dry-run executed provider'
 live_dry=$(bash "$CLI" multidev example-site.feature2 --dry-run --setup --database-source live)
 contains "$live_dry" 'initial local import from live'
@@ -112,8 +114,11 @@ if bash "$CLI" multidev example-site.feature1 --setup --start --dry-run >/dev/nu
 
 # Standard --setup performs the existing five-step setup exactly once in the
 # newly created checkout. Record DB source separately from checkout identity.
-output=$(bash "$CLI" multidev example-site.feature1 --setup)
+output=$(PANTHEON_LOCAL_CHDIR_FILE="$TMP/nav-destination" bash "$CLI" multidev example-site.feature1 --setup)
 DEST="$ROOT/multidev/example-site-feature1"
+NAV_DEST=''
+IFS= read -r -d '' NAV_DEST < "$TMP/nav-destination" || fail 'missing NUL-delimited successful navigation result'
+[ "$NAV_DEST" = "$DEST" ] || fail 'navigation result differs from exact new checkout directory'
 STATE="$DEST/.git/pantheon-local-tools/state"
 contains "$output" 'Drupal bootstrap complete'
 line_is "$MOCK_LOG" 1 "$DEST|lando|start"
@@ -155,7 +160,9 @@ clean "$LIVE"
 # or automatic cleanup of the source tree occurs.
 : > "$MOCK_LOG"
 export MOCK_FAIL_MATCH='|lando|pull|'
-if bash "$CLI" multidev example-site.feature3 --setup --database-source test > "$TMP/fail.out" 2>&1; then fail 'pull failure ignored'; fi
+: > "$TMP/nav-destination"
+if PANTHEON_LOCAL_CHDIR_FILE="$TMP/nav-destination" bash "$CLI" multidev example-site.feature3 --setup --database-source test > "$TMP/fail.out" 2>&1; then fail 'pull failure ignored'; fi
+[ ! -s "$TMP/nav-destination" ] || fail 'failed setup emitted a navigation result'
 MOCK_FAIL_MATCH=''
 FAILED="$ROOT/multidev/example-site-feature3"
 FAILED_STATE="$FAILED/.git/pantheon-local-tools/state"

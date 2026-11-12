@@ -248,7 +248,8 @@ assert_file_not_contains "$MOCK_TERMINUS_LOG" 'multidev:create'
 
 # Successful creation is verified, then handed to the existing transactional checkout path.
 : > "$MOCK_TERMINUS_LOG"
-if ! success_output=$(bash "$CLI" multidev create example-site.live feature1 --provider lando --group migration --yes 2>&1); then
+: > "$TMP_ROOT/nav-destination"
+if ! success_output=$(PANTHEON_LOCAL_CHDIR_FILE="$TMP_ROOT/nav-destination" bash "$CLI" multidev create example-site.live feature1 --provider lando --group migration --yes 2>&1); then
   fail "successful Multidev creation/handoff failed unexpectedly: $success_output"
 fi
 assert_contains "$success_output" 'Confirmation:          acknowledged by --yes'
@@ -259,6 +260,9 @@ assert_contains "$success_output" 'Remote creation and local Multidev handoff co
 assert_env_present feature1
 assert_file_contains "$MOCK_TERMINUS_LOG" 'terminus|multidev:create|example-site.live|feature1|--yes'
 SUCCESS_DEST="$LOCAL_ROOT/multidev/migration/example-site-feature1"
+NAV_DEST=''
+IFS= read -r -d '' NAV_DEST < "$TMP_ROOT/nav-destination" || fail 'remote-create local handoff omitted NUL-delimited navigation result'
+[ "$NAV_DEST" = "$SUCCESS_DEST" ] || fail 'remote-create navigation result differs from exact checkout directory'
 [ -d "$SUCCESS_DEST/.git" ] || fail 'successful remote creation did not produce local checkout'
 [ -f "$SUCCESS_DEST/.lando.local.yml" ] || fail 'existing Lando checkout path did not create local override'
 [ ! -f "$SUCCESS_DEST/.ddev/config.local.yaml" ] || fail 'wrong provider override was created'
@@ -316,10 +320,12 @@ unset MOCK_VERIFY_MISSING
 export MOCK_GIT_URL="$BROKEN_REPO"
 : > "$MOCK_TERMINUS_LOG"
 set +e
-handoff_output=$(bash "$CLI" multidev create example-site.live feature6 --provider lando --group retry --yes 2>&1)
+: > "$TMP_ROOT/nav-destination"
+handoff_output=$(PANTHEON_LOCAL_CHDIR_FILE="$TMP_ROOT/nav-destination" bash "$CLI" multidev create example-site.live feature6 --provider lando --group retry --yes 2>&1)
 handoff_status=$?
 set -e
 [ "$handoff_status" -ne 0 ] || fail 'broken local provider fixture unexpectedly succeeded'
+[ ! -s "$TMP_ROOT/nav-destination" ] || fail 'failed remote-create handoff emitted navigation result'
 assert_env_present feature6
 assert_contains "$handoff_output" 'remote Multidev example-site.feature6 was created successfully, but local checkout/start failed'
 assert_contains "$handoff_output" 'pantheon-local multidev example-site.feature6 --provider lando --group retry'

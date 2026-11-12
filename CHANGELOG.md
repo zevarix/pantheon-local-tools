@@ -6,12 +6,13 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
-## 0.2.4 — 2026-11-09
+## 0.2.4 — 2026-11-12
 
 Patch release candidate incorporating field-tested Multidev bootstrap and Lando Drush URI improvements, a short CLI alias, and two previously integrated maintenance refinements. The 0.2.x defaults, provider boundaries, and structured-output contracts remain unchanged.
 
 ### Added
 
+- Added an optional sourced Bash/zsh integration so successful Multidev clone/setup and remote-create handoffs navigate the invoking terminal to the exact local checkout. Failures, dry runs, and other commands leave the directory unchanged; no shell startup files are modified (#152).
 - Added `plt` as an equivalent command name through the portable installer, Homebrew, and Debian packages. Both names share the same configuration and CLI behavior.
 - Added opt-in `multidev --setup` to bootstrap a newly cloned local checkout using the existing provider start, Composer install, database-only pull, `drush updb`, and cache rebuild steps (#147). `--database-source ENV` selects a different local database source explicitly; the cloned Multidev remains the default and its Git branch, files, and Pantheon data are not changed.
 - Added read-only release-candidate preflight that verifies the intended version, changelog date, exact source commit, clean Git state, and local annotated-tag conditions without publishing or modifying release state (#143).

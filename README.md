@@ -307,8 +307,11 @@ pantheon-local --version
 Every public command and subcommand accepts `-h` or `--help`, including
 before required arguments. `pantheon-local help COMMAND [SUBCOMMAND ...]` opens
 the same focused reference without executing the operation. Interactive help
-uses the shared terminal styling; redirected output, `NO_COLOR`, and
-`TERM=dumb` remain readable plain text. For example:
+uses the shared terminal styling, wraps to the terminal width, and aligns
+continued option descriptions (tested at 60, 80, and 120 columns). `NO_COLOR`
+and `TERM=dumb` use the same readable wrapping without ANSI escapes. Piped or
+redirected help remains byte-for-byte plain text, with no cursor control or
+changes to JSON/operation-record output. For example:
 
 ```bash
 pantheon-local help multidev

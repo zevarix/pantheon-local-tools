@@ -307,20 +307,42 @@ done
 [ ! -e "$help_fixture/private" ] || fail 'help created user configuration'
 [ ! -e "$help_fixture/home/.bashrc" ] || fail 'help modified shell startup'
 
-# Terminal styling is optional and belongs to the shared presentation helper.
-# Never emit escape codes into redirected output, NO_COLOR or TERM=dumb.
-python3 - "$CLI" <<'PYTTY'
+# Exercise every public help route at common TTY widths and ensure plain-text
+# consumers retain exactly the same bytes regardless of terminal settings.
+printf '%s\n' "$help_cases" > "$help_fixture/help-routes"
+python3 - "$CLI" "$help_fixture" <<'PYTTY'
 import errno
+import fcntl
 import os
 import pty
+import re
+import shlex
+import struct
 import subprocess
 import sys
+import termios
+import unicodedata
 
-cli = sys.argv[1]
-def run_pty(env):
+cli, fixture = sys.argv[1:3]
+with open(os.path.join(fixture, 'help-routes'), encoding='utf-8') as source:
+    routes = [shlex.split(line.split('|', 1)[0]) for line in source if line.strip()]
+if len(routes) != 41:
+    raise SystemExit('FAIL: TTY help matrix does not cover 41 public routes')
+
+base = dict(os.environ)
+base['HOME'] = os.path.join(fixture, 'home')
+base['PANTHEON_LOCAL_CONFIG'] = os.path.join(fixture, 'private', 'config')
+base['HELP_FIXTURE_INVOCATIONS'] = os.path.join(fixture, 'invocations')
+base['PATH'] = os.path.join(fixture, 'bin') + os.pathsep + base['PATH']
+base['TERM'] = 'xterm-256color'
+base.pop('NO_COLOR', None)
+ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+
+def run_pty(args, width, env):
     master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, width, 0, 0))
     try:
-        child = subprocess.Popen(['bash', cli, 'multidev', '--help'],
+        child = subprocess.Popen(['bash', cli, *args, '--help'],
                                  stdin=subprocess.DEVNULL, stdout=slave,
                                  stderr=slave, env=env)
         os.close(slave)
@@ -337,29 +359,88 @@ def run_pty(env):
                 break
             data.extend(chunk)
         if child.wait(timeout=10) != 0:
-            raise SystemExit('FAIL: TTY help exited nonzero')
+            raise SystemExit('FAIL: TTY help failed for %r' % args)
         return bytes(data)
     finally:
         os.close(master)
         if slave >= 0:
             os.close(slave)
 
-env = os.environ.copy()
-env['TERM'] = 'xterm-256color'
-env.pop('NO_COLOR', None)
-colored = run_pty(env)
-if b'\x1b[' not in colored or b'Usage:' not in colored:
-    raise SystemExit('FAIL: interactive help lost shared terminal styling')
-for adjustment in ({'NO_COLOR': '1'}, {'TERM': 'dumb'}):
-    plain_env = dict(env, **adjustment)
-    plain = run_pty(plain_env)
-    if b'\x1b[' in plain or b'Usage:' not in plain:
-        raise SystemExit('FAIL: help ignored NO_COLOR or TERM=dumb')
-plain = subprocess.run(['bash', cli, 'multidev', '--help'],
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                       env=env, check=True)
-if b'\x1b[' in plain.stdout or plain.stderr:
-    raise SystemExit('FAIL: redirected help contains ANSI or stderr')
+def display_width(row):
+    count = 0
+    for c in row:
+        if unicodedata.combining(c) or c in ('\u200d', '\ufe0f'):
+            continue
+        count += 2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1
+    return count
+
+def check_tty(args, width, env, expect_color):
+    raw = run_pty(args, width, env)
+    if (b'\x1b[' in raw) != expect_color:
+        raise SystemExit('FAIL: TTY help styling mismatch for %r at %d columns' % (args, width))
+    plain = ansi.sub('', raw.decode('utf-8', errors='replace'))
+    overflow = [(display_width(row), row) for row in plain.splitlines()
+                if display_width(row) >= width]
+    if overflow:
+        raise SystemExit('FAIL: %d-column help overflow for %r: %r' %
+                         (width, args, overflow[0]))
+    if 'pantheon-local' not in plain:
+        raise SystemExit('FAIL: TTY help missing command syntax for %r' % args)
+    return raw
+
+pretty_60 = {}
+for route in routes:
+    for width in (60, 80, 120):
+        raw = check_tty(route, width, base, True)
+        if width == 60:
+            pretty_60[tuple(route)] = ansi.sub('', raw.decode('utf-8', errors='replace'))
+
+# Prove headings across child-provided help as well as the top-level index.
+colored = run_pty(['checkout'], 80, base)
+for heading in (b'\x1b[1mSelection:\x1b[0m',
+                b'\x1b[1mBehavior:\x1b[0m',
+                b'\x1b[1mSafety:\x1b[0m',
+                b'\x1b[1mOutput:\x1b[0m'):
+    if heading not in colored:
+        raise SystemExit('FAIL: missing shared heading emphasis: %r' % heading)
+for args in (['config', 'init'], ['provider', 'init']):
+    raw = run_pty(args, 80, base)
+    if b'\x1b[1mUsage:\x1b[0m' not in raw:
+        raise SystemExit('FAIL: inline Usage heading has no terminal emphasis')
+
+# Color opt-out and simple terminals still wrap without escape sequences.
+representative = (['help'], ['config', 'init'], ['provider', 'init'],
+                  ['checkout'], ['doctor'], ['multidev'],
+                  ['multidev', 'create'], ['config', 'export'],
+                  ['readiness'], ['shell', 'install'], ['status'])
+for setting in ({'NO_COLOR': '1'}, {'NO_COLOR': ''}, {'TERM': 'dumb'}):
+    env = dict(base, **setting)
+    for args in representative:
+        for width in (60, 80, 120):
+            check_tty(args, width, env, False)
+
+# Pipes remain byte-for-byte plain, including under NO_COLOR and TERM=dumb.
+for route in routes:
+    outputs = []
+    for env in (base, dict(base, NO_COLOR='1'), dict(base, TERM='dumb')):
+        run = subprocess.run(['bash', cli, *route, '--help'],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, env=env, check=True,
+                             timeout=10)
+        if b'\x1b[' in run.stdout or run.stderr:
+            raise SystemExit('FAIL: redirected help changed its stream contract')
+        outputs.append(run.stdout)
+    if not outputs[0] or len(set(outputs)) != 1:
+        raise SystemExit('FAIL: redirected help changed with terminal settings')
+    # Wrapping and paragraph reflow may alter whitespace, never meaning:
+    # all non-whitespace characters must appear unchanged and in order.
+    source_text = outputs[0].decode('utf-8')
+    tty_text = pretty_60[tuple(route)]
+    if ''.join(source_text.split()) != ''.join(tty_text.split()):
+        raise SystemExit('FAIL: TTY help reflow changed source content for %r' % route)
 PYTTY
+
+[ ! -e "$help_fixture/invocations" ] || fail 'TTY help invoked an external tool'
+[ ! -e "$help_fixture/private" ] || fail 'TTY help created user configuration'
 
 printf 'help tests passed\n'

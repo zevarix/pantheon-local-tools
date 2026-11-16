@@ -74,7 +74,7 @@ Options:
   --setup               Bootstrap the new local checkout: start the provider,
                         install Composer dependencies, import its database,
                         run Drupal database updates, and rebuild caches.
-  --database-source ENV Override the setup database source (default: SITE.ENV).
+  --database-source ENV  Override the setup database source (default: SITE.ENV).
                         Requires --setup; replaces local database data.
 
 Use `pantheon-local multidev create --help` to create a remote Multidev.

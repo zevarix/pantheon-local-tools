@@ -128,42 +128,171 @@ plt_term_clear_to_end() {
   printf '\033[K'
 }
 
-# Render all CLI help through the same optional terminal presentation layer.
-# Plain text is preserved byte-for-byte for pipes, NO_COLOR and TERM=dumb.
-# Help output never animates, clears the screen, or writes to stderr.
+# Render public CLI help through the shared presentation layer.
+# Redirected/pipe output remains byte-for-byte unchanged. TTY output is
+# width-aware even without color (NO_COLOR or TERM=dumb), with no cursor control.
+plt_term_help_columns() {
+  local dimensions columns
+  # stderr remains the terminal while the help text is piped to this function.
+  dimensions=$(stty size <&2 2>/dev/null || true)
+  columns=${dimensions##* }
+  case "$columns" in
+    ''|*[!0-9]*) columns=${COLUMNS:-80} ;;
+  esac
+  case "$columns" in
+    ''|*[!0-9]*) columns=80 ;;
+  esac
+  [ "$columns" -gt 0 ] || columns=80
+  printf '%s' "$columns"
+}
+
+plt_term_help_segment() {
+  local kind=$1 prefix=$2 body=$3 continued=$4 option
+  printf '%s' "$prefix"
+  case "$kind" in
+    heading) plt_term_style 1 heading "$body" ;;
+    command) plt_term_style 1 active "$body" ;;
+    option)
+      if [ "$continued" = false ]; then
+        option=${body%%[[:space:]]*}
+        plt_term_style 1 active "$option"
+        printf '%s' "${body#"$option"}"
+      else
+        printf '%s' "$body"
+      fi
+      ;;
+    inline-usage)
+      if [ "$continued" = false ]; then
+        plt_term_style 1 heading 'Usage:'
+        printf ' '
+        plt_term_style 1 active "${body#Usage: }"
+      else
+        plt_term_style 1 active "$body"
+      fi
+      ;;
+    warning) plt_term_style 1 warning "$body" ;;
+    *) printf '%s' "$body" ;;
+  esac
+  printf '\n'
+}
+
+# Existing help sources include manual line breaks aimed at wide terminals.
+# Merge only consecutive prose lines (unindented paragraphs or deep-indented
+# descriptions), never command forms, options, headings, bullets, or examples.
+plt_term_help_can_join() {
+  local previous=$1 next=$2 before after
+  [ -n "$previous" ] && [ -n "$next" ] || return 1
+  before=${previous%%[! ]*}
+  after=${next%%[! ]*}
+  # Join manually aligned continuation lines to their option/field row.
+  # The main row must have an inline description, not just an option label.
+  if [ "$before" = '  ' ] && [ "${#after}" -ge 6 ]; then
+    case "$previous" in
+      '  pantheon-local '*|'  * '*) ;;
+      '  '*"  "*) return 0 ;;
+    esac
+  fi
+  [ "$before" = "$after" ] || return 1
+  [ -z "$before" ] || [ "${#before}" -ge 6 ] || return 1
+  case "$previous" in
+    'Pantheon Local Tools'|*':'|'Usage: '*|'THIS COMMAND '*|'WARNING:'*|\
+    '  pantheon-local '*|'  --'*|'  [--'*|'    [--'*|'  * '*) return 1 ;;
+  esac
+  case "$next" in
+    'Pantheon Local Tools'|*':'|'Usage: '*|'THIS COMMAND '*|'WARNING:'*|\
+    '  pantheon-local '*|'  --'*|'  [--'*|'    [--'*|'  * '*) return 1 ;;
+  esac
+}
+
+plt_term_help_render_line() {
+  local line=$1 max_line=$2 prefix body continuation kind continued
+  local available chunk pos separator part i
+  if [ -z "$line" ]; then
+    printf '\n'
+    return 0
+  fi
+
+  prefix=${line%%[! ]*}
+  body=${line#"$prefix"}
+  continuation=$prefix
+  kind=normal
+  case "$line" in
+    '  pantheon-local '*) kind='command'; continuation='    ' ;;
+    '  --'*) kind=option; continuation='      ' ;;
+    'Usage: pantheon-local '*) kind=inline-usage; continuation='  ' ;;
+    'Pantheon Local Tools'|[![:space:]]*:) kind=heading ;;
+    'THIS COMMAND '*|'WARNING:'*) kind=warning ;;
+    '  * '*) continuation='    ' ;;
+  esac
+  # Inline option/field descriptions use a hanging indent when the label
+  # fits comfortably. This keeps wrapped text distinct from the next option.
+  if [ "${#prefix}" -eq 2 ] && [ "$kind" != 'command' ]; then
+    case "$body" in
+      *'  '*)
+        local label delimiter spaces aligned
+        label=${body%%  *}
+        delimiter=${body#"$label"}
+        spaces=${delimiter%%[! ]*}
+        aligned=$((${#prefix} + ${#label} + ${#spaces}))
+        if [ "$aligned" -gt 2 ] && [ "$aligned" -lt "$((max_line / 2))" ]; then
+          printf -v continuation '%*s' "$aligned" ''
+        fi
+        ;;
+    esac
+  fi
+  continued=false
+
+  while [ $((${#prefix} + ${#body})) -gt "$max_line" ]; do
+    available=$((max_line - ${#prefix}))
+    [ "$available" -gt 0 ] || available=1
+    chunk=${body:0:$available}
+    pos=0
+    separator=kept
+    for ((i=${#chunk}-1; i>0; i--)); do
+      case "${chunk:i:1}" in
+        ' ') pos=$i; separator=space; break ;;
+        '|'|','|';') pos=$((i + 1)); break ;;
+      esac
+    done
+    [ "$pos" -gt 0 ] || pos=$available
+    part=${body:0:$pos}
+    body=${body:$pos}
+    if [ "$separator" = space ]; then
+      while [ "${body:0:1}" = ' ' ]; do body=${body:1}; done
+    fi
+    plt_term_help_segment "$kind" "$prefix" "$part" "$continued"
+    prefix=$continuation
+    continued=true
+  done
+  plt_term_help_segment "$kind" "$prefix" "$body" "$continued"
+}
+
 plt_term_help_render() {
-  local line option rest
-  if ! plt_term_color_enabled 1; then
+  local columns max_line line pending='' has_pending=false indent
+
+  if [ ! -t 1 ]; then
     cat
     return 0
   fi
 
+  columns=$(plt_term_help_columns)
+  max_line=$((columns - 1))
+  [ "$max_line" -ge 16 ] || max_line=16
+
   while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      'Pantheon Local Tools'|'Usage:'|'Commands:'|'Options:'|'Properties:'|\
-      'Examples:'|'Help:'|'Configuration keys:'|'Tag-profile properties:'|\
-      'Provider selection:'|'Preflight and mutation order:'|'Selection:'|\
-      'Current strategy support:')
-        plt_term_style 1 heading "$line"
-        ;;
-      '  pantheon-local '*)
-        printf '  '
-        plt_term_style 1 active "${line#  }"
-        ;;
-      '  --'*)
-        rest=${line#  }
-        option=${rest%%[[:space:]]*}
-        printf '  '
-        plt_term_style 1 active "$option"
-        printf '%s' "${rest#"$option"}"
-        ;;
-      'THIS COMMAND '*|'WARNING:'*)
-        plt_term_style 1 warning "$line"
-        ;;
-      *)
-        printf '%s' "$line"
-        ;;
-    esac
-    printf '\n'
+    if [ "$has_pending" = true ]; then
+      if plt_term_help_can_join "$pending" "$line"; then
+        indent=${line%%[! ]*}
+        pending="$pending ${line#"$indent"}"
+        continue
+      fi
+      plt_term_help_render_line "$pending" "$max_line"
+    fi
+    pending=$line
+    has_pending=true
   done
+
+  if [ "$has_pending" = true ]; then
+    plt_term_help_render_line "$pending" "$max_line"
+  fi
 }

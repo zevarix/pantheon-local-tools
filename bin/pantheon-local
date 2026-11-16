@@ -293,8 +293,7 @@ case "$command" in
 
     case "${2:-}" in
       -h|--help|help)
-        usage
-        exit 0
+        exec "$CORE" config --help
         ;;
     esac
     if [ "${2:-}" = 'tag' ]; then

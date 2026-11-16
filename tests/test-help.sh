@@ -72,6 +72,10 @@ assert_contains "$config_help" 'pantheon-local config init [--root PATH] [--prov
 assert_contains "$config_help" 'pantheon-local config tag set TAG DIRECTORY'
 assert_contains "$config_help" 'pantheon-local config tag profile set TAG PROPERTY VALUE'
 assert_contains "$config_help" 'pantheon-local config export [--provider ddev|lando] [--yes]'
+case "$config_help" in
+  *'pantheon-local multidev SITE.ENV'*) fail 'config help must not show Multidev syntax' ;;
+esac
+assert_eq "$config_help" "$(bash "$CLI" config --help)"
 
 tag_help=$(bash "$CLI" config tag help)
 assert_contains "$tag_help" 'pantheon-local config tag profile list [TAG]'
@@ -125,6 +129,13 @@ assert_contains "$doctor_help" '--record FILE'
 
 multidev_help=$(bash "$CLI" multidev --help)
 assert_contains "$multidev_help" 'pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--setup] [--database-source ENV]'
+assert_contains "$multidev_help" 'The remote environment must already exist'
+assert_contains "$multidev_help" 'Requires --setup; replaces local database data.'
+case "$multidev_help" in
+  *'pantheon-local config init'*) fail 'Multidev help incorrectly displays configuration commands' ;;
+esac
+assert_eq "$multidev_help" "$(bash "$CLI" multidev -h)"
+assert_eq "$multidev_help" "$(bash "$CLI" multidev help)"
 
 multidev_create_help=$(bash "$CLI" multidev create --help)
 assert_contains "$multidev_create_help" 'THIS COMMAND PERFORMS AN EXPLICIT REMOTE PANTHEON WRITE'
@@ -175,5 +186,23 @@ assert_contains "$status_help" 'Drupal bootstrap state is reported'
 assert_contains "$status_help" 'JSON also includes the shared workflow lifecycle'
 assert_contains "$status_help" '--format json'
 assert_contains "$status_help" '--record FILE'
+
+# Exercise every invocation in the public Help index, including new entries.
+advertised_help=$(printf '%s\n' "$help_output" | sed -n '/^Help:/,$p' | grep '^  pantheon-local ')
+[ -n "$advertised_help" ] || fail 'top-level Help index is empty'
+while IFS= read -r invocation; do
+  invocation=${invocation#  pantheon-local }
+  read -r -a args <<< "$invocation"
+  advertised_output=$(bash "$CLI" "${args[@]}") || fail "advertised help failed: $invocation"
+  [ -n "$advertised_output" ] || fail "advertised help is empty: $invocation"
+  case "$invocation" in
+    help) assert_contains "$advertised_output" 'Pantheon Local Tools' ;;
+    'config help') assert_contains "$advertised_output" 'pantheon-local config init' ;;
+    *)
+      topic=${invocation% --help}
+      assert_contains "$advertised_output" "pantheon-local $topic"
+      ;;
+  esac
+done <<< "$advertised_help"
 
 printf 'help tests passed\n'

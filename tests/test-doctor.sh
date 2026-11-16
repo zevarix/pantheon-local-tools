@@ -458,6 +458,8 @@ PYWIDTH
 
 # Auto layout must remain fixed throughout a scan: live elapsed timings and
 # different site-name lengths must not switch a detailed row into compact mode.
+# Give the active spinner a full update window: an exactly 2-second mocked
+# read can complete before the next 0.1-second redraw of its '(2s)' frame.
 scenario_init stable-auto-layout
 create_remote tiny-site 'Example Group' ddev
 create_remote longer-example-site-name 'Example Group' ddev
@@ -465,7 +467,7 @@ set_sites tiny-site longer-example-site-name
 configure_base ddev
 bash "$CLI" config tag set 'Example Group' clients
 export MOCK_ENV_DELAY_SITE=tiny-site
-export MOCK_ENV_DELAY_SECONDS=2
+export MOCK_ENV_DELAY_SECONDS=3
 STABLE_LAYOUT_CAPTURE="$SCENARIO/stable-layout.output"
 STABLE_WIDE_CAPTURE="$SCENARIO/stable-wide.output"
 DOCTOR_TEST_TTY_COLS=180 run_doctor_pty $'\n' --timing > "$STABLE_LAYOUT_CAPTURE"
@@ -487,8 +489,11 @@ if not any('1/2' in row for row in full + compact):
     raise SystemExit('FAIL: first site missing in stable layout capture')
 if not any('2/2' in row for row in full + compact):
     raise SystemExit('FAIL: second site missing in stable layout capture')
-if not any(re.search(r'\([2-9][0-9]*s\)', row) for row in rows):
-    raise SystemExit('FAIL: did not exercise growing elapsed time text')
+# A compact finished row replaces the step label with a summary, so waiting
+# for the frame at the exact mock-completion boundary is a race. Assert an
+# observed positive active duration, not an exact scheduler-dependent frame.
+if not any(re.search(r'\([1-9][0-9]*s\)', row) for row in full + compact):
+    raise SystemExit('FAIL: active TTY progress never advanced beyond 0s')
 too_wide = [row for row in full + compact if len(row) >= 180]
 if too_wide:
     raise SystemExit('FAIL: progress exceeded 180-column terminal: %r' % too_wide[0])
@@ -501,6 +506,10 @@ if not wide_full or wide_compact:
     raise SystemExit('FAIL: wide TTY did not stay in full layout with live timing')
 if not any('1/2' in row for row in wide_full) or not any('2/2' in row for row in wide_full):
     raise SystemExit('FAIL: wide TTY failed to cover both site names')
+# Full rows retain completed-step timings, unlike compact finished summaries.
+# This verifies the 2s+ duration without racing the active spinner redraw.
+if not any(re.search(r'\([2-9][0-9]*s\)', row) for row in wide_full):
+    raise SystemExit('FAIL: wide TTY lost completed step timing')
 if any(len(row) >= 260 for row in wide_full):
     raise SystemExit('FAIL: full layout exceeded 260-column terminal')
 PYSTABLE

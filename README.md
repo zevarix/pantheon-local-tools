@@ -233,6 +233,11 @@ Run `pantheon-local help` or `pantheon-local --help` for the complete in-tool co
 ```text
 pantheon-local help
 pantheon-local --help
+pantheon-local help config tag profile set
+
+pantheon-local shell path
+pantheon-local shell install [--shell zsh|bash] [--bin-dir DIR]
+pantheon-local shell remove [--shell zsh|bash]
 
 pantheon-local config init [--root PATH] [--provider auto|ddev|lando]
 pantheon-local config path
@@ -267,6 +272,8 @@ pantheon-local multidev SITE.ENV
   --group NAME
   --dry-run
   --start
+  --setup
+  --database-source ENV
 
 pantheon-local multidev create SITE.SOURCE NEW_ENV
   --provider ddev|lando
@@ -276,9 +283,12 @@ pantheon-local multidev create SITE.SOURCE NEW_ENV
   --yes
 
 pantheon-local provider init --provider ddev|lando [--dry-run]
+  --docroot RELATIVE_PATH
+  --project-type drupal7|drupal8|drupal9|drupal10|drupal11|drupal12
 
 pantheon-local setup
   --provider ddev|lando
+  --database-source ENV
   --dry-run
 
 pantheon-local readiness
@@ -289,9 +299,24 @@ pantheon-local pull ENV
   --files-only
   --provider ddev|lando
 
-pantheon-local status
+pantheon-local status [--format default|json] [--record FILE]
 pantheon-local version
 pantheon-local --version
+```
+
+Every public command and subcommand accepts `-h` or `--help`, including
+before required arguments. `pantheon-local help COMMAND [SUBCOMMAND ...]` opens
+the same focused reference without executing the operation. Interactive help
+uses the shared terminal styling, wraps to the terminal width, and aligns
+continued option descriptions (tested at 60, 80, and 120 columns). `NO_COLOR`
+and `TERM=dumb` use the same readable wrapping without ANSI escapes. Piped or
+redirected help remains byte-for-byte plain text, with no cursor control or
+changes to JSON/operation-record output. For example:
+
+```bash
+pantheon-local help multidev
+pantheon-local config tag prefer set --help
+pantheon-local shell install -h
 ```
 
 Focused help remains available for nontrivial commands, for example `pantheon-local config help`, `pantheon-local config tag profile --help`, `pantheon-local config export --help`, `pantheon-local checkout --help`, `pantheon-local estate status --help`, `pantheon-local doctor --help`, `pantheon-local multidev --help`, `pantheon-local multidev create --help`, `pantheon-local provider init --help`, `pantheon-local setup --help`, `pantheon-local readiness --help`, `pantheon-local pull --help`, and `pantheon-local status --help`.

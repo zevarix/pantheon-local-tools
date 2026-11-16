@@ -35,15 +35,49 @@ Usage:
   pantheon-local config tag prefer set PREFERRED OTHER
   pantheon-local config tag prefer unset PREFERRED OTHER
   pantheon-local config tag prefer list
-  pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--setup] [--database-source ENV]
+  pantheon-local config tag profile get TAG PROPERTY
+  pantheon-local config tag profile set TAG PROPERTY VALUE
+  pantheon-local config tag profile unset TAG PROPERTY
+  pantheon-local config tag profile list [TAG]
+  pantheon-local config export [--provider ddev|lando] [--yes]
 
 Configuration keys:
   root          Absolute local root for Pantheon checkouts.
   provider      auto, ddev, or lando.
   doctor-layout auto, full, or compact (TTY progress presentation only).
 
+Tag-profile properties:
+  config-strategy  full-export or overlay-delta.
+  config-path      Relative project config path such as config/sync.
+
 Run `pantheon-local config init` in a terminal for guided setup. Supply
 --root and/or --provider for a non-interactive one-command configuration.
+USAGE
+}
+
+multidev_usage() {
+  cat <<'USAGE'
+Usage:
+  pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--setup] [--database-source ENV]
+
+Clone an existing Pantheon Multidev environment into a new isolated local
+checkout. The remote environment must already exist; this command never
+creates a Pantheon Multidev.
+
+Options:
+  --provider ddev|lando  Select the local development provider.
+  --group NAME          Place the checkout in a named local group.
+  --dry-run             Preview the checkout without writing files or starting
+                        a provider.
+  --start               Start the local provider after creating the checkout.
+                        Does not import site data or run Composer/Drush.
+  --setup               Bootstrap the new local checkout: start the provider,
+                        install Composer dependencies, import its database,
+                        run Drupal database updates, and rebuild caches.
+  --database-source ENV  Override the setup database source (default: SITE.ENV).
+                        Requires --setup; replaces local database data.
+
+Use `pantheon-local multidev create --help` to create a remote Multidev.
 USAGE
 }
 
@@ -983,7 +1017,7 @@ multidev_command() {
         shift 2
         ;;
       -h|--help|help)
-        usage
+        multidev_usage
         return
         ;;
       --*) die "unknown multidev option: $1" ;;

@@ -9,21 +9,34 @@ FULL_FORMULA="$TAP/$FORMULA_NAME"
 CORE_TAP='homebrew/core'
 BREW_DEVELOPER_WAS_ENABLED=0
 BREW_CORE_WAS_TAPPED=0
+# Guard cleanup with explicit ownership, not global Homebrew presence. Failed
+# preflights must never uninstall a user's previously installed PLT package.
+# Mark attempts before mutation so partially completed operations are cleaned.
+BREW_TAP_CREATION_ATTEMPTED=0
+BREW_FORMULA_INSTALL_ATTEMPTED=0
 
 cleanup() {
   if command -v brew >/dev/null 2>&1; then
-    if brew list --formula "$FORMULA_NAME" >/dev/null 2>&1; then
+    if [ "$BREW_FORMULA_INSTALL_ATTEMPTED" -eq 1 ] && \
+      brew list --formula "$FORMULA_NAME" >/dev/null 2>&1; then
       HOMEBREW_NO_AUTO_UPDATE=1 \
         brew uninstall --force "$FORMULA_NAME" >/dev/null 2>&1 || true
     fi
-    if brew tap | grep -Fx "$TAP" >/dev/null 2>&1; then
-      HOMEBREW_NO_AUTO_UPDATE=1 brew untap "$TAP" >/dev/null 2>&1 || true
-    fi
-    if [ "$BREW_CORE_WAS_TAPPED" -eq 0 ] && brew tap | grep -Fx "$CORE_TAP" >/dev/null 2>&1; then
-      HOMEBREW_NO_AUTO_UPDATE=1 brew untap "$CORE_TAP" >/dev/null 2>&1 || true
-    fi
-    if [ "$BREW_DEVELOPER_WAS_ENABLED" -eq 0 ]; then
-      HOMEBREW_NO_AUTO_UPDATE=1 brew developer off >/dev/null 2>&1 || true
+
+    if [ "$BREW_TAP_CREATION_ATTEMPTED" -eq 1 ]; then
+      if brew tap | grep -Fx "$TAP" >/dev/null 2>&1; then
+        HOMEBREW_NO_AUTO_UPDATE=1 brew untap "$TAP" >/dev/null 2>&1 || true
+      fi
+      # Homebrew may enable developer mode or tap core during tap creation.
+      # Restore only state created after the initial preflight.
+      if [ "$BREW_CORE_WAS_TAPPED" -eq 0 ] && \
+        brew tap | grep -Fx "$CORE_TAP" >/dev/null 2>&1; then
+        HOMEBREW_NO_AUTO_UPDATE=1 brew untap "$CORE_TAP" >/dev/null 2>&1 || true
+      fi
+      if [ "$BREW_DEVELOPER_WAS_ENABLED" -eq 0 ] && \
+        brew developer 2>/dev/null | grep -qi 'enabled'; then
+        HOMEBREW_NO_AUTO_UPDATE=1 brew developer off >/dev/null 2>&1 || true
+      fi
     fi
   fi
   rm -rf "$TMP_ROOT"
@@ -59,6 +72,7 @@ git -C "$REPO_ROOT" archive --format=tar HEAD | gzip -n > "$ARCHIVE"
 SHA256=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
 URL="file://$ARCHIVE"
 
+BREW_TAP_CREATION_ATTEMPTED=1
 HOMEBREW_NO_AUTO_UPDATE=1 brew tap-new --no-git "$TAP" >/dev/null
 TAP_ROOT=$(brew --repository "$TAP")
 FORMULA="$TAP_ROOT/Formula/pantheon-local-tools.rb"
@@ -77,6 +91,7 @@ fi
 HOMEBREW_NO_AUTO_UPDATE=1 \
   brew style "$FULL_FORMULA" >/dev/null
 
+BREW_FORMULA_INSTALL_ATTEMPTED=1
 HOMEBREW_NO_AUTO_UPDATE=1 \
   brew install --build-from-source "$FULL_FORMULA" >/dev/null
 HOMEBREW_NO_AUTO_UPDATE=1 \

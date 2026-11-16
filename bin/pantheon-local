@@ -4,15 +4,18 @@ set -euo pipefail
 PROGRAM_NAME="pantheon-local"
 
 usage() {
-  cat <<'USAGE'
+  cat <<'USAGE' | plt_help_render
 Pantheon Local Tools
 
 Usage:
   pantheon-local COMMAND [OPTIONS]
 
 Commands:
-  pantheon-local shell path|install|remove [--shell zsh|bash]
-      Manage automatic terminal navigation for newly created Multidev checkouts.
+  pantheon-local shell path
+  pantheon-local shell install [--shell zsh|bash] [--bin-dir DIR]
+  pantheon-local shell remove [--shell zsh|bash]
+      Inspect or manage automatic terminal navigation for Multidev checkouts.
+      Installation/removal changes only the managed shell startup block.
 
   pantheon-local config init [--root PATH] [--provider auto|ddev|lando]
       Guided first-run setup. With flags, configure root and/or provider
@@ -107,6 +110,7 @@ Commands:
       unless --yes is supplied.
 
   pantheon-local provider init --provider ddev|lando [--dry-run]
+    [--docroot RELATIVE_PATH] [--project-type drupal7|drupal8|drupal9|drupal10|drupal11|drupal12]
       Initialize missing base DDEV/Lando configuration for a canonical Dev
       checkout after explicit review. Never starts providers or pulls data.
 
@@ -168,7 +172,11 @@ Examples:
 
 Help:
   pantheon-local help
+  pantheon-local help config tag profile set
+  pantheon-local shell --help
   pantheon-local config help
+  pantheon-local config tag --help
+  pantheon-local config tag prefer --help
   pantheon-local config init --help
   pantheon-local config tag profile --help
   pantheon-local config export --help
@@ -177,10 +185,14 @@ Help:
   pantheon-local doctor --help
   pantheon-local multidev --help
   pantheon-local multidev create --help
+  pantheon-local provider init --help
   pantheon-local setup --help
   pantheon-local readiness --help
   pantheon-local pull --help
   pantheon-local status --help
+
+Every public command and subcommand also accepts -h or --help. To open
+focused help without executing a command, run `pantheon-local help COMMAND`.
 USAGE
 }
 
@@ -234,6 +246,168 @@ SETUP="$LIBEXEC_DIR/pantheon-local-setup"
 STATUS="$LIBEXEC_DIR/pantheon-local-status"
 PROVIDER_INIT="$LIBEXEC_DIR/pantheon-local-provider-init"
 SHELL_SETUP="$LIBEXEC_DIR/pantheon-local-shell-setup"
+TERMINAL_LIB="$LIBEXEC_DIR/pantheon-local-terminal"
+
+# Loading the presentation library is lazy: normal CLI operations, including
+# machine JSON, continue to use their existing dispatch and dependencies.
+plt_help_render() {
+  [ -r "$TERMINAL_LIB" ] || die "terminal presentation helper is missing: $TERMINAL_LIB"
+  # shellcheck disable=SC1090,SC1091 # Runtime-resolved shared library, linted independently.
+  . "$TERMINAL_LIB"
+  plt_term_help_render
+}
+
+# Handle help centrally, before positional validation, provider discovery,
+# config writes, remote reads, or delegated workflow execution. Only -h and
+# --help are reserved flags at every argument position. The word 'help' stays
+# available as a literal configuration value or Pantheon Tag argument.
+print_leaf_help() {
+  printf 'Usage:\n  pantheon-local %s\n\n%s\n' "$1" "$2" | plt_help_render
+}
+
+print_tag_help() {
+  cat <<'HELP' | plt_help_render
+Usage:
+  pantheon-local config tag get TAG
+  pantheon-local config tag set TAG DIRECTORY
+  pantheon-local config tag unset TAG
+  pantheon-local config tag list
+  pantheon-local config tag prefer set PREFERRED OTHER
+  pantheon-local config tag prefer unset PREFERRED OTHER
+  pantheon-local config tag prefer list
+  pantheon-local config tag profile get TAG PROPERTY
+  pantheon-local config tag profile set TAG PROPERTY VALUE
+  pantheon-local config tag profile unset TAG PROPERTY
+  pantheon-local config tag profile list [TAG]
+
+Tags map Pantheon site groups to local directories under the configured root.
+Preferences resolve conflicting Tag routes. Profiles attach config-strategy
+and config-path to existing Tag routes without creating new ones.
+HELP
+}
+
+print_prefer_help() {
+  cat <<'HELP' | plt_help_render
+Usage:
+  pantheon-local config tag prefer set PREFERRED OTHER
+  pantheon-local config tag prefer unset PREFERRED OTHER
+  pantheon-local config tag prefer list
+
+Set explicit Tag precedence when more than one configured route matches a site.
+HELP
+}
+
+render_module_help() {
+  local module=$1
+  shift
+  [ -x "$module" ] || die "help module is missing or not executable: $module"
+  [ "$#" -gt 0 ] || set -- --help
+  "$module" "$@" | plt_help_render
+}
+
+print_command_help() {
+  local first=${1:-} second=${2:-} third=${3:-} fourth=${4:-}
+  case "$first" in
+    ''|-h|--help|help) usage ;;
+    shell)
+      case "$second" in
+        ''|-h|--help|help) render_module_help "$SHELL_SETUP" --help ;;
+        path) print_leaf_help 'shell path' 'Print the absolute path to the read-only shell navigation hook.' ;;
+        install) print_leaf_help 'shell install [--shell zsh|bash] [--bin-dir DIR]' 'Register automatic Multidev navigation in supported shell startup files. Existing unrelated settings are preserved.' ;;
+        remove) print_leaf_help 'shell remove [--shell zsh|bash]' 'Remove only the managed navigation block from shell startup files.' ;;
+        *) die "unknown shell command: $second" ;;
+      esac
+      ;;
+    config)
+      case "$second" in
+        ''|-h|--help|help) render_module_help "$CORE" config --help ;;
+        init) render_module_help "$CORE" config init --help ;;
+        path) print_leaf_help 'config path' 'Print the active user configuration file path without creating it.' ;;
+        get) print_leaf_help 'config get KEY' 'Print one effective configuration value: root, provider, or doctor-layout.' ;;
+        set) print_leaf_help 'config set KEY VALUE' 'Set one user configuration value: root, provider, or doctor-layout. Does not change Pantheon or Drupal.' ;;
+        unset) print_leaf_help 'config unset KEY' 'Remove one stored configuration value so its default applies.' ;;
+        list) print_leaf_help 'config list' 'List effective settings, Tag routes, precedence rules, and Tag profile properties.' ;;
+        export) render_module_help "$CONFIG_EXPORT" --help ;;
+        tag)
+          case "$third" in
+            ''|-h|--help|help) print_tag_help ;;
+            get) print_leaf_help 'config tag get TAG' 'Print the configured directory mapping for a Pantheon Tag.' ;;
+            set) print_leaf_help 'config tag set TAG DIRECTORY' 'Create or replace a Tag route using a directory relative to the configured root.' ;;
+            unset) print_leaf_help 'config tag unset TAG' 'Remove a Tag route and its optional profile properties.' ;;
+            list) print_leaf_help 'config tag list' 'List configured Pantheon Tag directory mappings.' ;;
+            prefer)
+              case "$fourth" in
+                ''|-h|--help|help) print_prefer_help ;;
+                set) print_leaf_help 'config tag prefer set PREFERRED OTHER' 'Prefer PREFERRED over OTHER when both Tags match a Pantheon site.' ;;
+                unset) print_leaf_help 'config tag prefer unset PREFERRED OTHER' 'Remove one explicit Tag-over-Tag precedence rule.' ;;
+                list) print_leaf_help 'config tag prefer list' 'List explicit Tag precedence rules as PREFERRED>OTHER.' ;;
+                *) die "unknown config tag prefer command: $fourth" ;;
+              esac
+              ;;
+            profile)
+              case "$fourth" in
+                ''|-h|--help|help) render_module_help "$PROFILE" --help ;;
+                get) print_leaf_help 'config tag profile get TAG PROPERTY' 'Print one profile property (config-strategy or config-path) for an existing Tag.' ;;
+                set) print_leaf_help 'config tag profile set TAG PROPERTY VALUE' 'Set config-strategy or config-path on an existing Tag route; does not create a route.' ;;
+                unset) print_leaf_help 'config tag profile unset TAG PROPERTY' 'Remove one optional profile property from an existing Tag route.' ;;
+                list) print_leaf_help 'config tag profile list [TAG]' 'List Tag profile properties for one Tag or for all configured routes.' ;;
+                *) die "unknown config tag profile command: $fourth" ;;
+              esac
+              ;;
+            *) die "unknown config tag command: $third" ;;
+          esac
+          ;;
+        *) die "unknown config command: $second" ;;
+      esac
+      ;;
+    checkout) render_module_help "$CHECKOUT" --help ;;
+    estate)
+      case "$second" in ''|status|-h|--help|help) render_module_help "$ESTATE_STATUS" --help ;; *) die "unknown estate command: $second" ;; esac
+      ;;
+    doctor) render_module_help "$DOCTOR" --help ;;
+    multidev)
+      case "$second" in create) render_module_help "$MULTIDEV_CREATE" --help ;; *) render_module_help "$CORE" multidev --help ;; esac
+      ;;
+    provider)
+      case "$second" in ''|init|-h|--help|help) render_module_help "$PROVIDER_INIT" --help ;; *) die "unknown provider command: $second" ;; esac
+      ;;
+    setup) render_module_help "$SETUP" --help ;;
+    readiness) render_module_help "$READINESS" --help ;;
+    pull) render_module_help "$PULL" --help ;;
+    status) render_module_help "$STATUS" --help ;;
+    version|--version)
+      print_leaf_help 'version (or --version)' 'Print the installed Pantheon Local Tools version.'
+      ;;
+    *) die "unknown command: $first" ;;
+  esac
+}
+
+# `pantheon-local help COMMAND [SUBCOMMAND ...]` is a read-only shortcut.
+if [ "${1:-}" = help ]; then
+  shift
+  print_command_help "$@"
+  exit 0
+fi
+
+help_requested=false
+for help_arg in "$@"; do
+  case "$help_arg" in -h|--help) help_requested=true; break ;; esac
+done
+
+# Preserve the established `COMMAND help` / `COMMAND SUBCOMMAND help`
+# spelling only at command positions, not when `help` is user data.
+if [ "$help_requested" = false ]; then
+  case "$#:${1:-}:${2:-}:${3:-}:${4:-}" in
+    2:*:help::*|3:config:tag:help:*|3:config:init:help:*|3:config:export:help:*|3:shell:*:help:*|3:provider:init:help:*|3:estate:status:help:*|3:checkout:sync:help:*|3:multidev:create:help:*|4:config:tag:prefer:help|4:config:tag:profile:help)
+      help_requested=true
+      ;;
+  esac
+fi
+
+if [ "$help_requested" = true ]; then
+  print_command_help "$@"
+  exit 0
+fi
 
 command=${1:-}
 case "$command" in

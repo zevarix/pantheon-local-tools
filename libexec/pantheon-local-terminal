@@ -127,3 +127,43 @@ plt_term_clear_to_end() {
   plt_term_is_interactive "$fd" || return 0
   printf '\033[K'
 }
+
+# Render all CLI help through the same optional terminal presentation layer.
+# Plain text is preserved byte-for-byte for pipes, NO_COLOR and TERM=dumb.
+# Help output never animates, clears the screen, or writes to stderr.
+plt_term_help_render() {
+  local line option rest
+  if ! plt_term_color_enabled 1; then
+    cat
+    return 0
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      'Pantheon Local Tools'|'Usage:'|'Commands:'|'Options:'|'Properties:'|\
+      'Examples:'|'Help:'|'Configuration keys:'|'Tag-profile properties:'|\
+      'Provider selection:'|'Preflight and mutation order:'|'Selection:'|\
+      'Current strategy support:')
+        plt_term_style 1 heading "$line"
+        ;;
+      '  pantheon-local '*)
+        printf '  '
+        plt_term_style 1 active "${line#  }"
+        ;;
+      '  --'*)
+        rest=${line#  }
+        option=${rest%%[[:space:]]*}
+        printf '  '
+        plt_term_style 1 active "$option"
+        printf '%s' "${rest#"$option"}"
+        ;;
+      'THIS COMMAND '*|'WARNING:'*)
+        plt_term_style 1 warning "$line"
+        ;;
+      *)
+        printf '%s' "$line"
+        ;;
+    esac
+    printf '\n'
+  done
+}

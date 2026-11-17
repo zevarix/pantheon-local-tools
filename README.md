@@ -304,10 +304,12 @@ pantheon-local version
 pantheon-local --version
 ```
 
-Every public command and subcommand accepts `-h` or `--help`, including
-before required arguments. `pantheon-local help COMMAND [SUBCOMMAND ...]` opens
-the same focused reference without executing the operation. Interactive help
-uses the shared terminal styling, wraps to the terminal width, and aligns
+The top-level help lists all public commands, with focused help for
+options and safety details. `plt` is a shorter name for `pantheon-local`;
+both accept the same commands and options and share configuration. Every public
+command accepts `-h` or `--help` before required arguments. For example,
+`plt help multidev` opens focused help without running the operation.
+Interactive help uses shared terminal styling, wraps to terminal width, and aligns
 continued option descriptions (tested at 60, 80, and 120 columns). `NO_COLOR`
 and `TERM=dumb` use the same readable wrapping without ANSI escapes. Piped or
 redirected help remains byte-for-byte plain text, with no cursor control or

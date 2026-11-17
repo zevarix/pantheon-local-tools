@@ -59,13 +59,17 @@ for expected in \
 do
   assert_contains "$help_output" "$expected"
 done
-assert_contains "$help_output" 'Explicitly export tracked Drupal configuration'
-assert_contains "$help_output" 'mutates project files'
+assert_contains "$help_output" 'Export Drupal config to project files for full-export profiles.'
+assert_contains "$help_output" 'Requires a clean export path, readiness checks, and confirmation'
 assert_contains "$help_output" 'overlay-delta export is unsupported'
-assert_contains "$help_output" 'Clone an already-existing Pantheon Multidev'
-assert_contains "$help_output" 'Missing remote environments are never created implicitly.'
-assert_contains "$help_output" 'Explicitly create a remote Pantheon Multidev'
-assert_contains "$help_output" 'fails closed while owning validation is unavailable'
+assert_contains "$help_output" 'Clone an existing Pantheon Multidev locally'
+assert_contains "$help_output" 'environments are never created.'
+assert_contains "$help_output" 'Create a remote Pantheon Multidev, then clone it locally.'
+assert_contains "$help_output" 'exits nonzero until validation is available.'
+assert_contains "$help_output" '  plt COMMAND [OPTIONS]'
+assert_contains "$help_output" 'Both names use the same commands, options, and configuration.'
+assert_contains "$help_output" '  plt doctor'
+assert_contains "$help_output" '  plt help'
 
 config_help=$(bash "$CLI" config help)
 assert_contains "$config_help" 'pantheon-local config init [--root PATH] [--provider auto|ddev|lando]'
@@ -105,7 +109,7 @@ checkout_help=$(bash "$CLI" checkout --help)
 assert_contains "$checkout_help" 'pantheon-local checkout SITE.dev'
 assert_contains "$checkout_help" 'pantheon-local checkout dev (--all | --tag TAG'
 assert_contains "$checkout_help" 'pantheon-local checkout sync SITE.dev'
-assert_contains "$checkout_help" 'canonical Pantheon Dev Git checkouts'
+assert_contains "$checkout_help" 'Clone Pantheon Dev code or sync existing local Dev checkouts.'
 assert_contains "$checkout_help" 'Normal checkout never updates an existing checkout'
 assert_contains "$checkout_help" '--format default|json'
 assert_contains "$checkout_help" '--record FILE'
@@ -120,7 +124,7 @@ assert_contains "$estate_help" '--record FILE'
 
 doctor_help=$(bash "$CLI" doctor --help)
 assert_contains "$doctor_help" 'pantheon-local doctor [--timing] [--format default|json] [--record FILE]'
-assert_contains "$doctor_help" 'Read-only diagnosis plus optional explicitly confirmed guided remediation.'
+assert_contains "$doctor_help" 'Read-only checks, with optional guided fixes that require confirmation.'
 assert_contains "$doctor_help" 'PASS  Ready/healthy.'
 assert_contains "$doctor_help" 'Diagnosis/report generation is read-only.'
 assert_contains "$doctor_help" '--timing'
@@ -288,6 +292,27 @@ while IFS='|' read -r route expected; do
 done <<< "$help_cases"
 [ "$checked" -eq 41 ] || fail "expected 41 command routes, tested $checked"
 
+# Both installed names execute the same entrypoint. Test an isolated plt
+# symlink, never the user's installed commands.
+ln -s "$CLI" "$help_fixture/bin/plt"
+probe_plt() {
+  HOME="$help_fixture/home" \
+  PANTHEON_LOCAL_CONFIG="$help_fixture/private/config" \
+  HELP_FIXTURE_INVOCATIONS="$help_fixture/invocations" \
+  PATH="$help_fixture/bin:$PATH" "$help_fixture/bin/plt" "$@"
+}
+assert_eq "$help_output" "$(probe_plt help)"
+assert_eq "$(bash "$CLI" --version)" "$(probe_plt --version)"
+alias_checked=0
+while IFS='|' read -r route expected; do
+  [ -n "$route" ] || continue
+  read -r -a route_args <<< "$route"
+  assert_eq "$(probe_help "${route_args[@]}" --help)" "$(probe_plt "${route_args[@]}" --help)"
+  alias_checked=$((alias_checked + 1))
+done <<< "$help_cases"
+[ "$alias_checked" -eq 41 ] || fail 'expected alias parity for 41 public routes'
+[ ! -e "$help_fixture/invocations" ] || fail 'short alias invoked an external tool'
+
 # Help after fully specified mutating commands still performs no work.
 for invocation in \
   'config set provider lando --help' \
@@ -394,6 +419,11 @@ for route in routes:
         raw = check_tty(route, width, base, True)
         if width == 60:
             pretty_60[tuple(route)] = ansi.sub('', raw.decode('utf-8', errors='replace'))
+
+# Both names in the top-level Usage receive the same TTY styling.
+root_colored = run_pty(['help'], 80, base)
+if b'\x1b[96mplt COMMAND [OPTIONS]\x1b[0m' not in root_colored:
+    raise SystemExit('FAIL: short plt alias missing from colored Usage')
 
 # Prove headings across child-provided help as well as the top-level index.
 colored = run_pty(['checkout'], 80, base)

@@ -30,7 +30,7 @@ Usage:
   pantheon-local checkout sync (--all | --tag TAG [--tag TAG ...])
     [--dry-run] [--format default|json] [--record FILE]
 
-Populate or synchronize canonical Pantheon Dev Git checkouts.
+Clone Pantheon Dev code or sync existing local Dev checkouts.
 
 Selection:
   SITE.dev    One exact canonical Dev checkout.

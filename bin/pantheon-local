@@ -9,6 +9,9 @@ Pantheon Local Tools
 
 Usage:
   pantheon-local COMMAND [OPTIONS]
+  plt COMMAND [OPTIONS]
+
+Both names use the same commands, options, and configuration.
 
 Commands:
   pantheon-local shell path
@@ -72,59 +75,53 @@ Commands:
       List profile properties for one Tag or all configured Tag routes.
 
   pantheon-local config export [--provider ddev|lando] [--yes]
-      Explicitly export tracked Drupal configuration for a validated full-export
-      profile. This mutates project files, requires a clean configured export
-      path, runs readiness first, and confirms unless --yes is supplied.
-      overlay-delta export is unsupported and fails before provider invocation.
+      Export Drupal config to project files for full-export profiles.
+      Requires a clean export path, readiness checks, and confirmation
+      (or --yes). overlay-delta export is unsupported.
 
   pantheon-local checkout SITE.dev [--dry-run] [--format default|json] [--record FILE]
   pantheon-local checkout dev (--all | --tag TAG [--tag TAG ...]) [OPTIONS]
   pantheon-local checkout sync SITE.dev [OPTIONS]
   pantheon-local checkout sync (--all | --tag TAG [--tag TAG ...]) [OPTIONS]
-      Populate or explicitly fast-forward canonical Pantheon Dev checkouts.
-      Checkout never starts providers or pulls data; sync is the only update path.
+      Clone Pantheon Dev code, or fast-forward clean checkouts with sync.
+      Does not start providers or pull database/files.
 
   pantheon-local estate status SITE|--all|--tag TAG [OPTIONS]
       Read-only cross-system estate overview combining Terminus environment code
       identity with canonical local checkout Git/provider state.
 
   pantheon-local doctor [--timing] [--format default|json] [--record FILE]
-      Read-only diagnosis for tools, config, routing, Pantheon authority,
-      provider prerequisites, and canonical Dev checkouts. --timing adds
-      stderr-only external-read duration evidence. Interactive use may offer
-      explicitly confirmed PLT-managed repairs after the report.
+      Read-only checks of tools, access, routing, and Dev checkouts.
+      Interactive repairs require confirmation. --timing writes duration
+      information to stderr.
 
   pantheon-local multidev SITE.ENV [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--setup] [--database-source ENV]
-      Clone an already-existing Pantheon Multidev into an isolated local
-      checkout. --setup opts into provider start, Composer, initial local
-      database import, Drush updates, and cache rebuild. --database-source
-      overrides the import source only with --setup; default is SITE.ENV.
-      Missing remote environments are never created implicitly.
+      Clone an existing Pantheon Multidev locally; missing remote
+      environments are never created. --setup starts the provider, runs
+      Composer and Drush, and replaces the local database. Default source is
+      SITE.ENV; --database-source ENV overrides it only with --setup.
 
   pantheon-local multidev create SITE.SOURCE NEW_ENV
     [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]
     [--format default|json] [--record FILE]
-      Explicitly create a remote Pantheon Multidev, verify it, then hand off to
-      the existing local Multidev checkout path. --dry-run performs read-only
-      planning and can emit/record the stable JSON plan; real creation confirms
-      unless --yes is supplied.
+      Create a remote Pantheon Multidev, then clone it locally.
+      --dry-run plans without writing; real creation requires confirmation
+      (or --yes). Structured JSON plans are available with --dry-run.
 
   pantheon-local provider init --provider ddev|lando [--dry-run]
     [--docroot RELATIVE_PATH] [--project-type drupal7|drupal8|drupal9|drupal10|drupal11|drupal12]
-      Initialize missing base DDEV/Lando configuration for a canonical Dev
-      checkout after explicit review. Never starts providers or pulls data.
+      Create missing DDEV/Lando config for a Dev checkout.
+      Does not start providers or pull data.
 
   pantheon-local setup [--provider ddev|lando] [--database-source ENV] [--dry-run]
-      Bootstrap an existing PLT-managed Drupal checkout using its recorded
-      Pantheon environment: start provider, Composer install, guarded local
-      database pull, drush updb, then drush cr. --database-source explicitly
-      selects a different local database source. --dry-run prints the plan only.
+      Start provider, run Composer, replace the local database, and run
+      Drupal updates/cache rebuild. --database-source selects an import
+      source; --dry-run previews the plan only.
 
   pantheon-local readiness [--provider ddev|lando]
-      Inspect the matched tag profile's Drupal configuration boundary without
-      exporting config or starting the provider. full-export can complete a
-      readiness inspection; overlay-delta reports its protected partial path
-      and Git state but fails closed while owning validation is unavailable.
+      Check Drupal config without exporting or starting the provider.
+      Supports full-export; overlay-delta reports its partial path and Git
+      state but exits nonzero until validation is available.
 
   pantheon-local pull ENV [--database-only|--files-only] [--provider ddev|lando]
       Refresh local Pantheon database/files without changing checked-out Git
@@ -161,6 +158,7 @@ Examples:
   pantheon-local checkout dev --tag 'Example Group' --dry-run
   pantheon-local estate status --all
   pantheon-local doctor
+  plt doctor
   pantheon-local multidev example.feature --dry-run
   pantheon-local multidev example.feature --setup --database-source live
   pantheon-local multidev create example.live feature1 --dry-run
@@ -172,6 +170,7 @@ Examples:
 
 Help:
   pantheon-local help
+  plt help
   pantheon-local help config tag profile set
   pantheon-local shell --help
   pantheon-local config help
@@ -191,8 +190,8 @@ Help:
   pantheon-local pull --help
   pantheon-local status --help
 
-Every public command and subcommand also accepts -h or --help. To open
-focused help without executing a command, run `pantheon-local help COMMAND`.
+Every command and subcommand accepts -h or --help without running it.
+For focused help, use `pantheon-local help COMMAND` or `plt help COMMAND`.
 USAGE
 }
 

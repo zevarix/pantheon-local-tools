@@ -16,8 +16,8 @@ usage() {
 Usage:
   pantheon-local setup [--provider ddev|lando] [--database-source ENV] [--dry-run]
 
-Prepare an existing Pantheon Local Tools-managed Drupal checkout for local
-work using its recorded Pantheon environment. The setup pipeline is:
+Set up a PLT-managed Drupal checkout using its recorded Pantheon
+environment. Steps:
 
   provider start
   -> provider-owned composer install

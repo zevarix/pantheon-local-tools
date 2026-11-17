@@ -20,8 +20,7 @@ Usage:
   pantheon-local status [--format default|json] [--record FILE]
 
 Shows local checkout metadata without contacting Pantheon or starting a provider.
-When the selected provider is already running, status may query its read-only
-runtime information to report the provider's authoritative local URL.
+If the provider is already running, status may read its reported local URL.
 For PLT-managed checkouts, Drupal bootstrap state is reported from local state;
 JSON also includes the shared workflow lifecycle when present.
 

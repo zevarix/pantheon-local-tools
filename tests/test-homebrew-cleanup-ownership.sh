@@ -54,6 +54,16 @@ esac
 MOCK
 chmod +x "$TMP_ROOT/bin/brew"
 
+# The ownership fixture checks cleanup state, not Ruby syntax. Keep it portable
+# to minimal Linux/WSL2 images without Ruby; the actual Homebrew package test
+# still performs the real ruby -c check on supported macOS runners.
+cat > "$TMP_ROOT/bin/ruby" <<'MOCK_RUBY'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" -eq 2 ] && [ "$1" = -c ] && [ -f "$2" ]
+MOCK_RUBY
+chmod +x "$TMP_ROOT/bin/ruby"
+
 run_case() {
   local label=$1 failure=$2 dir="$TMP_ROOT/$1" rc=0
   mkdir -p "$dir/state" "$dir/home"

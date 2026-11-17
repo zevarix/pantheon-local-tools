@@ -32,6 +32,8 @@ require_text "$HTML_FILE" 'dists/stable/InRelease' 'signed APT repository metada
 require_text "$HTML_FILE" 'pantheon-local-tools-archive-keyring.gpg' 'APT archive keyring link is missing'
 require_text "$HTML_FILE" 'id="faq"' 'FAQ section is missing'
 require_text "$HTML_FILE" 'pantheon-local multidev create' 'explicit Multidev creation boundary is missing'
+require_text "$HTML_FILE" 'plt help' 'short CLI alias help discovery is missing'
+require_text "$HTML_FILE" 'plt multidev SITE.ENV --provider lando --setup' 'opt-in Multidev setup example is missing'
 require_text "$HTML_FILE" 'pantheon-local doctor' 'v0.2 doctor workflow is missing'
 require_text "$HTML_FILE" 'pantheon-local checkout example-site.dev' 'v0.2 canonical checkout workflow is missing'
 require_text "$HTML_FILE" 'pantheon-local estate status --all' 'v0.2 estate-status workflow is missing'

@@ -24,10 +24,12 @@ brew install zevarix/tap/pantheon-local-tools
 
 The explicit formula reference trusts only that formula rather than the entire third-party tap.
 
-Users may also tap first and then install:
+With Homebrew 6 or later, users who tap first and install by short name
+must explicitly trust only this formula:
 
 ```bash
 brew tap zevarix/tap
+brew trust --formula zevarix/tap/pantheon-local-tools
 brew install pantheon-local-tools
 ```
 

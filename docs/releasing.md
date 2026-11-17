@@ -24,7 +24,7 @@ from the accepted GitHub revision, the intended release version, and the
 explicit publication date. The check does not infer the date or change the changelog.
 
 ~~~bash
-RELEASE_VERSION='0.2.4'
+RELEASE_VERSION='<VERSION>'
 EXPECTED_COMMIT='FULL_REVIEWED_COMMIT_SHA'
 RELEASE_DATE='YYYY-MM-DD'
 

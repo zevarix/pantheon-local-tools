@@ -95,7 +95,7 @@ Created Pantheon multidev checkout
           <div class="section-title">Workflow</div>
           <div>
             <h2>Built around the Pantheon work you actually repeat.</h2>
-            <p>Each command stays narrow: resolve the intent, protect the checkout, delegate to the right upstream tool, and leave useful local state behind.</p>
+            <p>Each command stays narrow: resolve intent, protect the checkout, and delegate upstream. <code>plt</code> is the short alias; run <code>plt help</code> for commands and options.</p>
           </div>
         </div>
 
@@ -148,14 +148,15 @@ PASS  terminus-auth     Terminus authentication is valid</code></pre>
           <div class="feature-copy">
             <p class="feature-number">04 / MULTIDEV</p>
             <h3>Clone an existing Multidev into an isolated local checkout.</h3>
-            <p>Resolve the authoritative Git URL through Terminus, route the checkout through your configured root or Pantheon Tag mapping, configure DDEV or Lando locally, and refuse to overwrite an existing destination. The command never creates or deletes the remote Multidev.</p>
+            <p>Resolve the Git URL through Terminus, use your configured checkout root or Pantheon Tag mapping, select DDEV or Lando, and refuse occupied destinations. This command never creates or deletes the remote Multidev.</p>
+            <p><code>--setup</code> explicitly starts the provider, imports a local database, and completes Drupal bootstrap. <code>--database-source</code> selects a different source. With the Bash/zsh shell hook active, a successful interactive clone can take you into the new checkout.</p>
             <a href="https://github.com/zevarix/pantheon-local-tools/blob/main/docs/multidev.md">Multidev behavior →</a>
           </div>
           <div class="terminal">
             <div class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span></div>
             <pre><code><i>$</i> pantheon-local multidev SITE.ENV --dry-run
 <i>$</i> pantheon-local multidev SITE.ENV --provider lando --group migration
-<i>$</i> pantheon-local multidev SITE.ENV --provider ddev --start</code></pre>
+<i>$</i> plt multidev SITE.ENV --provider lando --setup</code></pre>
           </div>
         </article>
 

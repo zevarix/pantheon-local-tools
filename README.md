@@ -1,6 +1,8 @@
 # Pantheon Local Tools
 
 [![Validate](https://github.com/zevarix/pantheon-local-tools/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/zevarix/pantheon-local-tools/actions/workflows/validate.yml)
+[![Latest release](https://img.shields.io/github/v/release/zevarix/pantheon-local-tools?display_name=tag)](https://github.com/zevarix/pantheon-local-tools/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/zevarix/pantheon-local-tools)](LICENSE)
 
 **[Project website](https://zevarix.github.io/pantheon-local-tools/)** · [Latest release](https://github.com/zevarix/pantheon-local-tools/releases/latest) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
@@ -28,6 +30,8 @@ Pantheon remains authoritative for Terminus installation and authentication:
 Pantheon Local Tools does not store Pantheon machine tokens.
 
 ### Install
+
+The latest GitHub release is the published package version. Source on `main` may be newer between releases.
 
 #### macOS with Homebrew
 

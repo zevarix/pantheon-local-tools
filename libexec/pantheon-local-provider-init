@@ -12,10 +12,9 @@ usage() {
 Usage: pantheon-local provider init --provider ddev|lando [--dry-run]
   [--docroot RELATIVE_PATH] [--project-type drupal7|drupal8|drupal9|drupal10|drupal11|drupal12]
 
-Run from a PLT-managed canonical Dev Git checkout. Initialize missing base
-DDEV/Lando configuration only; never start Docker, pull data, or run setup.
-Dry-run shows the proposed configuration without writing files.
-Existing provider configuration or local overrides are never overwritten.
+Run in a PLT-managed Dev checkout. Add missing DDEV/Lando configuration
+without starting Docker, pulling data, or running setup.
+--dry-run previews changes; existing config and overrides are preserved.
 HELP
 }
 die() { printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2; exit 40; }

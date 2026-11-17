@@ -25,8 +25,7 @@ Usage:
     [--provider ddev|lando] [--group NAME] [--dry-run] [--start] [--yes]
     [--format default|json] [--record FILE]
 
-Create a new Pantheon Multidev from an existing source environment, then hand
-off to Pantheon Local Tools' existing local Multidev checkout command.
+Create a Pantheon Multidev from SITE.SOURCE, then clone it locally.
 
 THIS COMMAND PERFORMS AN EXPLICIT REMOTE PANTHEON WRITE unless --dry-run is used.
 
@@ -46,7 +45,7 @@ Options:
       Otherwise the normal PLT provider configuration/detection contract applies.
 
   --group NAME
-      Pass the existing optional local checkout grouping to the checkout path.
+      Place the local checkout in a group.
 
   --dry-run
       Authenticate and perform read-only source/target/config validation, then
@@ -75,9 +74,9 @@ Safety and failure behavior:
     only this explicit `multidev create` command can perform the remote write.
   * Source/target existence is read through Terminus; PLT does not construct
     Pantheon UUIDs, Git endpoints, or environment existence assumptions.
-  * PLT validates the local provider/group/root settings it can establish before
-    the remote write, but local checkout still performs its own authoritative
-    Tag routing, destination, Git URL, provider, and transactional clone checks.
+  * PLT checks the local provider/group/root settings it can verify before
+    remote creation. Local checkout still checks Tag routes, destination,
+    Git URL, provider, and clone safety.
   * If Terminus creation fails, remote state may be uncertain. PLT does not run
     an automatic delete or retry; verify Pantheon state before retrying.
   * If remote creation succeeds but local checkout/start fails, the remote

@@ -578,7 +578,7 @@ usage() {
 Usage:
   pantheon-local doctor [--timing] [--format default|json] [--record FILE]
 
-Read-only diagnosis plus optional explicitly confirmed guided remediation.
+Read-only checks, with optional guided fixes that require confirmation.
 
 Checks include:
   * PLT version and effective configuration path;

@@ -217,7 +217,7 @@ plt_term_help_render_line() {
   continuation=$prefix
   kind=normal
   case "$line" in
-    '  pantheon-local '*) kind='command'; continuation='    ' ;;
+    '  pantheon-local '*|'  plt '*) kind='command'; continuation='    ' ;;
     '  --'*) kind=option; continuation='      ' ;;
     'Usage: pantheon-local '*) kind=inline-usage; continuation='  ' ;;
     'Pantheon Local Tools'|[![:space:]]*:) kind=heading ;;

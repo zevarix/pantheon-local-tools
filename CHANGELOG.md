@@ -6,10 +6,20 @@ The project follows Semantic Versioning for its public command/configuration con
 
 ## Unreleased
 
+## 0.2.5 — 2026-11-17
+
+Patch release improving CLI help, Multidev shell navigation, and test safety while preserving provider, configuration, and structured-output contracts.
+
 ### Changed
 
-- Automatically register the Multidev directory-navigation shell function during portable installation, guided interactive setup, or the first successful interactive Multidev operation (#152). Bash/zsh startup files receive a bounded, idempotent, removable block; current-terminal behavior remains unchanged until the next interactive shell starts. Homebrew/APT package-manager operations and noninteractive/dry-run commands do not modify startup files. No change to the versioned v0.2.4 release.
+- Automatically register the optional Bash/zsh Multidev navigation hook during portable installation, guided interactive setup, or the first successful interactive Multidev operation. The next terminal picks up the hook; existing shell settings are preserved. Package-manager installation, dry runs, and noninteractive commands do not change shell startup files (#152, #153).
+- Provide read-only `help`, `-h`, and `--help` for all 41 public command/subcommand paths, including nested configuration, checkout, and Multidev commands. Help invokes no external workflow tools or configuration writes (#154, #156, #155).
+- Improve help headings, option alignment, and wrapping at common terminal widths; explain the existing `plt` shortcut and tighten wording without removing command syntax or safety details. Keep redirected help, `NO_COLOR`, JSON, and operation records free of terminal styling changes (#155, #163, #164).
 
+### Fixed
+
+- Guard Homebrew package-test cleanup so it does not uninstall a pre-existing formula or remove Homebrew state the test did not create; add isolated partial-failure regressions (#157, #158).
+- Stabilize the Doctor terminal timing test against redraw scheduling races without changing Doctor runtime output or behavior (#159, #160).
 
 ## 0.2.4 — 2026-11-12
 
